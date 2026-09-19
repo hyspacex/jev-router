@@ -24,6 +24,12 @@ Legacy behaviour is untouched. An alias with no `session_mode` is legacy, and
 a request with no `X-Router-Session` header takes exactly the path it took
 before any of this existed.
 
+This file is about the contract: one binding, resolved once, never moved.
+What decides that binding — the semantic packet, the shadow questions, the
+quality lanes that bound what quota may do, the coherent quota windows, and
+replaying a decision from its own row — is in
+[`SEMANTIC_POLICY.md`](SEMANTIC_POLICY.md).
+
 ## Turning it on
 
 ```yaml
@@ -399,6 +405,7 @@ uv run jev-router sessions list
 uv run jev-router sessions show session-2f766788
 uv run jev-router sessions close session-2f766788
 uv run jev-router decisions -n 20            # admission and execution events
+uv run jev-router decisions replay <id>      # re-run the selection from the row
 uv run jev-router prune --older-than-days 30 # sessions leave tombstones
 ```
 

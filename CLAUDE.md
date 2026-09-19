@@ -17,6 +17,8 @@ uv run jev-router explain request.json --pressure openai=0.8
 uv run jev-router quota --poll                # runs each enabled quota source once
 uv run jev-router sessions list               # strict session bindings
 uv run jev-router sessions show <id>
+uv run jev-router decisions -n 20             # active vs shadow answers, lane, quota
+uv run jev-router decisions replay <id>       # re-run the selection from the row
 ```
 
 Eval scripts all spend real API quota. `run_eval.py` and `tune.py` need
@@ -29,7 +31,10 @@ uv run python evals/run_eval.py --group final --repeats 3
 uv run python evals/run_eval.py --variants router_yaml --stability
 uv run python evals/run_eval.py --variants router_yaml --control shuffled-labels
 uv run python evals/run_eval.py --variants router_yaml --control constant-state
+uv run python evals/run_eval.py --variants router_yaml --control constant-policy
+uv run python evals/run_eval.py --variants router_yaml --control length-only
 uv run python evals/run_eval.py --variants router_yaml --slice-holdout agentic
+uv run python evals/run_eval.py --packet --repeats 3   # the four arms of spec 13.4
 uv run python evals/run_outcomes.py --samples 3 --max-calls 400
 uv run python evals/tune.py --variant router_yaml --samples 5000
 uv run python evals/tune.py --variant router_yaml --slice-holdout chat
@@ -37,6 +42,16 @@ uv run python evals/tune.py --variant router_yaml --slice-holdout chat
 uv sync --group evals                         # datasets, for the importer only
 uv run python evals/import_public.py --limit 25
 uv run python evals/run_eval.py --variants router_yaml --public evals/cases_public.yaml
+```
+
+These two do no live work of their own. The session runner needs a router and
+an upstream to do anything; `--list` and `--dry-run` need neither.
+
+```sh
+uv run python evals/quota_sim.py --demo        # simulated, never an observed delta
+uv run python evals/run_sessions.py --list
+uv run python evals/run_sessions.py --dry-run
+uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
 ```
 
 ## Architecture
@@ -49,13 +64,20 @@ uv run python evals/run_eval.py --variants router_yaml --public evals/cases_publ
 - `state.py` — state builders, the registry, the paste/continuation split.
 - `policy.py` — confidence gate, rule matching, route resolution, quota
   threshold shifts, route reordering, caps, floors, capability filters, effort
-  clamping. Pure: no network, no clock, no database.
+  clamping. Also `select`, the one admission function of spec 8.1, the quality
+  lane guard, the distribution helpers (`p_hard`, `p_nontrivial`) and the
+  action-equivalence gate. Pure: no network, no clock, no database.
+- `semantic.py` — packet versions, the active/shadow split, `SemanticResult`,
+  and `replay_decision`, which re-runs a stored decision from its own row.
 - `providers.py` — one circuit breaker per provider, in memory, plus the
   merge of quota pressure and health pressure.
 - `quota.py` — the quota source registry (`command`, `static`, `none`), the
-  background poller, and `compute_pressure`, which is pure.
+  background poller, coherent overlapping windows, `snapshot_status`, and
+  `compute_pressure`, which is pure.
 - `deciders/base.py` — the `Decision` dataclass and the decider registry.
-- `deciders/jev.py` — calls Jev, evaluates the policy, falls back on any error.
+- `deciders/jev.py` — `classify` makes one batched call and returns the
+  answers; `decide` runs the cross-model policy over them. Falls back on any
+  error.
 - `deciders/rules.py` — no-network decider that guesses from counts.
 - `pins.py` — sqlite: pins, decision log, feedback, conversation key, and the
   forward-only column migration.
@@ -63,21 +85,24 @@ uv run python evals/run_eval.py --variants router_yaml --public evals/cases_publ
   on the connection `pins.py` owns. Conditional version writes, the in-process
   execution claim, the startup guard, the binding digest, the resolve request
   schema and the 13 error codes. Legacy pins are never read or written here.
+  Also the decision-log columns the semantic packet and the quality guard add,
+  in a map of their own.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
 - `security.py` — router-endpoint authentication, request-size and concurrency limits.
 - `deciders/validation.py` — validates provider answer shape and numeric bounds.
-- `cli.py` — serve, check-config, explain, quota, decisions, feedback, prune.
+- `cli.py` — serve, check-config, explain, quota, sessions, decisions,
+  `decisions replay`, feedback, prune.
 
 Request flow: `app.chat_completions` → `features.extract_features` →
 `pins.conversation_key` and a pin lookup → `deciders.jev` → `state.build_state`
-→ Jev → `policy.evaluate` (with the pressures) → `app.forward_alias`, which
+→ Jev → `policy.select` (with the pressures) → `app.forward_alias`, which
 walks the route's entries and applies `policy.apply_effort` to each.
 
 Strict sessions (`session_mode: strict`, `docs/R2_SPEC.md`, `docs/SESSION_ROUTING.md`)
 take a second path: `app.resolve` → `features.extract_features` →
-`deciders.jev` → `policy.evaluate` → `policy.context_budget` → a `prepared`
+`deciders.jev` → `policy.select` → `policy.context_budget` → a `prepared`
 row in `sessions.py`. Execution goes through `app.managed_execution`, which is
 recognised before the "a concrete model means passthrough" branch.
 
@@ -87,8 +112,11 @@ recognised before the "a concrete model means passthrough" branch.
 
 `evals/`
 
-- `common.py` — cases, slices, splits, disk cache, API clients, the upstream
-  `Budget`, `ROUTE_COST`, and the two control transforms.
+- `common.py` — cases, slices, splits, atomic `labels`, disk cache, API
+  clients, the upstream `Budget`, `ROUTE_COST`, and the two case-level control
+  transforms.
+- `manifest.py` — the run manifest of spec 13.1, written beside every run. A
+  cache-only run is labelled `policy_replay`.
 - `metrics.py` — pure. Wilson intervals, ECE, the cost-matched random baseline,
   Gap@Oracle and Gain@BestSingle, the seeded perturbations, the paired
   bootstrap, the chance and majority-class rates.
@@ -98,7 +126,15 @@ recognised before the "a concrete model means passthrough" branch.
 - `generators.py` — seeded synthetic material for the long-context cases.
 - `variants.yaml` — overlays on `router.yaml`, one per experiment.
 - `run_eval.py` — classification and routing scores, slices, controls,
-  stability, calibration.
+  stability, calibration, per-question agreement, and `--packet` for the four
+  arms of spec 13.4.
+- `quota_sim.py` — chronological replay of quota windows, resets, stale
+  telemetry and outages. Output is labelled `simulated`.
+- `session_tasks/` + `run_sessions.py` + `session_client.py` — eight pilot
+  coding sessions across the six families of spec 13.5, in disposable
+  directories with a scrubbed environment and hard caps.
+- `REPORT_TEMPLATE.md` — keeps policy replay, live qualification, coding
+  outcomes and subscription observations apart.
 - `outcome_specs.yaml` + `checks.py` + `run_outcomes.py` — grade real replies,
   k samples per route, winner flip rate, truncation, judge-against-check.
 - `tune.py` — search the policy numbers. Also `--slice-holdout`.
@@ -156,14 +192,45 @@ recognised before the "a concrete model means passthrough" branch.
 - `session_requests` distinguishes accepted, completed, rejected, stream
   failure and unknown. A repeated id never calls the provider again, and a
   record whose outcome is unknown is never pruned.
+
+- A shadow question is measured and never read. It rides in the same batched
+  call, is validated on its own, and a malformed one is dropped and counted.
+  It may not weaken the validation of the active answers, and it may not reach
+  `policy.evaluate`. Active and shadow sets stay disjoint, and an alias that
+  routes on a question may not also be measuring it.
+- `classify` returns answers and chooses nothing. Turn assessment must never
+  be able to reselect a model.
+- A distribution condition (`p_hard_*`, `p_nontrivial_*`) lives in a named
+  ruleset, never in the shipped `policy` block. `distribution_policy` decides
+  what it may do: `off` never fires, `shadow` records the route with and
+  without it, `active` lets it choose. No vector means the comparison cannot
+  be made, so it reads as "no". Never multiply separate Nouls into a
+  pseudo-probability.
+- Capability and adequacy are different filters. A rule that names a lane may
+  only be moved inside that lane: a threshold shift, an `equivalent` promotion
+  and a capability replacement all have to land on a qualified pair, or the
+  adequate provider is kept and the deferral is recorded. A route's failure
+  fallbacks are not lane members. Record `evidence: weak` whenever "the same
+  adequacy under both policies" cannot be claimed.
+- Every qualified pair names where its evidence is. A lane entry with no
+  `qualification_ref` is a guess and config load refuses it.
+- A provider's overlapping windows stay separate records. Pressure is computed
+  per fresh window and the highest wins; never pair one window's usage with
+  another's reset. Stale, unknown and errored readings contribute 0 and stay
+  visible as themselves. Unknown is never reported as unused capacity.
+- A decision must be replayable from its own row: config hash, answers,
+  request facts and the pressure it was taken under, with no prompt. Replay at
+  the recorded pressure, and say so when the config hash has moved rather than
+  claiming a match.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
   on non-streamed replies, and must yield chunks unchanged. An upstream
   fallback is chosen on the response status, before anything is streamed;
   never switch model after a byte has been sent.
 - sqlite migrations are forward-only and additive. Add a nullable column to
-  `ADDED_COLUMNS` in `pins.py`, or in `sessions.py` for a session-era column;
-  never drop or rewrite one. A database from an older version must keep
-  working.
+  `ADDED_COLUMNS` in `pins.py`, or to one of the maps in `sessions.py` for a
+  later column; never drop or rewrite one. Each release keeps its own map so
+  its migration list says exactly what it added. A database from an older
+  version must keep working.
 - `tune.py` proposes a diff and never writes `router.yaml`. It replays a
   decision at the pressure it was taken under, so a deliberate quota saving is
   not scored as a classifier error.
@@ -174,9 +241,24 @@ recognised before the "a concrete model means passthrough" branch.
   one that decides.
 - Never report a number without its interval, and never draw a conclusion from
   a slice table: the largest slice is 46 cases and the smallest is 10.
-- Rerun both controls after any change to the harness. If a shuffled-label run
-  scores above chance or a constant-state run beats the majority class, the
-  harness is broken and every other number is void.
+- Rerun all four controls after any change to the harness. If a shuffled-label
+  run scores above chance, a constant-state run beats the majority class, or a
+  constant-policy or length-only run matches the real ladder, the harness is
+  broken and every other number is void.
+- Every run writes a manifest. A cache-only run is `policy_replay`, which says
+  what the policy does with answers somebody else paid for: it is not a live
+  classifier or latency measurement. A capped or unfinished unit of work is
+  named in the manifest, never dropped.
+- A simulator result is labelled `simulated` and is never an observed
+  subscription delta. `ROUTE_COST` orders routes; it never measures a quota
+  saving.
+- A session task's check files are hidden from the session, and its
+  `expect_fail_before` is verified against the untouched repository. Sessions
+  run in disposable directories with a scrubbed environment; no API key is
+  inherited by generated code, and nothing may be pointed at a real repository.
+- A `labels:` block on a case is an added annotation. It restates nothing from
+  `expected`, and an outcome is never relabelled to make a new question or a
+  newly admitted model score better.
 - Eval runs cost quota. Use the disk cache, keep concurrency low, and give
   `run_outcomes.py` a `--max-calls` budget. It stops itself if a route's own
   median latency triples or replies come back empty, and resumes from the cache.
