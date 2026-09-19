@@ -319,6 +319,28 @@ RECONCILE_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# What keeping Codex's own compaction working adds (owner decision,
+# 2026-09-19). Nullable, additive, never dropped, like every list above.
+# NULL reads as "this session has never compacted", which is what every row
+# written before this release means.
+COMPACTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "sessions": [
+        # How many times the provider has folded this session's history up.
+        # Anchors recorded in an earlier epoch no longer name anything, so
+        # they are not position-validated and not required.
+        ("compaction_epoch", "INTEGER"),
+        ("compacted_at", "REAL"),
+        # `known` once a compaction completed, `unknown` when one was sent and
+        # nothing came back. An unknown outcome stops further effort changes
+        # the same way an unreadable reply does.
+        ("compaction_state", "TEXT"),
+    ],
+    # The epoch a plan was made in. A plan from an earlier epoch stays in the
+    # ledger exactly as it was; it is simply no longer something a replayed
+    # history has to carry.
+    "turn_plans": [("compaction_epoch", "INTEGER")],
+}
+
 # The decision-log events a session produces.
 EVENT_ADMISSION = "admission"
 EVENT_EXECUTION = "execution"
@@ -573,6 +595,7 @@ class Sessions:
             self.migrated_semantic = migrate(self._conn, SEMANTIC_COLUMNS)
             self.migrated_effort = migrate(self._conn, EFFORT_COLUMNS)
             self.migrated_reconcile = migrate(self._conn, RECONCILE_COLUMNS)
+            self.migrated_compaction = migrate(self._conn, COMPACTION_COLUMNS)
             self.unique_turn_plans = self._take_turn_plan_index()
             self._conn.commit()
         if guard and self.cfg.enabled:
@@ -996,20 +1019,48 @@ class Sessions:
             "effort_lineage": after.get("effort_lineage") or "known",
         }
 
-    def applied_updates(self, session_id: str) -> list[dict[str, Any]]:
-        """Every effort update this session's history is supposed to carry.
+    def applied_updates(
+        self, session_id: str, epoch: int = 0
+    ) -> list[dict[str, Any]]:
+        """Every effort update this session's history is still supposed to carry.
 
         A change that reached the provider is part of the transcript whatever
         happened afterwards, so accepted, confirmed and ambiguous rows all
         count. A plan that was never sent, or definitively refused before
         acceptance, is not in the history and is not expected back.
+
+        Neither is one from before a compaction. The provider folded that part
+        of the history up, the position its anchor names no longer exists, and
+        the client cannot put the item back where it was. Those rows stay in
+        the ledger and are simply not asked for again.
         """
         return [
             row
             for row in self.plans(session_id, limit=500)
             if row.get("action") == "change_effort"
             and row.get("status") in ("accepted", "confirmed", "outcome_unknown")
+            and int(row.get("compaction_epoch") or 0) >= epoch
         ]
+
+    def compact(self, session_id: str, state: str = "known") -> int:
+        """Open a new compaction epoch on this session, and say which one.
+
+        Called when a compaction request has been accepted, because from that
+        moment the router can no longer honestly require the old anchors. It
+        only ever relaxes what a later request is checked against.
+        """
+        row = self.get(session_id)
+        if row is None:
+            return 0
+        epoch = int(row.get("compaction_epoch") or 0) + 1
+        self.update(
+            session_id,
+            row["version"],
+            compaction_epoch=epoch,
+            compacted_at=self.clock(),
+            compaction_state=state,
+        )
+        return epoch
 
     # --- decision log ---------------------------------------------------
 
@@ -1203,6 +1254,10 @@ def contract(row: dict[str, Any], quota_status: dict[str, str]) -> dict[str, Any
             "base_effort": row["base_effort"],
             "effective_effort": row["effective_effort"] or row["base_effort"],
             "adaptation": row.get("adaptation_mode") or "off",
+            # How many times this session's history has been folded up. A
+            # client that restarts needs it to know which of its recorded
+            # update positions still mean anything.
+            "compaction_epoch": int(row.get("compaction_epoch") or 0),
         },
         "decision": {
             "rule": row["decision_rule"],

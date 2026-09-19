@@ -31,16 +31,32 @@ CHAT = "openai-chat"
 
 UPDATE_TYPE = "configuration_update"
 
-# Settings that would let the provider rewrite the history behind our back.
-# The initial native experiment refuses them outright rather than trying to
-# reapply updates after a compaction it did not perform (spec 10.3).
+# The provider's own compaction items, measured against this deployment on
+# 2026-09-19. A `compaction_trigger` is the client asking for the history so
+# far to be folded up, and it has to be the last input item; the reply is one
+# `compaction` item whose `encrypted_content` is opaque. The router never
+# reads inside either of them and never writes one.
+TRIGGER_TYPE = "compaction_trigger"
+COMPACTION_TYPE = "compaction"
+
+# Settings that would let the provider rewrite the history with no request of
+# its own for the router to see. Still refused: the owner asked for Codex's
+# native compaction, which is a request like any other, not for an automatic
+# rewrite nobody observes (spec 10.3, and the owner decision of 2026-09-19).
+#
+# `compaction_trigger` is deliberately not here. It is the name of the
+# supported flow, and it arrives as an input item, not as a request field.
 COMPACTION_FIELDS = (
     "context_management",
     "compaction",
     "auto_compaction",
-    "compaction_trigger",
     "auto_truncation",
 )
+
+# What the client may call a request that is maintenance rather than a turn.
+# A compaction is the only one so far.
+REQUEST_KIND_HEADER = "x-router-request-kind"
+COMPACTION_KIND = "compaction"
 
 # The most of a reply the observer will hold while looking for one event
 # boundary. Past this the partial is dropped and lineage is unknown.
@@ -64,6 +80,22 @@ def update_effort(item: Any) -> str | None:
         return None
     effort = reasoning.get("effort")
     return effort if isinstance(effort, str) else None
+
+
+def is_trigger(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("type") == TRIGGER_TYPE
+
+
+def is_compaction(item: Any) -> bool:
+    """One of the provider's folded-up histories. Opaque, and left alone."""
+    return isinstance(item, dict) and item.get("type") == COMPACTION_TYPE
+
+
+def last_compaction_position(items: list[Any]) -> int:
+    for i in range(len(items) - 1, -1, -1):
+        if is_compaction(items[i]):
+            return i
+    return -1
 
 
 def is_user_message(item: Any) -> bool:
@@ -154,21 +186,75 @@ def check_base_effort(body: dict[str, Any], base: str | None) -> str:
 
 
 def check_compaction(body: dict[str, Any]) -> str:
-    """Automatic compaction and truncation are refused for these sessions."""
+    """Automatic compaction and truncation are refused for these sessions.
+
+    What is refused is a rewrite with no request of its own: `truncation:
+    auto` and the automatic-management fields. A compaction the client asks
+    for is a request the router can see, record an epoch for and pass through,
+    and that one is supported.
+    """
     if str(body.get("truncation") or "") == "auto":
         return (
-            "truncation 'auto' lets the provider drop history the effort ledger "
-            "has to be able to find again; it is not supported while the "
-            "between-turn experiment is active on this session"
+            "truncation 'auto' lets the provider drop history with no request "
+            "of its own for the ledger to see; it is not supported while the "
+            "between-turn experiment is active on this session. A compaction "
+            "the client asks for is"
         )
     present = [name for name in COMPACTION_FIELDS if body.get(name) is not None]
     if present:
         return (
-            f"{', '.join(present)} rewrites the history behind the ledger and is "
-            "not supported while the between-turn experiment is active on this "
-            "session"
+            f"{', '.join(present)} rewrites the history with no request of its "
+            "own for the ledger to see and is not supported while the "
+            "between-turn experiment is active on this session"
         )
     return ""
+
+
+def compaction_request(body: dict[str, Any], headers: Any = None) -> str:
+    """Whether this request is a compaction, and how we can tell.
+
+    Two shapes, both measured against Codex 0.155.1 and this deployment on
+    2026-09-19:
+
+    - `provider_trigger`: the last input item is a `compaction_trigger`, which
+      is the provider's own documented flow. The reply is a `compaction` item.
+    - `client_declared`: the client said so in `X-Router-Request-Kind`. Codex's
+      own compaction is an ordinary Responses request carrying a summarising
+      prompt, so nothing in the body distinguishes it and the client's word is
+      the only signal there is. It is the same kind of trusted-adapter
+      assertion as a reported turn boundary (spec 10.4), and it can only ever
+      relax what a later request is checked against, never tighten it.
+
+    An empty string means this is an ordinary turn.
+    """
+    items = input_items(body)
+    if items and is_trigger(items[-1]):
+        return "provider_trigger"
+    declared = ""
+    if headers is not None:
+        try:
+            declared = str(headers.get(REQUEST_KIND_HEADER, "") or "").strip().lower()
+        except Exception:  # noqa: BLE001 - a header mapping that cannot be read says nothing
+            declared = ""
+    if declared == COMPACTION_KIND:
+        return "client_declared"
+    return ""
+
+
+def check_trigger_placement(body: dict[str, Any]) -> str:
+    """A `compaction_trigger` has to be the final input item.
+
+    The provider says so itself, in so many words, with a 400. Saying it here
+    costs nothing and means a client learns it before a request is forwarded.
+    """
+    items = input_items(body)
+    stray = [i for i, item in enumerate(items) if is_trigger(item)]
+    if not stray or stray == [len(items) - 1]:
+        return ""
+    return (
+        f"a {TRIGGER_TYPE!r} item is at position {stray[0]} of {len(items)}; "
+        "the provider requires it to be the final input item"
+    )
 
 
 def validate_full_history(
@@ -179,11 +265,20 @@ def validate_full_history(
 ) -> HistoryCheck:
     """Every earlier update where it was, and at most one new one (F08, F09).
 
-    `ledger` is the applied updates, oldest first, each carrying the position
-    and prefix hash it was accepted at. `expected` is the effort this turn's
-    plan asks for, or None when the plan changes nothing.
+    `ledger` is the applied updates of the **current compaction epoch**,
+    oldest first, each carrying the position and prefix hash it was accepted
+    at. Updates from before a compaction are not in it: the provider folded
+    that part of the history up and the positions they were anchored at no
+    longer name anything. `expected` is the effort this turn's plan asks for,
+    or None when the plan changes nothing.
+
+    An update item sitting before a compaction item in the replayed history is
+    neither required nor refused, for the same reason: it belongs to a window
+    that has been folded up, and the router will not pretend to know what the
+    provider kept of it.
     """
-    found = update_positions(items)
+    folded = last_compaction_position(items)
+    found = [at for at in update_positions(items) if at > folded]
     claimed: set[int] = set()
     after = -1  # the position the ledger has reached so far
     for row in ledger:
@@ -238,6 +333,15 @@ def validate_full_history(
         return HistoryCheck(ok=True, matched=matched)
 
     if len(fresh) != 1:
+        if not fresh and any(at <= folded for at in update_positions(items)):
+            # The client put the item in, but on the wrong side of the folded
+            # history, which the provider refuses outright.
+            return HistoryCheck.refused(
+                f"this turn's effort update is before the compaction item at "
+                f"position {folded}; it has to come after the history the "
+                "provider has folded up, immediately before the new user "
+                "message"
+            )
         return HistoryCheck.refused(
             f"this turn's plan expects exactly one new effort update and the "
             f"request carries {len(fresh)}"
@@ -279,6 +383,18 @@ def _unanchored(
 
 def _placement(items: list[Any], at: int) -> str:
     """Immediately before the designated new user message, and not adjacent."""
+    if at < last_compaction_position(items):
+        # Measured on 2026-09-19: the provider answers an update placed before
+        # a compaction item with "The 'configuration_update' item type is not
+        # supported with compaction without a subsequent configuration
+        # update." A new update belongs after the folded-up history, which is
+        # also where "immediately before the new user message" puts it.
+        return (
+            f"the new effort update at position {at} is before the compaction "
+            "item at position "
+            f"{last_compaction_position(items)}; an update has to come after "
+            "the history the provider has folded up"
+        )
     if at + 1 >= len(items) or not is_user_message(items[at + 1]):
         return (
             f"the new effort update at position {at} is not immediately before a "

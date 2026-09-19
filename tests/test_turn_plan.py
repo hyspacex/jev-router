@@ -408,6 +408,12 @@ async def test_f14_malformed_output_keeps_the_current_effort_not_a_lower_one(ser
 
 
 # --- the context safety limit (F18) ---------------------------------------
+#
+# F18 is unchanged by the owner decision of 2026-09-19: near the negotiated
+# window the experiment still stops changing effort, and the binding, the
+# model and the ledger are all left where they are. What changed is what the
+# client may do about it - a compaction is now allowed to proceed rather than
+# being refused. That half is covered in `test_effort_execution.py`.
 
 
 @respx.mock

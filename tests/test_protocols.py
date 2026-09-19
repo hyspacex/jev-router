@@ -130,6 +130,63 @@ def test_automatic_truncation_and_every_compaction_field_are_named():
     assert P.check_compaction({}) == ""
 
 
+def test_a_compaction_the_client_asks_for_is_not_one_of_those_fields():
+    """Owner decision, 2026-09-19. The explicit flow is an item, not a field."""
+    assert "compaction_trigger" not in P.COMPACTION_FIELDS
+    assert P.check_compaction({"input": [{"type": "compaction_trigger"}]}) == ""
+
+
+def test_a_compaction_request_is_recognised_by_its_trigger_or_by_the_client():
+    trigger = {"input": [{"role": "user", "content": "hi"}, {"type": "compaction_trigger"}]}
+    assert P.compaction_request(trigger) == "provider_trigger"
+    assert P.compaction_request({"input": [{"role": "user", "content": "hi"}]}) == ""
+    declared = {"x-router-request-kind": "compaction"}
+    assert P.compaction_request({"input": []}, declared) == "client_declared"
+    assert P.compaction_request({"input": []}, {"x-router-request-kind": "turn"}) == ""
+    assert P.compaction_request({"input": []}, None) == ""
+
+
+def test_a_trigger_has_to_be_the_last_item():
+    ok = {"input": [{"role": "user", "content": "hi"}, {"type": "compaction_trigger"}]}
+    assert P.check_trigger_placement(ok) == ""
+    bad = {"input": [{"type": "compaction_trigger"}, {"role": "user", "content": "hi"}]}
+    assert "final input item" in P.check_trigger_placement(bad)
+    assert P.check_trigger_placement({"input": []}) == ""
+
+
+def test_an_update_before_a_compaction_item_is_refused():
+    """The provider says so with a 400; this says it before forwarding."""
+    items = [
+        P.configuration_update("high"),
+        {"type": "compaction", "id": "cmp_1", "encrypted_content": "OPAQUE"},
+        {"role": "user", "content": "carry on"},
+    ]
+    check = P.validate_full_history(items, [], expected="high")
+    assert not check.ok
+    assert "before the compaction item" in check.reason
+
+
+def test_an_update_after_a_compaction_item_is_where_it_belongs():
+    items = [
+        {"type": "compaction", "id": "cmp_1", "encrypted_content": "OPAQUE"},
+        P.configuration_update("high"),
+        {"role": "user", "content": "carry on"},
+    ]
+    check = P.validate_full_history(items, [], expected="high")
+    assert check.ok and check.position == 1
+
+
+def test_an_update_inside_a_folded_up_window_is_neither_required_nor_refused():
+    """Nothing before a compaction item is asked for or complained about."""
+    items = [
+        P.configuration_update("medium"),
+        {"role": "user", "content": "the old window"},
+        {"type": "compaction", "id": "cmp_1", "encrypted_content": "OPAQUE"},
+        {"role": "user", "content": "the new one"},
+    ]
+    assert P.validate_full_history(items, [], expected=None).ok
+
+
 def test_the_base_effort_check_wants_the_field_present():
     assert P.check_base_effort({"reasoning": {"effort": "low"}}, "low") == ""
     assert "does not move" in P.check_base_effort({"reasoning": {"effort": "high"}}, "low")

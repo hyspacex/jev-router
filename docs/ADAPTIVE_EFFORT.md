@@ -437,9 +437,13 @@ Measured against 0.155.1, and worth knowing before reading a result:
   positions from the router's own ledger.
 - It sends `session-id`, `thread-id` and `prompt_cache_key`, all the same
   value, and `codex exec resume` keeps it. That is the conversation identity.
-- It sends an `x-codex-beta-features: remote_compaction_v2` header. The
-  adapter drops it: provider-side compaction would rewrite a history the
-  ledger has to be able to find again.
+- It sends an `x-codex-beta-features: remote_compaction_v2` header, which the
+  adapter forwards. On 0.155.1 the header is vestigial: `codex features list`
+  reports the feature as removed, and the client compacts locally whatever the
+  header says. See "Compaction" below.
+- It marks a compaction with `x-codex-turn-metadata`, whose `request_kind` is
+  `"compaction"` rather than `"turn"`. That header is the only way to tell a
+  compaction from a new user turn, so the adapter reads it.
 - Its `GET /v1/models` expects a Codex-shaped body and logs
   `failed to refresh available models` against the router's OpenAI-shaped one.
   It is noise; the conversation works.
@@ -449,26 +453,118 @@ Measured against 0.155.1, and worth knowing before reading a result:
 
 ## Compaction
 
-Automatic compaction and truncation are refused for a session running the
-experiment: `truncation: "auto"`, any `context_management`, `compaction`,
-`auto_compaction`, `compaction_trigger` or `auto_truncation` field, and the
-standalone `POST /v1/responses/compact` endpoint. All of them let the provider
-rewrite a history the ledger has to be able to find again.
+Owner decision, 2026-09-19: a compaction the client asks for stays exactly
+what the client does natively. The router passes it through, records that it
+happened, and never compacts, summarises, translates or drops a provider item
+itself, and never changes model (I11).
 
-Use bounded sessions that do not need compaction. Adaptation also stops on its
-own before `thresholds.context_safety_fraction` of the negotiated window: the
-plan comes back `blocked`, the session carries on unchanged, and the ledger is
-untouched. Supporting the provider's explicit compaction-trigger flow needs
-its own fixtures and its own qualification; the router will not build a
-compactor.
+### What is actually on the wire
+
+Measured on 2026-09-19 with a logging pass-through in front of codex-cli
+0.155.1, and with direct probes at the CLIProxyAPI deployment. Both are
+written up in the qualification report.
+
+**Codex does not use the provider's compaction flow at all.** It sends
+`x-codex-beta-features: remote_compaction_v2` on every request, but
+`codex features list` reports `remote_compaction_v2` as **removed** on this
+build, and enabling it changes nothing. What it really does when it runs out
+of room is:
+
+1. Send an ordinary `POST /v1/responses` carrying the whole history plus a
+   trailing user message with no id, which asks for a handover note. Nothing
+   in the body says what it is; the only marker is `x-codex-turn-metadata`,
+   whose `request_kind` is `"compaction"` instead of `"turn"` and which
+   carries `compaction: {trigger, reason, implementation: "responses", phase:
+   "pre_turn", strategy: "memento"}`.
+2. Open a new window - `x-codex-window-id` goes from `…:0` to `…:1` - and
+   rebuild its history from scratch around the reply.
+
+It never sends a `compaction_trigger` item, never sets `context_management`,
+never calls `/v1/responses/compact`, and does not replay a provider
+`compaction` item even when one is handed to it. Every effort update item is
+simply gone from the new window.
+
+**The provider does implement the explicit flow**, and the router supports it
+for a client that speaks it: the whole history with `{"type":
+"compaction_trigger"}` as the **final** item, answered by one opaque item,
+`{"id": "cmp_…", "type": "compaction", "encrypted_content": …}` of about
+1.8 kB. A `compaction_trigger` anywhere but last is a 400. A
+`configuration_update` earlier in the history, or next to the trigger, is
+accepted. A `configuration_update` **before** a replayed `compaction` item is
+a 400; after it is fine.
+
+**An effort update does not survive a compaction.** Replaying a compaction
+built from a history that carried an update to `high` produced the same
+reasoning work as the base arm (73, 71 tokens against 65, 94 at base and 121,
+132 with the update); a fresh update placed after the compaction item restored
+it (118, 112). Two samples an arm, no interval: it is consistent with the
+protocol, and it is not a measurement anybody should lean on.
+
+### What the router does with it
+
+- **The adapter** forwards `x-codex-beta-features` untouched, reads
+  `request_kind` out of Codex's metadata header, and tells the router this
+  request is maintenance with `X-Router-Request-Kind: compaction`. It asks for
+  no plan, spends no classifier call and inserts no item. A compaction is not
+  a turn boundary.
+- **The router** treats a compaction as a managed maintenance request of the
+  same session: same binding, no admission, no turn plan, no effort decision.
+  It recognises one either by its shape - a trailing `compaction_trigger` - or
+  by the client's word, which is the same kind of trusted-adapter assertion as
+  a reported turn boundary, and which can only ever relax what a later request
+  is checked against.
+- **What is still refused**: `truncation: "auto"` and the automatic-management
+  fields `context_management`, `compaction`, `auto_compaction` and
+  `auto_truncation`. Those rewrite a history with no request of their own for
+  the ledger to see.
+
+### The compaction epoch
+
+An accepted compaction opens a new epoch on the session, recorded in
+`sessions.compaction_epoch` and stamped on every plan. In the new epoch:
+
+- updates from earlier epochs are no longer position-validated and no longer
+  required in a replay, because the positions they were anchored at no longer
+  name anything. They stay in the ledger; they simply stop being asked for.
+- whatever can still be honestly checked still is: every update made **since**
+  the last compaction has to be in the history, at its recorded position, with
+  its recorded prefix hash, and the router is still the only owner of these
+  items. An update sitting before a compaction item is refused before it is
+  forwarded, because the provider refuses it too.
+- the expected and confirmed effective effort go back to the base effort,
+  which is what the measurement above says is true. `sessions show` says so
+  in words rather than leaving it to be inferred.
+- the next eligible new user turn may plan the effort again, which is the
+  post-compaction reapplication of spec 10.3.
+- an adapter that restarts reads the epoch back from
+  `GET /router/sessions/{id}` and restores only that epoch's update positions.
+
+If a compaction is sent and nothing comes back to say it finished, the epoch
+still moves - it only relaxes what a replay is checked against - and the
+session is marked `compaction_state: unknown`. Further effort changes stop
+until somebody reconciles, exactly as they do for an unreadable reply.
+
+Adaptation still stops on its own before
+`thresholds.context_safety_fraction` of the negotiated window (F18): the plan
+comes back `blocked`, the session carries on unchanged, and the ledger is
+untouched. What changed is that the client's way out of a full window - to
+compact - is now allowed to proceed.
+
+### What is still untested here
+
+`POST /v1/responses/compact` is handled as a maintenance request, and the
+CLIProxyAPI deployment of 2026-09-19 answers it with a **404**. Nothing has
+exercised it against a provider that implements it. The provider's explicit
+trigger flow has been exercised by direct probe and by offline fixtures, and
+by no real client: Codex does not speak it.
 
 ## The ledger
 
 `turn_plans` is one row per turn plan. It holds hashes and identifiers: the
 turn and plan ids, the sequence, from and to effort, the base effort, the
 history anchor or parent response id, expected and confirmed effective effort,
-the status, a request fingerprint and the recommendation. No transcript, no
-message text, no reasoning text, no keys.
+the status, the compaction epoch it was made in, a request fingerprint and the
+recommendation. No transcript, no message text, no reasoning text, no keys.
 
 | Status | What it means |
 | --- | --- |

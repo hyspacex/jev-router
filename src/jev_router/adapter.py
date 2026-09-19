@@ -98,12 +98,22 @@ CONVERSATION_BODY_FIELDS = (
     "conversation",
 )
 
-# A header that asks the provider to compact the history on its own. The
-# ledger has to be able to find every update again at the position it was
-# accepted at, so this hop drops the opt-in rather than letting a rewrite it
-# cannot see happen behind the ledger's back. The body fields that mean the
-# same thing are refused by the router itself (protocols.check_compaction).
-COMPACTION_OPT_IN_HEADERS = ("x-codex-beta-features",)
+# Codex's own metadata about what a request is. It carries, among other
+# identifiers, `request_kind`, which is `"turn"` for ordinary work and
+# `"compaction"` when Codex is folding its own history up. Measured against
+# codex-cli 0.155.1 on 2026-09-19: that header is the only thing that
+# distinguishes a compaction from a turn, because the request itself is an
+# ordinary `POST /v1/responses` whose last item is a summarising user message.
+CODEX_TURN_METADATA = "x-codex-turn-metadata"
+CODEX_COMPACTION_KIND = "compaction"
+
+# Codex's beta opt-in header. It used to be dropped here, on the grounds that
+# provider-side compaction would rewrite a history the ledger has to be able
+# to find again. Owner decision, 2026-09-19: compaction stays exactly what
+# Codex does, so the header is forwarded untouched like every other one. (On
+# 0.155.1 it is also vestigial: `codex features list` reports
+# `remote_compaction_v2` as removed, and the client compacts locally whatever
+# the header says.)
 
 # How much of a user message is sent to the router as turn evidence. The
 # router cuts it again to the admission packet's bounds; this is a first bound
@@ -185,6 +195,10 @@ class Conversation:
     effective_effort: str = ""
     # The provider's own last reported counts, for the context estimate.
     last_total_tokens: int = 0
+    # How many times this conversation's history has been folded up. Updates
+    # placed in an earlier epoch are not replayed: their indexes belong to a
+    # window the provider no longer has.
+    epoch: int = 0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     @property
@@ -262,6 +276,27 @@ def item_text(item: Any) -> str:
         if isinstance(part, dict) and isinstance(part.get("text"), str):
             parts.append(part["text"])
     return "\n".join(parts)
+
+
+def codex_compaction(headers: dict[str, str]) -> bool:
+    """Whether Codex says this request is its own compaction.
+
+    Read from `x-codex-turn-metadata`, which is identifiers and flags, never
+    message text. Codex 0.155.1 sets `request_kind` to `"compaction"` and adds
+    a `compaction` block naming the trigger and the reason; everything else it
+    sends is a `"turn"`. This hop reads those two field names and nothing
+    else, and an unreadable header simply means "an ordinary turn".
+    """
+    raw = {k.lower(): v for k, v in headers.items()}.get(CODEX_TURN_METADATA, "")
+    if not raw:
+        return False
+    try:
+        meta = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(meta, dict):
+        return False
+    return str(meta.get("request_kind") or "") == CODEX_COMPACTION_KIND
 
 
 def pending_tool_calls(items: list[Any]) -> int:
@@ -352,7 +387,7 @@ class Adapter:
                 f"conv={conv.short} resumed session={conv.session_id} "
                 f"model={conv.wire_model} base={conv.base_effort} "
                 f"effective={conv.effective_effort} "
-                f"updates={len(conv.updates)}"
+                f"updates={len(conv.updates)} epoch={conv.epoch}"
             )
             return
         if not _is_unknown_session(resumed):
@@ -417,12 +452,18 @@ class Adapter:
             return
         row = report.json()
         plans = row.get("turn_plans") or []
+        conv.epoch = int(row.get("compaction_epoch") or 0)
         restored: list[Update] = []
         unplaced = 0
         for plan in sorted(plans, key=lambda p: p.get("sequence") or 0):
             if plan.get("action") != "change_effort":
                 continue
             if plan.get("status") not in ("accepted", "confirmed"):
+                continue
+            if int(plan.get("compaction_epoch") or 0) < conv.epoch:
+                # Placed before a compaction. The window it was anchored in
+                # has been folded up, so there is no index to put it back at
+                # and nothing is expecting it.
                 continue
             at = plan.get("anchor_position")
             effort = str(plan.get("to_effort") or "")
@@ -487,7 +528,20 @@ class Adapter:
 
         items = P.input_items(body)
         at = P.last_user_position(items)
-        fresh_user = at >= 0 and at == len(items) - 1 and item_key(items[at]) != conv.last_user_key
+        # Codex's own compaction is an ordinary Responses request whose last
+        # item is a summarising user message it never keeps, so without this
+        # it would look exactly like a new user turn: a classifier call would
+        # be spent on it and an effort update would be inserted into a request
+        # that exists only to be thrown away.
+        compacting = P.compaction_request(body) or (
+            P.COMPACTION_KIND if codex_compaction(dict(request.headers)) else ""
+        )
+        fresh_user = (
+            not compacting
+            and at >= 0
+            and at == len(items) - 1
+            and item_key(items[at]) != conv.last_user_key
+        )
         # Before anything is decided or paid for: can every update this hop has
         # already placed still go back where it belongs? If the client has
         # rewritten its history, say so now rather than after a classifier call
@@ -501,6 +555,12 @@ class Adapter:
             conv.last_turn_id = turn_id
             conv.last_user_key = item_key(items[at])
             conv.pending_plan = plan
+        elif compacting:
+            # Maintenance, not a turn: no plan, no item, no turn id. It still
+            # replays every update of this epoch, because it carries the
+            # history as it stands right now.
+            turn_id = ""
+            plan = {}
         else:
             # A tool continuation, or this turn's request being sent again
             # after a refusal. Either way it is the same turn: the plan it
@@ -512,8 +572,14 @@ class Adapter:
         forwarded, pending = self.compose(conv, body, plan)
         request_id = f"adapter-{conv.turns:04d}-{conv.requests:04d}-{uuid.uuid4().hex[:8]}"
         conv.requests += 1
-        headers = self.forward_headers(request, conv, request_id, turn_id, plan)
-        action = str(plan.get("action") or ("continuation" if not fresh_user else "-"))
+        headers = self.forward_headers(
+            request, conv, request_id, turn_id, plan, maintenance=compacting
+        )
+        action = str(
+            plan.get("action")
+            or (compacting and "compaction")
+            or ("continuation" if not fresh_user else "-")
+        )
         # What this request is expected to run at. The router's ledger is the
         # authority on what it did run at; this is the trace, not the record.
         effective = str(plan.get("next_effective_effort") or conv.effective_effort)
@@ -524,7 +590,13 @@ class Adapter:
             f"items={len(P.input_items(forwarded))} updates={len(conv.updates)}"
         )
         return await self.forward(
-            conv, forwarded, headers, pending, turn_id, expected=effective
+            conv,
+            forwarded,
+            headers,
+            pending,
+            turn_id,
+            expected=effective,
+            compacting=bool(compacting),
         )
 
     def _check_placeable(self, conv: Conversation, items: list[Any]) -> None:
@@ -668,16 +740,13 @@ class Adapter:
         request_id: str,
         turn_id: str,
         plan: dict[str, Any],
+        maintenance: str = "",
     ) -> dict[str, str]:
         headers = {
             k: v
             for k, v in request.headers.items()
             if k.lower() not in DROP_REQUEST_HEADERS
         }
-        for name in COMPACTION_OPT_IN_HEADERS:
-            value = headers.pop(name, "")
-            if value and "compaction" in value.lower():
-                log.info("dropped the %s compaction opt-in for %s", name, conv.session_id)
         headers["content-type"] = "application/json"
         # The observer needs to read the event stream, so this hop asks for it
         # unencoded. The bytes it hands back are still exactly the bytes it was
@@ -691,6 +760,12 @@ class Adapter:
             headers["x-router-turn"] = turn_id
         if plan.get("plan_id"):
             headers["x-router-turn-plan"] = str(plan["plan_id"])
+        if maintenance:
+            # Codex's compaction looks like an ordinary turn on the wire, so
+            # the router is told what it is. This hop is the only thing in the
+            # chain that can read Codex's metadata header, and reading the
+            # client's own dialect is exactly what it is for.
+            headers[P.REQUEST_KIND_HEADER] = maintenance
         authorization = self.authorization(request)
         if authorization:
             headers["authorization"] = authorization
@@ -725,6 +800,7 @@ class Adapter:
         pending: Update | None,
         turn_id: str,
         expected: str = "",
+        compacting: bool = False,
     ) -> Response:
         content = json.dumps(body).encode()
         started = time.perf_counter()
@@ -771,6 +847,21 @@ class Adapter:
         conv.effective_effort = (
             response.headers.get("x-router-effective-effort") or expected or conv.effective_effort
         )
+        if compacting:
+            # The provider has been asked to fold this history up. Whatever
+            # the client sends next is a new window: the indexes this hop
+            # recorded its items at name nothing in it, so it stops replaying
+            # them. The router's ledger keeps the rows; this is a client
+            # forgetting where it put something that no longer exists.
+            dropped = len(conv.updates)
+            conv.updates = []
+            conv.epoch = int(
+                response.headers.get("x-router-compaction-epoch") or conv.epoch + 1
+            )
+            self.trace(
+                f"conv={conv.short} compacted epoch={conv.epoch} "
+                f"dropped={dropped} effective={conv.effective_effort}"
+            )
 
         observer = P.Observer(
             sse="text/event-stream" in response.headers.get("content-type", "")
