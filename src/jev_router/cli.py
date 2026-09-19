@@ -56,9 +56,24 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     print(f"  upstream:  {config.settings.upstream_base_url}")
     print(f"  listen:    {config.settings.host}:{config.settings.port}")
     print(f"  database:  {config.settings.db_path}")
+    print(f"  providers: {', '.join(config.provider_names())}")
     print(f"  models:    {', '.join(config.models)}")
+    print(f"  routes:    {', '.join(config.routes) or '(none)'}")
     print(f"  questions: {', '.join(config.questions) or '(none)'}")
     print(f"  aliases:   {', '.join(config.aliases) or '(none)'}")
+    for name in config.provider_names():
+        quota = config.quota_cfg(name)
+        source = "none"
+        if quota is not None:
+            source = f"{quota.source} ({'enabled' if quota.enabled else 'disabled'})"
+        models = [m for m in config.models if config.provider_of(m) == name]
+        print(f"  provider {name}: quota={source} models=[{', '.join(models)}]")
+    for name, lane in config.routes.items():
+        rungs = " -> ".join(
+            f"{e.model}({e.effort or '-'})" + ("*" if e.equivalent else "")
+            for e in lane.entries()
+        )
+        print(f"  route {name}: {rungs}")
     key = os.environ.get(config.settings.jev_api_key_env)
     print(f"  {config.settings.jev_api_key_env}: {'set' if key else 'NOT SET (will fail open)'}")
     for alias, acfg in config.aliases.items():
@@ -71,6 +86,85 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def parse_pressures(pairs: list[str] | None, config: RouterConfig) -> dict[str, float]:
+    """`--pressure openai=0.8` a few times over, into a mapping."""
+    out: dict[str, float] = {}
+    known = set(config.provider_names())
+    for pair in pairs or []:
+        name, _, raw = pair.partition("=")
+        name = name.strip()
+        if not name or not raw.strip():
+            raise ValueError(f"--pressure wants provider=number, got {pair!r}")
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError(f"--pressure {name}: {raw!r} is not a number") from None
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"--pressure {name}: {value} is outside 0 to 1")
+        if name not in known:
+            raise ValueError(
+                f"--pressure {name}: unknown provider (known: {', '.join(sorted(known))})"
+            )
+        out[name] = value
+    return out
+
+
+def cmd_quota(args: argparse.Namespace) -> int:
+    """The same report as GET /router/quota, taken with one poll of each source."""
+    from .providers import ProviderBreakers, merge_pressures
+    from .quota import QuotaMonitor
+
+    config = _load(args.config)
+    monitor = QuotaMonitor(config)
+    breakers = ProviderBreakers(config)
+
+    async def run() -> None:
+        for provider in list(monitor.sources):
+            await monitor.poll_once(provider)
+
+    if args.poll:
+        asyncio.run(run())
+
+    report = monitor.report()
+    report["breaker_pressure"] = {
+        name: round(breakers.pressure(name), 4) for name in config.provider_names()
+    }
+    report["effective_pressure"] = {
+        k: round(v, 4)
+        for k, v in merge_pressures(config, monitor.pressures(), breakers).items()
+    }
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+
+    print(f"quota routing: {'on' if report['enabled'] else 'off'}")
+    print(f"demote above:  {report['demote_above']}")
+    if not args.poll:
+        print("(no poll: pass --poll to run the sources once)")
+    for name, row in report["providers"].items():
+        snap = row["snapshot"] or {}
+        used = snap.get("used_percent")
+        expected = snap.get("expected_used_percent")
+        print(
+            f"\n  {name}: source={row['source']} "
+            f"{'enabled' if row['enabled'] else 'disabled'}"
+        )
+        print(f"    pressure:  {row['pressure']:.2f}  ({row['reason']})")
+        print(
+            f"    used:      {'-' if used is None else f'{used:.1f}%'}"
+            f"   expected: {'-' if expected is None else f'{expected:.1f}%'}"
+        )
+        age = row["age_seconds"]
+        print(
+            f"    age:       {'-' if age is None else f'{age:.0f}s'}"
+            f"{'  STALE' if row['stale'] else ''}"
+            f"   polls={row['polls']} errors={row['errors']}"
+        )
+        if row["last_error"]:
+            print(f"    error:     {row['last_error']}")
+    return 0
+
+
 def cmd_explain(args: argparse.Namespace) -> int:
     import httpx
 
@@ -79,6 +173,11 @@ def cmd_explain(args: argparse.Namespace) -> int:
     from .state import build_state
 
     config = _load(args.config)
+    try:
+        pressures = parse_pressures(args.pressure, config)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     body = json.loads(Path(args.request).read_text())
     headers = body.pop("_headers", {}) if isinstance(body, dict) else {}
     features = extract_features(body, headers)
@@ -116,19 +215,39 @@ def cmd_explain(args: argparse.Namespace) -> int:
     async def run() -> Any:
         async with httpx.AsyncClient(timeout=config.settings.jev_timeout_ms / 1000) as client:
             decider = build_decider(
-                alias_cfg.decider or config.settings.decider, config, {"jev_client": client}
+                alias_cfg.decider or config.settings.decider,
+                config,
+                {"jev_client": client, "pressures": lambda: dict(pressures)},
             )
             return await decider.decide(features, alias_cfg)
 
     decision = asyncio.run(run())
     print("\njev answers:")
     print(json.dumps(decision.answers, indent=2, default=str) if decision.answers else "  (none)")
+    if pressures:
+        print("\npressure:")
+        for name, value in sorted(pressures.items()):
+            print(f"  {name}: {value:.2f}")
     print("\ndecision:")
     print(f"  model:    {decision.model}")
     print(f"  effort:   {decision.effort}")
     print(f"  rule:     {decision.rule}")
+    print(f"  route:    {decision.route or '-'}")
     print(f"  reason:   {decision.reason}")
     print(f"  fallback: {decision.fallback}")
+    if decision.plan:
+        rungs = " -> ".join(f"{e.model}({e.effort or '-'})" for e in decision.plan)
+        print(f"  plan:     {rungs}")
+    for shift in decision.shifts:
+        print(
+            f"  shifted:  {shift.rule}.{shift.question} {shift.op} "
+            f"{shift.base:g} -> {shift.effective:g} "
+            f"(pressure {shift.pressure:.2f} on {shift.provider})"
+        )
+    if decision.reordered:
+        print("  reordered: the route was reordered by quota pressure")
+    if pressures and not decision.pressure_changed_the_outcome:
+        print("  (pressure did not change this decision)")
     if decision.jev_ms is not None:
         print(f"  jev_ms:   {decision.jev_ms:.0f}")
     if decision.jev_input_tokens is not None:
@@ -255,7 +374,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_explain.add_argument("request", help="a JSON file holding a chat-completions body")
     p_explain.add_argument("--alias", help="treat the request as this alias")
+    p_explain.add_argument(
+        "--pressure",
+        action="append",
+        metavar="PROVIDER=N",
+        help="pretend a provider is under this much quota pressure, 0 to 1",
+    )
     p_explain.set_defaults(func=cmd_explain)
+
+    p_quota = sub.add_parser("quota", help="show quota snapshots and pressure per provider")
+    p_quota.add_argument(
+        "--poll", action="store_true", help="run each enabled source once first"
+    )
+    p_quota.add_argument("--json", action="store_true")
+    p_quota.set_defaults(func=cmd_quota)
 
     p_dec = sub.add_parser("decisions", help="tail the decision log")
     p_dec.add_argument("-n", "--limit", type=int, default=20)

@@ -13,7 +13,7 @@ from ..config import AliasCfg, RouterConfig
 from ..features import Features
 from ..policy import apply_effort, evaluate, finalize
 from ..state import build_state
-from .base import Decider, Decision, build_decider, register_decider
+from .base import Decider, Decision, build_decider, pressure_source, register_decider
 
 log = logging.getLogger("jev_router.jev")
 
@@ -26,10 +26,12 @@ class JevDecider:
         config: RouterConfig,
         client: httpx.AsyncClient,
         fallback: Decider | None = None,
+        pressures: Any = None,
     ) -> None:
         self.config = config
         self.client = client
         self.fallback = fallback
+        self.pressures = pressures if callable(pressures) else dict
 
     @property
     def api_key(self) -> str:
@@ -111,7 +113,8 @@ class JevDecider:
 
         elapsed = (time.perf_counter() - started) * 1000
         answers = data.get("answers") or {}
-        result = evaluate(self.config, alias_cfg, answers, features)
+        pressures = self.pressures()
+        result = evaluate(self.config, alias_cfg, answers, features, pressures)
         return Decision(
             model=result.model,
             effort=result.effort,
@@ -125,6 +128,12 @@ class JevDecider:
             state_builder=alias_cfg.state_builder,
             notes=result.notes,
             decider=self.name,
+            route=result.route,
+            plan=result.plan,
+            pressures=dict(pressures),
+            shifts=result.shifts,
+            reordered=result.reordered,
+            pressure_changed_the_outcome=result.pressure_changed_the_outcome,
         )
 
     async def _fallback(
@@ -159,6 +168,8 @@ class JevDecider:
             state_builder=alias_cfg.state_builder,
             notes=result.notes,
             decider=self.name,
+            route=result.route,
+            plan=result.plan,
         )
 
 
@@ -176,4 +187,4 @@ def _make_jev(config: RouterConfig, deps: dict[str, Any]) -> Decider:
     fallback = None
     if fallback_name and fallback_name != "jev":
         fallback = build_decider(fallback_name, config, deps)
-    return JevDecider(config, deps["jev_client"], fallback)
+    return JevDecider(config, deps["jev_client"], fallback, pressure_source(deps))

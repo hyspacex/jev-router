@@ -1,7 +1,8 @@
 """Configuration models for router.yaml.
 
-Everything the router can be taught without touching code lives here: models,
-Jev questions, routing rules, aliases and per-client floors.
+Everything the router can be taught without touching code lives here:
+providers, models, Jev questions, named routes, routing rules, aliases,
+per-client floors, the circuit breaker and the quota sources.
 """
 
 from __future__ import annotations
@@ -29,6 +30,15 @@ QUESTION_TYPES = {"choice", "score", "noul"}
 # Set this to point the router at a proxy without editing router.yaml.
 UPSTREAM_ENV = "JEV_ROUTER_UPSTREAM"
 
+# The provider a model belongs to when router.yaml declares no `providers:`
+# block at all. Configs written before providers existed keep working: they
+# behave as one provider with no quota source and its own breaker.
+DEFAULT_PROVIDER = "default"
+
+# Keys that may sit beside a comparison inside a rule condition. They do not
+# compare anything; they say how pressure moves the comparison.
+SHIFT_KEYS = {"shift_with", "max_shift"}
+
 
 class ConfigError(Exception):
     """Raised with a human readable message when router.yaml is wrong."""
@@ -39,10 +49,115 @@ class Base(BaseModel):
 
 
 class Route(Base):
-    """A model plus an optional reasoning effort."""
+    """What a rule chooses: one model, or the name of a route.
+
+    `{model: x, effort: y}` is the original form and still works. `{route: n}`
+    names a lane in the top-level `routes:` map, which carries a primary and an
+    ordered list of fallbacks.
+    """
+
+    model: str | None = None
+    effort: str | None = None
+    route: str | None = None
+
+    @model_validator(mode="after")
+    def _one_of(self) -> Route:
+        if not self.model and not self.route:
+            raise ValueError("give a 'model' or a 'route'")
+        if self.model and self.route:
+            # An overlay that names a concrete model is saying "this one,
+            # whatever the file underneath said". Deep-merging a `{model,
+            # effort}` block over a `{route}` block is how the eval variants
+            # override the shipped policy, so it has to mean something rather
+            # than fail.
+            self.route = None
+        if self.route and self.effort:
+            raise ValueError("'effort' belongs to the route's entries, not beside 'route'")
+        return self
+
+
+class RouteEntry(Base):
+    """One rung of a route: a model, an effort, and whether it may be promoted.
+
+    `equivalent: true` says this entry is as good as the primary for the work
+    the route takes, so quota pressure may move it ahead of the primary. A
+    weaker fallback leaves this false and can only ever be reached by failure.
+    """
 
     model: str
     effort: str | None = None
+    equivalent: bool = False
+
+
+class Lane(Base):
+    """A named route: one primary and an ordered list of fallbacks."""
+
+    primary: RouteEntry
+    fallbacks: list[RouteEntry] = Field(default_factory=list)
+    description: str = ""
+
+    def entries(self) -> list[RouteEntry]:
+        return [self.primary, *self.fallbacks]
+
+
+class BreakerCfg(Base):
+    """Per-provider circuit breaker. State lives in memory, never on disk."""
+
+    failures_to_open: int = 3
+    cooldown_seconds: float = 120.0
+    # The cooldown doubles on every reopen, up to this.
+    max_cooldown_seconds: float = 1920.0
+    # How long a provider's breaker-derived pressure takes to decay to zero
+    # after it recovers.
+    recovery_seconds: float = 120.0
+
+
+class QuotaSourceCfg(Base):
+    """Where one provider's usage numbers come from.
+
+    `enabled: false` is the shipped default, so a fresh install never runs a
+    subprocess or reaches for anything outside the router.
+    """
+
+    source: str = "none"
+    enabled: bool = False
+    poll_seconds: float = 300.0
+    stale_after_seconds: float = 1800.0
+    # Passed to the source verbatim. Its shape is the source's business.
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderCfg(Base):
+    """One upstream account or subscription that several models share."""
+
+    description: str = ""
+    breaker: BreakerCfg | None = None
+    quota: QuotaSourceCfg | None = None
+
+
+class QuotaPolicyCfg(Base):
+    """How quota pressure is computed and what it is allowed to do."""
+
+    enabled: bool = True
+    # --- turning a snapshot into a number in [0, 1] ---
+    # How far ahead of pace, in percentage points, before pressure begins.
+    pressure_starts_at: float = 0.0
+    # How far ahead of pace means pressure 1.0.
+    pressure_full_at: float = 25.0
+    # Used percent at or above which pressure is 1.0 whatever the pace says.
+    full_used_percent: float = 90.0
+    # Used only when neither an expected percent nor a window is available.
+    raw_starts_at: float = 60.0
+    raw_full_at: float = 95.0
+    # A new value nearer than this to the last one is ignored, so pressure
+    # does not flap around a knee.
+    hysteresis: float = 0.05
+    # The most pressure may move in one poll.
+    max_change_per_poll: float = 0.25
+    # --- what pressure does ---
+    # A route entry whose provider is under more pressure than this moves
+    # behind the healthy entries of the same route.
+    demote_above: float = 0.6
 
 
 class Settings(Base):
@@ -64,6 +179,8 @@ class Settings(Base):
     upstream_connect_timeout_s: float = 10.0
     upstream_read_timeout_s: float = 900.0
     capture_usage_max_bytes: int = 1_048_576
+    # The default breaker for every provider that does not override it.
+    breaker: BreakerCfg = Field(default_factory=BreakerCfg)
 
     @property
     def db_path(self) -> Path:
@@ -80,10 +197,14 @@ class Settings(Base):
 
 class ModelCfg(Base):
     upstream_id: str
+    provider: str = ""
     context_window: int = 128_000
     supports_tools: bool = True
     supports_vision: bool = False
     efforts: list[str] = Field(default_factory=list)
+    # Some models think without limit when they are sent bare. Naming a
+    # default_effort here means no code path can send this model without one.
+    default_effort: str | None = None
     effort_style: Literal["suffix", "param", "none"] = "none"
     tags: list[str] = Field(default_factory=list)
     description: str = ""
@@ -93,6 +214,9 @@ class Rule(Base):
     name: str
     when: dict[str, Any] = Field(default_factory=dict)
     use: Route
+    # A protected rule ignores quota threshold shifts. It is for the moves that
+    # exist because the request needs them: harm, vision, context overflow.
+    protected: bool = False
 
 
 class LowConfidence(Base):
@@ -161,12 +285,15 @@ class ClientCfg(Base):
 
 class RouterConfig(Base):
     settings: Settings
+    providers: dict[str, ProviderCfg] = Field(default_factory=dict)
     models: dict[str, ModelCfg]
     questions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    routes: dict[str, Lane] = Field(default_factory=dict)
     policy: Ruleset = Field(default_factory=Ruleset)
     rulesets: dict[str, Ruleset] = Field(default_factory=dict)
     aliases: dict[str, AliasCfg] = Field(default_factory=dict)
     clients: dict[str, ClientCfg] = Field(default_factory=dict)
+    quota_policy: QuotaPolicyCfg = Field(default_factory=QuotaPolicyCfg)
 
     # Set by load_config; stored with every decision so a later tuning run
     # knows which router.yaml produced it.
@@ -196,6 +323,31 @@ class RouterConfig(Base):
     def is_alias(self, name: str) -> bool:
         return name in self.aliases
 
+    def provider_of(self, model_id: str) -> str:
+        mcfg = self.models.get(model_id)
+        if mcfg is not None and mcfg.provider:
+            return mcfg.provider
+        return DEFAULT_PROVIDER
+
+    def provider_names(self) -> list[str]:
+        """Every provider a model refers to, declared or implicit."""
+        names = list(self.providers)
+        for mid in self.models:
+            name = self.provider_of(mid)
+            if name not in names:
+                names.append(name)
+        return names
+
+    def breaker_cfg(self, provider: str) -> BreakerCfg:
+        pcfg = self.providers.get(provider)
+        if pcfg is not None and pcfg.breaker is not None:
+            return pcfg.breaker
+        return self.settings.breaker
+
+    def quota_cfg(self, provider: str) -> QuotaSourceCfg | None:
+        pcfg = self.providers.get(provider)
+        return pcfg.quota if pcfg is not None else None
+
     # --- cross-field validation ----------------------------------------
 
     @model_validator(mode="after")
@@ -204,25 +356,46 @@ class RouterConfig(Base):
         order = self.settings.effort_order
         model_ids = set(self.models)
 
+        def check_pair(model: str, effort: str | None, where: str) -> None:
+            if model not in model_ids:
+                problems.append(f"{where}: unknown model {model!r}")
+                return
+            if effort is None:
+                return
+            if effort not in order:
+                problems.append(
+                    f"{where}: effort {effort!r} is not in settings.effort_order"
+                )
+            allowed = self.models[model].efforts
+            if allowed and effort not in allowed:
+                problems.append(
+                    f"{where}: model {model!r} does not allow effort "
+                    f"{effort!r} (allowed: {', '.join(allowed) or 'none'})"
+                )
+
         def check_route(route: Route | None, where: str) -> None:
             if route is None:
                 return
-            if route.model not in model_ids:
-                problems.append(f"{where}: unknown model {route.model!r}")
+            if route.route is not None:
+                if route.route not in self.routes:
+                    problems.append(
+                        f"{where}: unknown route {route.route!r} "
+                        f"(known: {', '.join(sorted(self.routes)) or 'none'})"
+                    )
                 return
-            if route.effort is None:
-                return
-            if route.effort not in order:
+            check_pair(route.model or "", route.effort, where)
+
+        for name, lane in self.routes.items():
+            for i, entry in enumerate(lane.entries()):
+                spot = "primary" if i == 0 else f"fallbacks[{i - 1}]"
+                check_pair(entry.model, entry.effort, f"routes.{name}.{spot}")
+            if lane.primary.equivalent:
                 problems.append(
-                    f"{where}: effort {route.effort!r} is not in settings.effort_order"
-                )
-            allowed = self.models[route.model].efforts
-            if allowed and route.effort not in allowed:
-                problems.append(
-                    f"{where}: model {route.model!r} does not allow effort "
-                    f"{route.effort!r} (allowed: {', '.join(allowed) or 'none'})"
+                    f"routes.{name}.primary: 'equivalent' belongs on a fallback, "
+                    "not on the primary"
                 )
 
+        declared_providers = set(self.providers)
         for mid, mcfg in self.models.items():
             for eff in mcfg.efforts:
                 if eff not in order:
@@ -232,6 +405,37 @@ class RouterConfig(Base):
             if mcfg.efforts and mcfg.effort_style == "none":
                 problems.append(
                     f"models.{mid}: efforts are listed but effort_style is 'none'"
+                )
+            if mcfg.default_effort is not None:
+                if mcfg.default_effort not in order:
+                    problems.append(
+                        f"models.{mid}.default_effort: {mcfg.default_effort!r} is not in "
+                        "settings.effort_order"
+                    )
+                elif mcfg.efforts and mcfg.default_effort not in mcfg.efforts:
+                    problems.append(
+                        f"models.{mid}.default_effort: {mcfg.default_effort!r} is not in "
+                        f"models.{mid}.efforts ({', '.join(mcfg.efforts)})"
+                    )
+                elif not mcfg.efforts:
+                    problems.append(
+                        f"models.{mid}.default_effort is set but the model lists no efforts"
+                    )
+            if declared_providers:
+                if not mcfg.provider:
+                    problems.append(
+                        f"models.{mid}: 'provider' is required once providers are declared "
+                        f"(known: {', '.join(sorted(declared_providers))})"
+                    )
+                elif mcfg.provider not in declared_providers:
+                    problems.append(
+                        f"models.{mid}.provider: unknown provider {mcfg.provider!r} "
+                        f"(known: {', '.join(sorted(declared_providers))})"
+                    )
+            elif mcfg.provider:
+                problems.append(
+                    f"models.{mid}.provider: {mcfg.provider!r} is named but router.yaml "
+                    "declares no `providers:` block"
                 )
 
         for qid, q in self.questions.items():
@@ -310,7 +514,10 @@ class RouterConfig(Base):
         from .policy import FEATURE_CONDITIONS  # local import avoids a cycle
 
         problems: list[str] = []
+        known_providers = set(self.provider_names())
         for key, cond in when.items():
+            if isinstance(cond, dict) and set(cond) & SHIFT_KEYS:
+                problems.extend(self._check_shift(cond, known_providers, f"{where}.{key}"))
             if key in FEATURE_CONDITIONS:
                 continue
             if key not in self.questions:
@@ -322,6 +529,29 @@ class RouterConfig(Base):
                 continue
             if not isinstance(cond, dict):
                 problems.append(f"{where}.{key}: expected a mapping of comparisons")
+        return problems
+
+    def _check_shift(
+        self, cond: dict[str, Any], known_providers: set[str], where: str
+    ) -> list[str]:
+        problems: list[str] = []
+        provider = cond.get("shift_with")
+        if provider is None:
+            problems.append(f"{where}: 'max_shift' needs a 'shift_with' provider beside it")
+        elif provider not in known_providers:
+            problems.append(
+                f"{where}.shift_with: unknown provider {provider!r} "
+                f"(known: {', '.join(sorted(known_providers))})"
+            )
+        amount = cond.get("max_shift")
+        if amount is None:
+            problems.append(f"{where}: 'shift_with' needs a 'max_shift' beside it")
+        elif not isinstance(amount, (int, float)) or isinstance(amount, bool) or amount < 0:
+            problems.append(f"{where}.max_shift: expected a number of zero or more")
+        if not set(cond) & {"gte", "lte", "conf_gte"}:
+            problems.append(
+                f"{where}: a shift needs a 'gte', 'lte' or 'conf_gte' to move"
+            )
         return problems
 
 
@@ -356,9 +586,16 @@ def load_config(path: str | Path, check_registries: bool = True) -> RouterConfig
 def check_registry_names(cfg: RouterConfig) -> list[str]:
     """Check names that resolve against code registries (builders, deciders)."""
     from .deciders import DECIDERS
+    from .quota import QUOTA_SOURCES
     from .state import STATE_BUILDERS
 
     problems: list[str] = []
+    for name, pcfg in cfg.providers.items():
+        if pcfg.quota and pcfg.quota.source not in QUOTA_SOURCES:
+            problems.append(
+                f"providers.{name}.quota.source: unknown source {pcfg.quota.source!r} "
+                f"(known: {', '.join(sorted(QUOTA_SOURCES))})"
+            )
     for alias, acfg in cfg.aliases.items():
         if acfg.state_builder not in STATE_BUILDERS:
             problems.append(

@@ -106,6 +106,36 @@ def numeric_answer(reply: str, expected: float, tol: float = 0.01, **_: Any) -> 
     return 0.0, f"{expected} not found"
 
 
+BULLET = re.compile(r"^\s{0,3}(?:[-*•–]\s+|\d{1,2}[.)]\s+)", re.M)
+
+
+@check("bullet_count")
+def bullet_count(reply: str, expected: int, **_: Any) -> tuple[float, str]:
+    """Exactly `expected` top-level bullets.
+
+    "Three bullets" is a real instruction and most of the routes that failed
+    the blogpost case failed it by writing four. Nested bullets are indented
+    four spaces or more and do not count.
+    """
+    n = len(BULLET.findall(reply))
+    if n == expected:
+        return 1.0, ""
+    if abs(n - expected) == 1:
+        return 0.3, f"{n} bullets, wanted {expected}"
+    return 0.0, f"{n} bullets, wanted {expected}"
+
+
+@check("word_range")
+def word_range(reply: str, low: int = 0, high: int = 10**9, **_: Any) -> tuple[float, str]:
+    """Length inside a band. Used where both too short and too long are wrong."""
+    n = len(reply.split())
+    if low <= n <= high:
+        return 1.0, ""
+    if low * 0.8 <= n <= high * 1.25:
+        return 0.5, f"{n} words, wanted {low} to {high}"
+    return 0.0, f"{n} words, wanted {low} to {high}"
+
+
 # --- executed checks ----------------------------------------------------
 
 

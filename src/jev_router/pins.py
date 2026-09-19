@@ -49,7 +49,15 @@ CREATE TABLE IF NOT EXISTS decisions (
     message_count INTEGER,
     upstream_status INTEGER,
     upstream_usage TEXT,
-    state TEXT
+    state TEXT,
+    route TEXT,
+    intended_model TEXT,
+    intended_effort TEXT,
+    fallback_index INTEGER,
+    fallback_reason TEXT,
+    pressures TEXT,
+    shifted TEXT,
+    reordered INTEGER
 );
 CREATE INDEX IF NOT EXISTS decisions_ts ON decisions (ts DESC);
 CREATE INDEX IF NOT EXISTS decisions_decision_id ON decisions (decision_id);
@@ -66,6 +74,42 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS feedback_decision_id ON feedback (decision_id);
 CREATE INDEX IF NOT EXISTS feedback_ts ON feedback (ts DESC);
 """
+
+# Columns added after the first release. Every one is nullable, so a database
+# written by an older version keeps working: the old rows read back with NULL
+# in the new columns, which is what "this decision predates the feature"
+# means. Nothing is ever dropped or rewritten here.
+ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "decisions": [
+        ("route", "TEXT"),
+        ("intended_model", "TEXT"),
+        ("intended_effort", "TEXT"),
+        ("fallback_index", "INTEGER"),
+        ("fallback_reason", "TEXT"),
+        ("pressures", "TEXT"),
+        ("shifted", "TEXT"),
+        ("reordered", "INTEGER"),
+    ],
+}
+
+
+def migrate(conn: sqlite3.Connection) -> list[str]:
+    """Add any column this version knows about and the file does not."""
+    added: list[str] = []
+    for table, columns in ADDED_COLUMNS.items():
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        except sqlite3.Error:
+            continue
+        if not rows:
+            continue
+        have = {row[1] for row in rows}
+        for name, ddl in columns:
+            if name in have:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+            added.append(f"{table}.{name}")
+    return added
 
 
 def new_decision_id() -> str:
@@ -96,6 +140,7 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(SCHEMA)
+            self.migrated = migrate(self._conn)
             self._conn.commit()
 
     def close(self) -> None:
@@ -164,13 +209,18 @@ class Store:
         est_tokens: int,
         message_count: int,
         state: Any = None,
+        route: str | None = None,
+        pressures: dict[str, float] | None = None,
+        shifted: list[dict[str, Any]] | None = None,
+        reordered: bool = False,
     ) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO decisions (decision_id, ts, alias, client, conversation_key,"
                 " state_builder, answers, features, config_hash, model, effort, rule, mode,"
-                " fallback, pinned, jev_ms, jev_tokens, est_tokens, message_count, state)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " fallback, pinned, jev_ms, jev_tokens, est_tokens, message_count, state,"
+                " route, pressures, shifted, reordered)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     decision_id,
                     time.time(),
@@ -192,6 +242,10 @@ class Store:
                     est_tokens,
                     message_count,
                     json.dumps(state, default=str) if (self.log_state and state) else None,
+                    route,
+                    json.dumps(pressures, default=str) if pressures else None,
+                    json.dumps(shifted, default=str) if shifted else None,
+                    int(bool(reordered)),
                 ),
             )
             self._conn.commit()
@@ -203,16 +257,34 @@ class Store:
         *,
         upstream_status: int | None = None,
         upstream_usage: dict[str, Any] | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+        intended_model: str | None = None,
+        intended_effort: str | None = None,
+        fallback_index: int | None = None,
+        fallback_reason: str | None = None,
     ) -> None:
         if not row_id:
             return
         with self._lock:
             self._conn.execute(
                 "UPDATE decisions SET upstream_status = COALESCE(?, upstream_status),"
-                " upstream_usage = COALESCE(?, upstream_usage) WHERE id = ?",
+                " upstream_usage = COALESCE(?, upstream_usage),"
+                " model = COALESCE(?, model), effort = COALESCE(?, effort),"
+                " intended_model = COALESCE(?, intended_model),"
+                " intended_effort = COALESCE(?, intended_effort),"
+                " fallback_index = COALESCE(?, fallback_index),"
+                " fallback_reason = COALESCE(?, fallback_reason)"
+                " WHERE id = ?",
                 (
                     upstream_status,
                     json.dumps(upstream_usage) if upstream_usage else None,
+                    model,
+                    effort,
+                    intended_model,
+                    intended_effort,
+                    fallback_index,
+                    fallback_reason,
                     row_id,
                 ),
             )
@@ -311,7 +383,7 @@ class Store:
 
 def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
-    for field in ("answers", "features", "upstream_usage", "state"):
+    for field in ("answers", "features", "upstream_usage", "state", "pressures", "shifted"):
         if item.get(field):
             try:
                 item[field] = json.loads(item[field])
@@ -319,4 +391,5 @@ def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
                 pass
     item["fallback"] = bool(item.get("fallback"))
     item["pinned"] = bool(item.get("pinned"))
+    item["reordered"] = bool(item.get("reordered"))
     return item

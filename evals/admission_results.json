@@ -1,0 +1,3234 @@
+{
+  "steps": {
+    "vision_probe": {
+      "step": "vision_probe",
+      "question": "Does grok-4.6 accept an image at all?",
+      "when": "2026-09-19T16:27:15+00:00",
+      "mode": "score",
+      "samples": 1,
+      "incumbent": "grok-4.6",
+      "candidates": [],
+      "cases_run": [
+        "img-bar-chart"
+      ],
+      "cases_planned": [
+        "img-bar-chart"
+      ],
+      "rows": [
+        {
+          "case_id": "img-bar-chart",
+          "routes": {
+            "grok-4.6": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2575,
+              "output_tokens": 25,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "grok-4.6": {
+          "route": "grok-4.6",
+          "provider": "xai",
+          "cases": 1,
+          "samples": 1,
+          "mean": 10.0,
+          "ci": [
+            10.0,
+            10.0
+          ],
+          "spread": 0.0,
+          "min_case": 10.0,
+          "adequate": 1,
+          "latency_ms": 2575,
+          "output_tokens": 25,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "grok-4.6": 1
+      },
+      "paired": {},
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {},
+      "budget": "upstream calls 0/4, empty 0, median latency 0.0s"
+    },
+    "mid": {
+      "step": "mid",
+      "question": "Can glm-5.3 or luna hold the mid band?",
+      "when": "2026-09-19T16:27:09+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "astra",
+      "candidates": [
+        "glm-5.3",
+        "luna"
+      ],
+      "cases_run": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72"
+      ],
+      "cases_planned": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72"
+      ],
+      "rows": [
+        {
+          "case_id": "code-regex-extract-04",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2632,
+              "output_tokens": 419,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8738,
+              "output_tokens": 388,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 10356,
+              "output_tokens": 277,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-sql-window-query-05",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 20890,
+              "output_tokens": 734,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 9.55,
+              "scores": [
+                10.0,
+                9.09
+              ],
+              "score_sd": 0.45,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.67: missing ['LAG\\\\s*\\\\(']",
+              "latency_ms": 26234,
+              "output_tokens": 1340,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 28068,
+              "output_tokens": 876,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-prose-shaped-really-code-09",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4670,
+              "output_tokens": 502,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 9.44,
+              "scores": [
+                8.89,
+                10.0
+              ],
+              "score_sd": 0.56,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['replace[^.\\\\n]{0,30}comma|strip[^.\\\\n]{0,20}quote|remove the comma']",
+              "latency_ms": 12799,
+              "output_tokens": 390,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.89,
+              "scores": [
+                8.89,
+                8.89
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['replace[^.\\\\n]{0,30}comma|strip[^.\\\\n]{0,20}quote|remove the comma']",
+              "latency_ms": 11399,
+              "output_tokens": 314,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-chinese-hooks-08",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2396,
+              "output_tokens": 346,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8368,
+              "output_tokens": 374,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.5,
+              "scores": [
+                10.0,
+                7.0
+              ],
+              "score_sd": 1.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['useRef|=>\\\\s*s\\\\s*\\\\+\\\\s*1|prev\\\\s*=>|s\\\\s*=>\\\\s*\\\\(?\\\\s*s\\\\s*\\\\+']",
+              "latency_ms": 10974,
+              "output_tokens": 295,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-css-overflow-17",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 6696,
+              "output_tokens": 224,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5652,
+              "output_tokens": 206,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 10760,
+              "output_tokens": 310,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-borrow-checker-misleading-75",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 3580,
+              "output_tokens": 440,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11082,
+              "output_tokens": 382,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 9266,
+              "output_tokens": 208,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multilingual-pt-coorte-retencao-161",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5363,
+              "output_tokens": 882,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 38706,
+              "output_tokens": 1282,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 31489,
+              "output_tokens": 1000,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multiturn-ratelimiter-continue-138",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 3506,
+              "output_tokens": 552,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 26022,
+              "output_tokens": 1346,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.5,
+              "scores": [
+                9.0,
+                10.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['weighted|prev|elapsed']",
+              "latency_ms": 41794,
+              "output_tokens": 1322,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-five-second-cron-tz-96",
+          "routes": {
+            "glm-5.3": {
+              "score": 9.09,
+              "scores": [
+                8.18,
+                10.0
+              ],
+              "score_sd": 0.91,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['Europe/Berlin|zoneinfo|tzdata']",
+              "latency_ms": 48613,
+              "output_tokens": 643,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22304,
+              "output_tokens": 648,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.64,
+              "scores": [
+                10.0,
+                7.27
+              ],
+              "score_sd": 1.36,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['hourly|every hour|guard|two cron|both[^.\\\\n]{0,30}entries|check[^.\\\\n]{0,30}local time|systemd|OnCalendar|TZ=|timezone-aware scheduler|wrapper']",
+              "latency_ms": 12088,
+              "output_tokens": 308,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "design-index-strategy-26",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 6178,
+              "output_tokens": 620,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 20630,
+              "output_tokens": 1019,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 21319,
+              "output_tokens": 644,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-static-markup-rounding-99",
+          "routes": {
+            "glm-5.3": {
+              "score": 9.23,
+              "scores": [
+                10.0,
+                8.46
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 8263,
+              "output_tokens": 1137,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 8.46,
+              "scores": [
+                8.46,
+                8.46
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 19268,
+              "output_tokens": 832,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.46,
+              "scores": [
+                8.46,
+                8.46
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 35333,
+              "output_tokens": 1084,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-weakmap-vs-map-72",
+          "routes": {
+            "glm-5.3": {
+              "score": 8.06,
+              "scores": [
+                6.11,
+                10.0
+              ],
+              "score_sd": 1.94,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['not iterable|cannot (be )?iterat|no \\\\.?size|not enumerable|no keys\\\\(\\\\)|cannot enumerate|non-enumerable']; contains_all 0.00: missing ['weak(ly)? (held|referenc)|weak reference|does not (keep|prevent)|strong referenc']",
+              "latency_ms": 3894,
+              "output_tokens": 501,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "luna": {
+              "score": 9.17,
+              "scores": [
+                9.44,
+                8.89
+              ],
+              "score_sd": 0.28,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 399 words, limit 350",
+              "latency_ms": 26023,
+              "output_tokens": 762,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 7.78,
+              "scores": [
+                7.78,
+                7.78
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['not iterable|cannot (be )?iterat|no \\\\.?size|not enumerable|no keys\\\\(\\\\)|cannot enumerate|non-enumerable']; max_words 0.50: 418 words, limit 350",
+              "latency_ms": 19548,
+              "output_tokens": 584,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.7,
+          "ci": [
+            9.37,
+            10.03
+          ],
+          "spread": 0.3,
+          "min_case": 8.06,
+          "adequate": 12,
+          "latency_ms": 5016,
+          "output_tokens": 527,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "luna": {
+          "route": "luna",
+          "provider": "openai",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.72,
+          "ci": [
+            9.45,
+            9.98
+          ],
+          "spread": 0.11,
+          "min_case": 8.46,
+          "adequate": 12,
+          "latency_ms": 19949,
+          "output_tokens": 705,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra": {
+          "route": "astra",
+          "provider": "openai",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.31,
+          "ci": [
+            8.87,
+            9.75
+          ],
+          "spread": 0.28,
+          "min_case": 7.78,
+          "adequate": 12,
+          "latency_ms": 15818,
+          "output_tokens": 449,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "glm-5.3": 10,
+        "luna": 9,
+        "astra": 6
+      },
+      "paired": {
+        "glm-5.3": {
+          "cases": 12,
+          "candidate_mean": 9.7,
+          "incumbent_mean": 9.31
+        },
+        "luna": {
+          "cases": 12,
+          "candidate_mean": 9.72,
+          "incumbent_mean": 9.31
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "glm-5.3": {
+          "pass": true,
+          "score_deficit": -0.39,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 3.15,
+          "different_provider": true,
+          "why_not": ""
+        },
+        "luna": {
+          "pass": false,
+          "score_deficit": -0.41,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.79,
+          "different_provider": false,
+          "why_not": "neither 30% faster nor on another provider"
+        }
+      },
+      "budget": "upstream calls 0/4, empty 0, median latency 0.0s"
+    },
+    "faithfulness": {
+      "step": "faithfulness",
+      "question": "Do the cheap models invent facts on work where a wrong fact matters?",
+      "when": "2026-09-19T16:30:28+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "astra",
+      "candidates": [
+        "glm-5.3",
+        "gemma4-31b",
+        "kimi-k3"
+      ],
+      "cases_run": [
+        "writing-medical-discharge-38",
+        "summarise-trial-abstract-66",
+        "extract-invoice-json-62",
+        "summarise-meeting-notes-dates-61",
+        "adv-sow-dates-91"
+      ],
+      "cases_planned": [
+        "writing-medical-discharge-38",
+        "summarise-trial-abstract-66",
+        "extract-invoice-json-62",
+        "summarise-meeting-notes-dates-61",
+        "adv-sow-dates-91"
+      ],
+      "rows": [
+        {
+          "case_id": "writing-medical-discharge-38",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 6836,
+              "output_tokens": 679,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4890,
+              "output_tokens": 705,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "kimi-k3": {
+              "score": 8.93,
+              "scores": [
+                10.0,
+                7.86
+              ],
+              "score_sd": 1.07,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(just|only|purely|merely|essentially) a formality']",
+              "latency_ms": 9826,
+              "output_tokens": 651,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-trial-abstract-66",
+          "routes": {
+            "glm-5.3": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 130 words, limit 120",
+              "latency_ms": 1749,
+              "output_tokens": 266,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1370,
+              "output_tokens": 232,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "kimi-k3": {
+              "score": 7.67,
+              "scores": [
+                10.0,
+                5.33
+              ],
+              "score_sd": 2.33,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['1\\\\.24', '0\\\\.66', '2\\\\.33', '0\\\\.33', '0\\\\.16', '0\\\\.70|0\\\\.7\\\\b']; contains_all 0.67: missing ['non[- ]inferior']; contains_all 0.00: missing ['open[- ]label']",
+              "latency_ms": 3570,
+              "output_tokens": 222,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.5,
+              "scores": [
+                9.0,
+                10.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 122 words, limit 120",
+              "latency_ms": 18510,
+              "output_tokens": 486,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "extract-invoice-json-62",
+          "routes": {
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1870,
+              "output_tokens": 251,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1092,
+              "output_tokens": 327,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "kimi-k3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4263,
+              "output_tokens": 363,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.17,
+              "scores": [
+                9.17,
+                9.17
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+              "latency_ms": 10124,
+              "output_tokens": 280,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-meeting-notes-dates-61",
+          "routes": {
+            "glm-5.3": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 4092,
+              "output_tokens": 610,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1478,
+              "output_tokens": 381,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "kimi-k3": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 7030,
+              "output_tokens": 575,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-sow-dates-91",
+          "routes": {
+            "glm-5.3": {
+              "score": 9.44,
+              "scores": [
+                10.0,
+                8.89
+              ],
+              "score_sd": 0.56,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 1082,
+              "output_tokens": 148,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "gemma4-31b": {
+              "score": 8.89,
+              "scores": [
+                8.89,
+                8.89
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 734,
+              "output_tokens": 137,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "kimi-k3": {
+              "score": 8.89,
+              "scores": [
+                8.89,
+                8.89
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 2866,
+              "output_tokens": 238,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.5,
+          "ci": [
+            9.04,
+            9.96
+          ],
+          "spread": 0.21,
+          "min_case": 8.57,
+          "adequate": 5,
+          "latency_ms": 1870,
+          "output_tokens": 266,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "gemma4-31b": {
+          "route": "gemma4-31b",
+          "provider": "local",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.78,
+          "ci": [
+            9.39,
+            10.17
+          ],
+          "spread": 0.0,
+          "min_case": 8.89,
+          "adequate": 5,
+          "latency_ms": 1370,
+          "output_tokens": 327,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "kimi-k3": {
+          "route": "kimi-k3",
+          "provider": "local",
+          "cases": 5,
+          "samples": 10,
+          "mean": 8.81,
+          "ci": [
+            8.16,
+            9.47
+          ],
+          "spread": 0.68,
+          "min_case": 7.67,
+          "adequate": 5,
+          "latency_ms": 4263,
+          "output_tokens": 363,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra": {
+          "route": "astra",
+          "provider": "openai",
+          "cases": 2,
+          "samples": 4,
+          "mean": 9.34,
+          "ci": [
+            9.11,
+            9.56
+          ],
+          "spread": 0.25,
+          "min_case": 9.17,
+          "adequate": 2,
+          "latency_ms": 14317,
+          "output_tokens": 383,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "glm-5.3": 3,
+        "gemma4-31b": 4,
+        "kimi-k3": 1,
+        "astra": 0
+      },
+      "paired": {
+        "glm-5.3": {
+          "cases": 2,
+          "candidate_mean": 9.75,
+          "incumbent_mean": 9.34
+        },
+        "gemma4-31b": {
+          "cases": 2,
+          "candidate_mean": 10.0,
+          "incumbent_mean": 9.34
+        },
+        "kimi-k3": {
+          "cases": 2,
+          "candidate_mean": 8.84,
+          "incumbent_mean": 9.34
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "glm-5.3": {
+          "pass": true,
+          "score_deficit": -0.41,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 7.91,
+          "different_provider": true,
+          "why_not": ""
+        },
+        "gemma4-31b": {
+          "pass": true,
+          "score_deficit": -0.66,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 11.63,
+          "different_provider": true,
+          "why_not": ""
+        },
+        "kimi-k3": {
+          "pass": true,
+          "score_deficit": 0.5,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 3.66,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": "upstream calls 0/2, empty 0, median latency 0.0s"
+    },
+    "fast": {
+      "step": "fast",
+      "question": "Is gemma4-31b a better fast model than glm-5.3-flash?",
+      "when": "2026-09-19T16:27:15+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "glm-5.3-flash",
+      "candidates": [
+        "gemma4-31b"
+      ],
+      "cases_run": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76",
+        "img-bar-chart",
+        "img-invoice-table",
+        "img-handwritten-digits",
+        "img-terminal-error"
+      ],
+      "cases_planned": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76",
+        "img-bar-chart",
+        "img-invoice-table",
+        "img-handwritten-digits",
+        "img-terminal-error"
+      ],
+      "rows": [
+        {
+          "case_id": "quick-postgres-port-71",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 537,
+              "output_tokens": 13,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1020,
+              "output_tokens": 30,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-percentage-74",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 791,
+              "output_tokens": 104,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1254,
+              "output_tokens": 54,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-timezone-abbrev-77",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 940,
+              "output_tokens": 48,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1850,
+              "output_tokens": 106,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-bash-for-loop-70",
+          "routes": {
+            "gemma4-31b": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 254 words, limit 150",
+              "latency_ms": 2168,
+              "output_tokens": 482,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8162,
+              "output_tokens": 184,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-shell-oneliner-06",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1302,
+              "output_tokens": 216,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2200,
+              "output_tokens": 156,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-nameerror-typo-14",
+          "routes": {
+            "gemma4-31b": {
+              "score": 7.5,
+              "scores": [
+                6.67,
+                8.33
+              ],
+              "score_sd": 0.83,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 227 words, limit 150",
+              "latency_ms": 3173,
+              "output_tokens": 344,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2038,
+              "output_tokens": 144,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "polish-slack-grammar-54",
+          "routes": {
+            "gemma4-31b": {
+              "score": 8.33,
+              "scores": [
+                8.33,
+                8.33
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 188 words, limit 160",
+              "latency_ms": 1593,
+              "output_tokens": 302,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4601,
+              "output_tokens": 156,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-blogpost-tldr-63",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 747,
+              "output_tokens": 57,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4312,
+              "output_tokens": 109,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-chitchat-85",
+          "routes": {
+            "gemma4-31b": {
+              "score": 8.57,
+              "scores": [
+                10.0,
+                7.14
+              ],
+              "score_sd": 1.43,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "word_range 0.50: 36 words, wanted 3 to 35",
+              "latency_ms": 526,
+              "output_tokens": 46,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 8.57,
+              "scores": [
+                10.0,
+                7.14
+              ],
+              "score_sd": 1.43,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "word_range 0.50: 43 words, wanted 3 to 35",
+              "latency_ms": 2264,
+              "output_tokens": 163,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-german-idempotent-76",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4604,
+              "output_tokens": 866,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 6666,
+              "output_tokens": 682,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "img-bar-chart",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 587,
+              "output_tokens": 35,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "img-invoice-table",
+          "routes": {
+            "gemma4-31b": {
+              "score": 7.33,
+              "scores": [
+                7.33,
+                7.33
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "json_fields 0.67: overdue_total=9475.5 wanted 9275.5",
+              "latency_ms": 1052,
+              "output_tokens": 46,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "img-handwritten-digits",
+          "routes": {
+            "gemma4-31b": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 440,
+              "output_tokens": 9,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "img-terminal-error",
+          "routes": {
+            "gemma4-31b": {
+              "score": 8.67,
+              "scores": [
+                10.0,
+                7.33
+              ],
+              "score_sd": 1.33,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "json_fields 0.67: file='/srv/ledger/batching.py' wanted 'batching.py'",
+              "latency_ms": 598,
+              "output_tokens": 33,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "gemma4-31b": {
+          "route": "gemma4-31b",
+          "provider": "local",
+          "cases": 14,
+          "samples": 28,
+          "mean": 9.17,
+          "ci": [
+            8.64,
+            9.7
+          ],
+          "spread": 0.26,
+          "min_case": 7.33,
+          "adequate": 14,
+          "latency_ms": 866,
+          "output_tokens": 52,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "glm-5.3-flash": {
+          "route": "glm-5.3-flash",
+          "provider": "local",
+          "cases": 10,
+          "samples": 20,
+          "mean": 9.86,
+          "ci": [
+            9.59,
+            10.12
+          ],
+          "spread": 0.14,
+          "min_case": 8.57,
+          "adequate": 10,
+          "latency_ms": 2232,
+          "output_tokens": 150,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "gemma4-31b": 11,
+        "glm-5.3-flash": 10
+      },
+      "paired": {
+        "gemma4-31b": {
+          "cases": 10,
+          "candidate_mean": 9.24,
+          "incumbent_mean": 9.86
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "gemma4-31b": {
+          "pass": false,
+          "score_deficit": 0.62,
+          "quality_ok": false,
+          "faster_30pct": true,
+          "speedup": 1.99,
+          "different_provider": false,
+          "why_not": "scores 0.62 below the incumbent, more than 0.5"
+        }
+      },
+      "budget": "upstream calls 0/4, empty 0, median latency 0.0s"
+    },
+    "creative": {
+      "step": "creative",
+      "question": "Does kimi-k3 win creative prose against the frontier model?",
+      "when": "2026-09-19T16:27:10+00:00",
+      "mode": "pairwise",
+      "samples": 2,
+      "incumbent": "astra",
+      "candidates": [
+        "kimi-k3"
+      ],
+      "cases_run": [
+        "creative-limerick-printer-45",
+        "creative-noir-opening-46",
+        "creative-npc-dialogue-48",
+        "creative-wedding-speech-49",
+        "creative-parody-lyrics-50",
+        "creative-pov-rewrite-51"
+      ],
+      "cases_planned": [
+        "creative-limerick-printer-45",
+        "creative-noir-opening-46",
+        "creative-npc-dialogue-48",
+        "creative-wedding-speech-49",
+        "creative-parody-lyrics-50",
+        "creative-pov-rewrite-51"
+      ],
+      "rows": [
+        {
+          "case_id": "creative-limerick-printer-45",
+          "routes": {
+            "kimi-k3": {
+              "score": 7.5,
+              "scores": [
+                8.0,
+                7.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It has five lines, a clear AABBA rhyme scheme, and a funny printer-jam premise, while the meter is mostly limerick-like but not consistently anapaestic, especially in the second line.",
+              "latency_ms": 2468,
+              "output_tokens": 62,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.5,
+              "scores": [
+                8.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It is a funny, topical five-line AABBA limerick, but the anapaestic rhythm is imperfect, especially in the \u201cCEO\u201d and \u201csmug little bleat\u201d lines.",
+              "latency_ms": 8444,
+              "output_tokens": 182,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-noir-opening-46",
+          "routes": {
+            "kimi-k3": {
+              "score": 8.25,
+              "scores": [
+                8.0,
+                8.5
+              ],
+              "score_sd": 0.25,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: Strong noir voice, vivid coastal-November imagery, and effective showing of weariness, though several familiar noir constructions\u2014\u201cgentle as a confession,\u201d the ominous gulls, the too-clean deck, and the lipsticked cup\u2014slightly weaken its restraint and freshness.",
+              "latency_ms": 7082,
+              "output_tokens": 419,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.5,
+              "scores": [
+                9.5,
+                9.5
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The opening delivers a controlled noir voice, sharply specific coastal-November imagery, and restrained characterization while avoiding stock rain-and-cigarette clich\u00e9s and ending on a fresh, ominous hook.",
+              "latency_ms": 18482,
+              "output_tokens": 404,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-npc-dialogue-48",
+          "routes": {
+            "kimi-k3": {
+              "score": 3.0,
+              "scores": [
+                3.0,
+                3.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It provides exactly six distinctive, cheerful-but-evasive tavern-keeper barks, but the final line states the cellar flooding plainly and at length rather than letting it slip subtly by accident, triggering the rubric\u2019s 0\u20133 cap.",
+              "latency_ms": 3954,
+              "output_tokens": 260,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It provides exactly six distinctive, cheerful tavern-keeper barks with conspicuous suspicious undertones, and exactly one line accidentally blurts out the flooded cellar before attempting a comic correction.",
+              "latency_ms": 7356,
+              "output_tokens": 140,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-wedding-speech-49",
+          "routes": {
+            "kimi-k3": {
+              "score": 8.25,
+              "scores": [
+                9.0,
+                7.5
+              ],
+              "score_sd": 0.75,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The speech makes strong, specific use of every supplied detail, sustains the requested funny-but-clean tone, handles the barbecue incident with an effective near-mention, and lands a sincere, non-clich\u00e9d ending, though it invents several personal anecdotes and quotations that the speaker would need to verify.",
+              "latency_ms": 13412,
+              "output_tokens": 997,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It skillfully uses every supplied detail, sustains a funny and audience-appropriate tone without swearing or unwanted clich\u00e9s, handles the barbecue story exactly as requested, and delivers a clear, sincere ending.",
+              "latency_ms": 44332,
+              "output_tokens": 852,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-parody-lyrics-50",
+          "routes": {
+            "kimi-k3": {
+              "score": 6.0,
+              "scores": [
+                4.0,
+                8.0
+              ],
+              "score_sd": 2.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The CI and flaky-test joke lands, but both versions scan unevenly against their named tunes, with especially overloaded later lines and weak or inconsistent rhyme.",
+              "latency_ms": 5250,
+              "output_tokens": 166,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.5,
+              "scores": [
+                9.0,
+                8.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The 8/6/8/6 scansion is consistently singable in a shanty-like metre, \u201cgreen/clean\u201d provides a strong rhyme, and the CI runners/checks joke lands clearly, though the lack of a specified source tune makes exact fidelity impossible to assess.",
+              "latency_ms": 8788,
+              "output_tokens": 250,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-pov-rewrite-51",
+          "routes": {
+            "kimi-k3": {
+              "score": 5.5,
+              "scores": [
+                6.0,
+                5.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It maintains the daughter\u2019s limited viewpoint, preserves the final line exactly, and stays near the original length, but it omits the opening, reading, and burning events rather than rendering their unseen effects, while adding new dinner/stair-light details and an orange glow that weakens the original\u2019s restrained sequence ending in black.",
+              "latency_ms": 3881,
+              "output_tokens": 167,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It faithfully retells the scene through the daughter\u2019s limited perspective without revealing the letter, preserves the observable sequence and exact final line, stays close in length, and maintains the original\u2019s restrained prose.",
+              "latency_ms": 9271,
+              "output_tokens": 196,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        }
+      ],
+      "summary": {
+        "kimi-k3": {
+          "route": "kimi-k3",
+          "provider": "local",
+          "cases": 6,
+          "samples": 12,
+          "mean": 6.42,
+          "ci": [
+            4.93,
+            7.9
+          ],
+          "spread": 0.67,
+          "min_case": 3.0,
+          "adequate": 3,
+          "latency_ms": 4602,
+          "output_tokens": 214,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra": {
+          "route": "astra",
+          "provider": "openai",
+          "cases": 6,
+          "samples": 12,
+          "mean": 9.33,
+          "ci": [
+            8.83,
+            9.83
+          ],
+          "spread": 0.25,
+          "min_case": 8.5,
+          "adequate": 6,
+          "latency_ms": 9030,
+          "output_tokens": 223,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "kimi-k3": 0,
+        "astra": 6
+      },
+      "paired": {
+        "kimi-k3": {
+          "cases": 6,
+          "candidate_mean": 6.42,
+          "incumbent_mean": 9.33
+        }
+      },
+      "pairwise": {
+        "kimi-k3": {
+          "pairs": 12,
+          "wins": 0,
+          "losses": 11,
+          "ties": 0,
+          "undecided": 1,
+          "decided": 11,
+          "net_rate": -1.0,
+          "order_bias": 0.0
+        }
+      },
+      "pairwise_detail": {
+        "kimi-k3": [
+          {
+            "case_id": "creative-limerick-printer-45",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-limerick-printer-45",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-noir-opening-46",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-noir-opening-46",
+            "pair": 1,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-npc-dialogue-48",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-npc-dialogue-48",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-wedding-speech-49",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-wedding-speech-49",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-parody-lyrics-50",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-parody-lyrics-50",
+            "pair": 1,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-pov-rewrite-51",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-pov-rewrite-51",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          }
+        ]
+      },
+      "verdicts": {
+        "kimi-k3": {
+          "pass": false,
+          "score_deficit": 2.91,
+          "quality_ok": false,
+          "faster_30pct": true,
+          "speedup": 1.96,
+          "different_provider": true,
+          "why_not": "scores 2.91 below the incumbent, more than 0.5; pairwise net -1.00 over 11 decided pairs, needs +0.50"
+        }
+      },
+      "budget": "upstream calls 0/4, empty 0, median latency 0.0s"
+    },
+    "frontier": {
+      "step": "frontier",
+      "question": "Is grok-4.6 a safe overflow for the frontier lane?",
+      "when": "2026-09-19T16:27:10+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "astra",
+      "candidates": [
+        "grok-4.6"
+      ],
+      "cases_run": [
+        "debug-go-deadlock-short-40-11",
+        "debug-adversarial-injection-in-log-16",
+        "design-eventbus-tradeoff-20",
+        "writing-legal-clause-39",
+        "writing-regulator-response-42",
+        "writing-investor-update-numbers-44",
+        "other-simple-question-proof-78",
+        "other-probability-puzzle-79",
+        "other-buy-vs-rent-84"
+      ],
+      "cases_planned": [
+        "debug-go-deadlock-short-40-11",
+        "debug-adversarial-injection-in-log-16",
+        "design-eventbus-tradeoff-20",
+        "writing-legal-clause-39",
+        "writing-regulator-response-42",
+        "writing-investor-update-numbers-44",
+        "other-simple-question-proof-78",
+        "other-probability-puzzle-79",
+        "other-buy-vs-rent-84"
+      ],
+      "rows": [
+        {
+          "case_id": "debug-go-deadlock-short-40-11",
+          "routes": {
+            "grok-4.6": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 29946,
+              "output_tokens": 1466,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 27380,
+              "output_tokens": 855,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-adversarial-injection-in-log-16",
+          "routes": {
+            "grok-4.6": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 14597,
+              "output_tokens": 734,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 31480,
+              "output_tokens": 976,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "design-eventbus-tradeoff-20",
+          "routes": {
+            "grok-4.6": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The answer directly addresses the stated scale, team capacity, latency, deployment, and ownership problems; clearly explains the costs and limited benefits of putting JetStream on the critical path; proposes cheaper incremental fixes such as parallel calls, modularization, and rolling deploys; and gives a firm, well-reasoned recommendation plus concrete conditions that would change it.",
+              "latency_ms": 22480,
+              "output_tokens": 1092,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It gives a concrete, context-sensitive recommendation, clearly separates the three problems, weighs JetStream and HTTP extraction costs against benefits for an eight-person team, proposes cheaper first steps, and states specific conditions that would change the recommendation.",
+              "latency_ms": 39758,
+              "output_tokens": 1266,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-legal-clause-39",
+          "routes": {
+            "grok-4.6": {
+              "score": 7.0,
+              "scores": [
+                7.0,
+                7.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It clearly explains the uncapped indemnity, other liability carve-outs, and damaging language with appropriate quotations and a plain legal-advice disclaimer, but it does not address the rubric-required termination and assignment risks (or state that they cannot be assessed from the excerpts), and it slightly overstates some consequences not expressly established by the quoted clauses.",
+              "latency_ms": 26154,
+              "output_tokens": 970,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It accurately explains the potentially uncapped indemnity, liability-cap carve-outs, and damaging wording with direct quotations, but it does not expressly say \u201cthis is not legal advice\u201d and does not address termination or assignment risks required by the rubric.",
+              "latency_ms": 28114,
+              "output_tokens": 894,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-regulator-response-42",
+          "routes": {
+            "grok-4.6": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The draft directly and formally addresses the regulator\u2019s question, accurately states the supplied dates and remediation, and avoids unsupported culpability admissions, with only minor unsupported embellishments such as \u201cquality review\u201d and \u201cad hoc workarounds.\u201d",
+              "latency_ms": 14370,
+              "output_tokens": 672,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.75,
+              "scores": [
+                10.0,
+                9.5
+              ],
+              "score_sd": 0.25,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The draft directly answers the regulator\u2019s question, accurately uses the supplied dates and causes, formally acknowledges the missed deadline without admitting culpability, clearly sets out all stated remediation, and appropriately flags factual points for counsel to verify.",
+              "latency_ms": 23559,
+              "output_tokens": 733,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-investor-update-numbers-44",
+          "routes": {
+            "grok-4.6": {
+              "score": 7.69,
+              "scores": [
+                8.46,
+                6.92
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.67: missing ['833[,.]?200']; contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 19249,
+              "output_tokens": 1186,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 9.23,
+              "scores": [
+                8.46,
+                10.0
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['7\\\\.2|7 months|seven months|7\\\\.1']; contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 20438,
+              "output_tokens": 600,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-simple-question-proof-78",
+          "routes": {
+            "grok-4.6": {
+              "score": 6.0,
+              "scores": [
+                6.0,
+                6.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['1 ?\\\\(?mod ?5|\\\\u2261 ?1 ?\\\\(mod ?5|congruent to 1 mod(ulo)? 5', 'C_?15|Z_?15|Z/15|cyclic of order 15|C_?5[^\\\\n]{0,12}C_?3|Z_?5[^\\\\n]{0,12}Z_?3']; contains_all 0.00: missing ['trivial(ly)? intersect|intersection is trivial|only the identity|\\\\{e\\\\}']",
+              "latency_ms": 11572,
+              "output_tokens": 636,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 6.75,
+              "scores": [
+                7.5,
+                6.0
+              ],
+              "score_sd": 0.75,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['1 ?\\\\(?mod ?5|\\\\u2261 ?1 ?\\\\(mod ?5|congruent to 1 mod(ulo)? 5']; contains_all 0.00: missing ['trivial(ly)? intersect|intersection is trivial|only the identity|\\\\{e\\\\}']",
+              "latency_ms": 8240,
+              "output_tokens": 220,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-probability-puzzle-79",
+          "routes": {
+            "grok-4.6": {
+              "score": 9.32,
+              "scores": [
+                8.64,
+                10.0
+              ],
+              "score_sd": 0.68,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['0\\\\.00032|0\\\\.00064|5\\\\s*:\\\\s*27\\\\s*:\\\\s*32|/ ?64']",
+              "latency_ms": 11771,
+              "output_tokens": 713,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 8.18,
+              "scores": [
+                6.36,
+                10.0
+              ],
+              "score_sd": 1.82,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['\\\\b50(\\\\.0+)?\\\\s?%|\\\\b0\\\\.5\\\\b|\\\\b1/2\\\\b|32/64']",
+              "latency_ms": 14464,
+              "output_tokens": 422,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-buy-vs-rent-84",
+          "routes": {
+            "grok-4.6": {
+              "score": 6.39,
+              "scores": [
+                5.56,
+                7.22
+              ],
+              "score_sd": 0.83,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']; contains_all 0.00: missing ['64[,.]?9|63[,.]?\\\\d|65[,.]?\\\\d|rent over']",
+              "latency_ms": 32607,
+              "output_tokens": 1777,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 57010,
+              "output_tokens": 1836,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "grok-4.6": {
+          "route": "grok-4.6",
+          "provider": "xai",
+          "cases": 9,
+          "samples": 18,
+          "mean": 8.38,
+          "ci": [
+            7.38,
+            9.38
+          ],
+          "spread": 0.25,
+          "min_case": 6.0,
+          "adequate": 7,
+          "latency_ms": 19249,
+          "output_tokens": 970,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra": {
+          "route": "astra",
+          "provider": "openai",
+          "cases": 9,
+          "samples": 18,
+          "mean": 9.1,
+          "ci": [
+            8.37,
+            9.83
+          ],
+          "spread": 0.4,
+          "min_case": 6.75,
+          "adequate": 8,
+          "latency_ms": 27380,
+          "output_tokens": 855,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "grok-4.6": 4,
+        "astra": 8
+      },
+      "paired": {
+        "grok-4.6": {
+          "cases": 9,
+          "candidate_mean": 8.38,
+          "incumbent_mean": 9.1
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "grok-4.6": {
+          "pass": false,
+          "score_deficit": 0.72,
+          "quality_ok": false,
+          "faster_30pct": false,
+          "speedup": 1.42,
+          "different_provider": true,
+          "why_not": "scores 0.72 below the incumbent, more than 0.5"
+        }
+      },
+      "budget": "upstream calls 0/4, empty 0, median latency 0.0s"
+    }
+  },
+  "generated": "2026-09-19T16:30:28+00:00"
+}

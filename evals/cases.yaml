@@ -185,6 +185,7 @@ cases:
 
             Named groups please.
       stream: false
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 1
@@ -192,7 +193,7 @@ cases:
       needs_faithfulness: false
       tier: fast
       effort: none
-      acceptable_tiers: [fast]
+      acceptable_tiers: [fast, mid]
 
   - id: code-sql-window-query-05
     slice: chat
@@ -218,6 +219,7 @@ cases:
             sessions can run across midnight so I can't group by date. Table is ~400M rows,
             there's a btree on (user_id, occurred_at).
       stream: true
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 2
@@ -225,7 +227,7 @@ cases:
       needs_faithfulness: true
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]
 
   - id: code-shell-oneliner-06
     slice: chat
@@ -319,6 +321,7 @@ cases:
               }
             }
       stream: true
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 1
@@ -326,7 +329,7 @@ cases:
       needs_faithfulness: false
       tier: fast
       effort: none
-      acceptable_tiers: [fast]
+      acceptable_tiers: [fast, mid]
 
   - id: code-prose-shaped-really-code-09
     slice: chat
@@ -353,6 +356,7 @@ cases:
             We also have to keep Excel happy — half our customers open these in Excel on
             Windows and one of them complained about accented characters last month.
       stream: true
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 2
@@ -360,7 +364,7 @@ cases:
       needs_faithfulness: false
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier, fast]
+      acceptable_tiers: [fast, mid, frontier]
 
   - id: code-migration-backfill-10
     slice: agentic
@@ -1074,6 +1078,7 @@ cases:
             .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .actions { flex: 0 0 auto; }
       stream: true
+    label_source: outcome
     expected:
       task: debugging
       difficulty: 1
@@ -1081,7 +1086,7 @@ cases:
       needs_faithfulness: false
       tier: fast
       effort: none
-      acceptable_tiers: [fast]
+      acceptable_tiers: [fast, mid]
 
   - id: debug-spanish-slow-query-18
     slice: multilingual
@@ -1511,6 +1516,7 @@ cases:
             Writes are heavy (status flips constantly). What indexes would you create, and
             would you use a partial index here?
       stream: true
+    label_source: outcome
     expected:
       task: design-or-review
       difficulty: 2
@@ -1518,7 +1524,7 @@ cases:
       needs_faithfulness: false
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]
 
   - id: design-schema-diagram-image-27
     slice: chat
@@ -3246,6 +3252,7 @@ cases:
                 }
             }
       stream: false
+    label_source: outcome
     expected:
       task: quick-question
       difficulty: 2
@@ -3253,7 +3260,7 @@ cases:
       needs_faithfulness: false
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]
 
   - id: quick-german-idempotent-76
     slice: multilingual
@@ -4330,6 +4337,7 @@ cases:
             rates. The invoice PDF is generated server side in Python from the same
             amounts and finance compares the two.
       stream: true
+    label_source: outcome
     expected:
       task: debugging
       difficulty: 2
@@ -4337,7 +4345,7 @@ cases:
       needs_faithfulness: true
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]
 
   - id: adv-starter-plan-shard-key-100
     slice: adversarial
@@ -6606,6 +6614,7 @@ cases:
         - role: user
           content: "continue"
       stream: true
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 2
@@ -6613,7 +6622,7 @@ cases:
       needs_faithfulness: false
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]
 
   - id: multiturn-schema-review-rest-139
     slice: multiturn
@@ -7785,6 +7794,7 @@ cases:
             cliente de uma coorte esteve activo num determinado mês. Saída em formato
             longo, uma linha por coorte e por número do mês.
       stream: true
+    label_source: outcome
     expected:
       task: code-edit
       difficulty: 2
@@ -7792,4 +7802,4 @@ cases:
       needs_faithfulness: false
       tier: frontier
       effort: medium
-      acceptable_tiers: [frontier]
+      acceptable_tiers: [mid, frontier]

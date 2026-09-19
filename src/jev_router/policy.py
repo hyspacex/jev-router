@@ -4,6 +4,12 @@ Pure functions only: no network, no clock, no database. The order is
 
     low confidence gate -> first matching rule -> default
     -> alias caps -> client floors -> capability filter -> effort clamp
+
+Quota pressure enters here as data: a mapping of provider name to a number in
+[0, 1] that somebody else measured. Given the same answers, the same features
+and the same pressures, this module always returns the same route. That is
+what lets `evals/tune.py` replay a decision taken under pressure honestly, and
+what keeps the clock and the subprocess out of the routing code.
 """
 
 from __future__ import annotations
@@ -11,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .config import AliasCfg, Route, RouterConfig, Ruleset
+from .config import AliasCfg, Lane, Route, RouteEntry, RouterConfig, Ruleset
 from .features import Features
 
 # Condition keys that read the request instead of a Jev answer.
@@ -33,6 +39,43 @@ FEATURE_CONDITIONS: dict[str, Callable[[Features, Any], bool]] = {
 }
 
 
+@dataclass(frozen=True)
+class PlanEntry:
+    """One rung the forwarder may try, after caps, floors and clamping."""
+
+    model: str
+    effort: str | None
+    provider: str
+    equivalent: bool = False
+
+    def as_pair(self) -> tuple[str, str | None]:
+        return (self.model, self.effort)
+
+
+@dataclass(frozen=True)
+class Shift:
+    """A threshold that quota pressure moved, and by how much."""
+
+    rule: str
+    question: str
+    op: str
+    base: float
+    effective: float
+    provider: str
+    pressure: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rule": self.rule,
+            "question": self.question,
+            "op": self.op,
+            "base": round(self.base, 4),
+            "effective": round(self.effective, 4),
+            "provider": self.provider,
+            "pressure": round(self.pressure, 4),
+        }
+
+
 @dataclass
 class PolicyResult:
     model: str
@@ -40,6 +83,13 @@ class PolicyResult:
     rule: str
     reason: str
     notes: list[str] = field(default_factory=list)
+    route: str | None = None
+    # The primary first, then the fallbacks that can serve this request.
+    plan: list[PlanEntry] = field(default_factory=list)
+    shifts: list[Shift] = field(default_factory=list)
+    reordered: bool = False
+    protected: bool = False
+    pressure_changed_the_outcome: bool = False
 
 
 def evaluate(
@@ -47,10 +97,62 @@ def evaluate(
     alias_cfg: AliasCfg,
     answers: dict[str, dict[str, Any]],
     features: Features,
+    pressures: dict[str, float] | None = None,
 ) -> PolicyResult:
+    """Choose a route. `pressures` is quota pressure per provider, or nothing."""
     ruleset = config.ruleset_for(alias_cfg)
-    route, rule_name, reason = _pick_route(config, ruleset, answers, features)
-    return finalize(config, alias_cfg, route, rule_name, reason, features)
+    live = _live_pressures(config, pressures)
+    shifts: list[Shift] = []
+    use, rule_name, reason, protected = _pick_route(
+        config, ruleset, answers, features, live, shifts
+    )
+    result = finalize(
+        config,
+        alias_cfg,
+        use,
+        rule_name,
+        reason,
+        features,
+        pressures=live,
+        protected=protected,
+    )
+    result.shifts = shifts
+    if live:
+        result.pressure_changed_the_outcome = _differs_without_pressure(
+            config, alias_cfg, ruleset, answers, features, result
+        )
+    return result
+
+
+def _live_pressures(
+    config: RouterConfig, pressures: dict[str, float] | None
+) -> dict[str, float]:
+    """Drop the zeros, and drop everything when quota routing is switched off."""
+    if not pressures or not config.quota_policy.enabled:
+        return {}
+    return {k: float(v) for k, v in pressures.items() if v}
+
+
+def _differs_without_pressure(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    ruleset: Ruleset,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    result: PolicyResult,
+) -> bool:
+    """Would the same request have gone somewhere else at pressure zero?"""
+    use, rule_name, reason, protected = _pick_route(
+        config, ruleset, answers, features, {}, []
+    )
+    calm = finalize(
+        config, alias_cfg, use, rule_name, reason, features, pressures={}, protected=protected
+    )
+    return (calm.model, calm.effort, [e.as_pair() for e in calm.plan]) != (
+        result.model,
+        result.effort,
+        [e.as_pair() for e in result.plan],
+    )
 
 
 def finalize(
@@ -60,13 +162,71 @@ def finalize(
     rule_name: str,
     reason: str,
     features: Features,
+    pressures: dict[str, float] | None = None,
+    protected: bool = False,
 ) -> PolicyResult:
     """Apply the parts a rule may not override: caps, floors, capabilities."""
-    notes: list[str] = []
-    model = route.model
-    effort = route.effort
+    live = _live_pressures(config, pressures)
+    entries, route_name = resolve_use(config, route)
+    reordered = False
+    if route_name and live:
+        entries, reordered = order_entries(config, entries, live)
 
+    notes: list[str] = []
     allowed = _allowed_models(config, alias_cfg, features, notes)
+    model, effort = _apply_guards(
+        config, alias_cfg, entries[0].model, entries[0].effort, features, allowed, notes
+    )
+
+    plan = [
+        PlanEntry(
+            model=model,
+            effort=effort,
+            provider=config.provider_of(model),
+            equivalent=entries[0].equivalent,
+        )
+    ]
+    seen = {(model, effort)}
+    for entry in entries[1:]:
+        if entry.model not in allowed or not fits(config, entry.model, features):
+            continue
+        alt_model, alt_effort = _apply_guards(
+            config, alias_cfg, entry.model, entry.effort, features, allowed, []
+        )
+        if (alt_model, alt_effort) in seen:
+            continue
+        seen.add((alt_model, alt_effort))
+        plan.append(
+            PlanEntry(
+                model=alt_model,
+                effort=alt_effort,
+                provider=config.provider_of(alt_model),
+                equivalent=entry.equivalent,
+            )
+        )
+
+    return PolicyResult(
+        model=model,
+        effort=effort,
+        rule=rule_name,
+        reason=reason,
+        notes=notes,
+        route=route_name,
+        plan=plan,
+        reordered=reordered,
+        protected=protected,
+    )
+
+
+def _apply_guards(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    model: str,
+    effort: str | None,
+    features: Features,
+    allowed: list[str],
+    notes: list[str],
+) -> tuple[str, str | None]:
     if model not in allowed:
         replacement = _first_capable(config, allowed, features)
         if replacement:
@@ -93,8 +253,53 @@ def finalize(
             notes.append(f"client {features.client} floors effort at {floor}")
             effort = floor
 
-    effort = clamp_effort(config, model, effort)
-    return PolicyResult(model=model, effort=effort, rule=rule_name, reason=reason, notes=notes)
+    return model, clamp_effort(config, model, effort)
+
+
+# --- routes -------------------------------------------------------------
+
+
+def resolve_use(config: RouterConfig, route: Route) -> tuple[list[RouteEntry], str | None]:
+    """A rule's `use:` as an ordered list of entries, plus the route's name.
+
+    `{model, effort}` is one entry and no name, which is what every rule was
+    before routes existed. `{route: n}` is that lane's primary and fallbacks.
+    """
+    if route.route is not None:
+        lane: Lane | None = config.routes.get(route.route)
+        if lane is not None:
+            return lane.entries(), route.route
+        # An unknown route cannot happen in a validated config. Fail neutral.
+        return [RouteEntry(model=config.settings.default_route.model or "")], None
+    return [RouteEntry(model=route.model or "", effort=route.effort)], None
+
+
+def order_entries(
+    config: RouterConfig, entries: list[RouteEntry], pressures: dict[str, float]
+) -> tuple[list[RouteEntry], bool]:
+    """Move entries under quota pressure behind the healthy ones.
+
+    Two guards. An entry only moves ahead of the primary when it is marked
+    `equivalent: true`, so a weaker fallback is never promoted to save quota.
+    And entries keep their order among themselves, so the list only ever
+    splits into "not pressured" then "pressured".
+    """
+    if len(entries) < 2:
+        return entries, False
+    limit = config.quota_policy.demote_above
+
+    def hot(entry: RouteEntry) -> bool:
+        return pressures.get(config.provider_of(entry.model), 0.0) > limit
+
+    order = [e for e in entries if not hot(e)] + [e for e in entries if hot(e)]
+    primary = entries[0]
+    if hot(primary):
+        at = order.index(primary)
+        promoted = order[:at]
+        may_pass = [e for e in promoted if e.equivalent]
+        pushed_back = [e for e in promoted if not e.equivalent]
+        order = may_pass + [primary] + pushed_back + order[at + 1 :]
+    return order, order != entries
 
 
 # --- rule matching ------------------------------------------------------
@@ -105,7 +310,9 @@ def _pick_route(
     ruleset: Ruleset,
     answers: dict[str, dict[str, Any]],
     features: Features,
-) -> tuple[Route, str, str]:
+    pressures: dict[str, float],
+    shifts: list[Shift],
+) -> tuple[Route, str, str, bool]:
     lc = ruleset.low_confidence
     if lc and lc.use and lc.questions:
         for qid in lc.questions:
@@ -118,20 +325,33 @@ def _pick_route(
                     lc.use,
                     "low_confidence",
                     f"{qid} confidence {conf:.2f} below {lc.min_confidence}",
+                    True,
                 )
 
     for rule in ruleset.rules:
-        if matches(rule.when, answers, features):
-            return rule.use, rule.name, _describe(rule.when, answers)
+        # A protected rule exists because the request needs it, so quota never
+        # makes it harder to reach.
+        seen: list[Shift] = []
+        applied = {} if rule.protected else pressures
+        if matches(rule.when, answers, features, applied, seen, rule.name):
+            shifts.extend(seen)
+            return rule.use, rule.name, _describe(rule.when, answers), rule.protected
+        if seen and matches(rule.when, answers, features, {}, None, rule.name):
+            # The shift is the only reason this rule did not fire. That is the
+            # one worth logging, so record it and carry on down the list.
+            shifts.extend(seen)
 
     default = ruleset.default or config.settings.default_route
-    return default, "default", "no rule matched"
+    return default, "default", "no rule matched", True
 
 
 def matches(
     when: dict[str, Any],
     answers: dict[str, dict[str, Any]],
     features: Features,
+    pressures: dict[str, float] | None = None,
+    shifts: list[Shift] | None = None,
+    rule_name: str = "",
 ) -> bool:
     for key, cond in when.items():
         feature_check = FEATURE_CONDITIONS.get(key)
@@ -140,12 +360,39 @@ def matches(
                 return False
             continue
         answer = answers.get(key)
-        if answer is None or not _answer_matches(cond, answer):
+        if answer is None or not _answer_matches(
+            cond, answer, pressures or {}, shifts, rule_name, key
+        ):
             return False
     return True
 
 
-def _answer_matches(cond: dict[str, Any], answer: dict[str, Any]) -> bool:
+def shift_amount(cond: Any, pressures: dict[str, float]) -> tuple[float, str, float]:
+    """How far pressure moves this condition's threshold.
+
+    Returns (points, provider, pressure). Bounded by `max_shift`, monotone in
+    pressure, and zero whenever the condition says nothing about pressure.
+    """
+    if not isinstance(cond, dict):
+        return 0.0, "", 0.0
+    provider = cond.get("shift_with")
+    max_shift = cond.get("max_shift")
+    if not isinstance(provider, str) or not isinstance(max_shift, (int, float)):
+        return 0.0, "", 0.0
+    if isinstance(max_shift, bool):
+        return 0.0, "", 0.0
+    pressure = max(0.0, min(1.0, float(pressures.get(provider, 0.0) or 0.0)))
+    return max(0.0, float(max_shift)) * pressure, provider, pressure
+
+
+def _answer_matches(
+    cond: dict[str, Any],
+    answer: dict[str, Any],
+    pressures: dict[str, float] | None = None,
+    shifts: list[Shift] | None = None,
+    rule_name: str = "",
+    question: str = "",
+) -> bool:
     atype = answer.get("type")
     if atype == "choice":
         value: Any = answer.get("choice")
@@ -156,6 +403,31 @@ def _answer_matches(cond: dict[str, Any], answer: dict[str, Any]) -> bool:
     else:
         return False
 
+    points, provider, pressure = shift_amount(cond, pressures or {})
+
+    def moved(op: str, operand: Any) -> Any:
+        """A shift only ever makes the rule harder to reach.
+
+        `gte` and `conf_gte` fire on high values, so the cutoff goes up. `lte`
+        fires on low values, so the cutoff comes down.
+        """
+        if not points or not isinstance(operand, (int, float)) or isinstance(operand, bool):
+            return operand
+        effective = operand + points if op in ("gte", "conf_gte") else operand - points
+        if shifts is not None:
+            shifts.append(
+                Shift(
+                    rule=rule_name,
+                    question=question,
+                    op=op,
+                    base=float(operand),
+                    effective=float(effective),
+                    provider=provider,
+                    pressure=pressure,
+                )
+            )
+        return effective
+
     conf = answer.get("confidence")
     for op, operand in cond.items():
         if op == "in" and value not in operand:
@@ -164,11 +436,11 @@ def _answer_matches(cond: dict[str, Any], answer: dict[str, Any]) -> bool:
             return False
         if op == "eq" and value != operand:
             return False
-        if op == "gte" and not (value is not None and value >= operand):
+        if op == "gte" and not (value is not None and value >= moved(op, operand)):
             return False
-        if op == "lte" and not (value is not None and value <= operand):
+        if op == "lte" and not (value is not None and value <= moved(op, operand)):
             return False
-        if op == "conf_gte" and not (conf is not None and conf >= operand):
+        if op == "conf_gte" and not (conf is not None and conf >= moved(op, operand)):
             return False
     return True
 
@@ -260,12 +532,18 @@ def _rank(order: list[str], effort: str) -> int:
 
 
 def clamp_effort(config: RouterConfig, model_id: str, effort: str | None) -> str | None:
-    """Move an effort onto the ladder the model actually supports."""
+    """Move an effort onto the ladder the model actually supports.
+
+    A model with a `default_effort` never comes out of here bare. Some models
+    think without limit when they are sent with no effort at all, spend their
+    whole token budget on it and return nothing, so the config can say what
+    "no opinion" means for that model.
+    """
     mcfg = config.models.get(model_id)
     if mcfg is None or mcfg.effort_style == "none" or not mcfg.efforts:
         return None
     if effort is None:
-        return None
+        return mcfg.default_effort
     if effort in mcfg.efforts:
         return effort
     order = config.settings.effort_order
@@ -281,6 +559,10 @@ def apply_effort(
 ) -> tuple[str, dict[str, Any]]:
     """Return the upstream model name and any extra body fields."""
     mcfg = config.models[model_id]
+    if effort is None:
+        # The last guard: no path may send a model that declared a default
+        # effort without one.
+        effort = mcfg.default_effort
     if effort is None or mcfg.effort_style == "none":
         return mcfg.upstream_id, {}
     if mcfg.effort_style == "suffix":

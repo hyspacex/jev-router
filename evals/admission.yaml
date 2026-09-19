@@ -1,0 +1,238 @@
+# The admission test from POOL.md, as data.
+#
+# Adding a candidate model is adding a route here and rerunning the steps it
+# should appear in. Nothing in evals/admission.py knows any model's name.
+#
+#     uv run python evals/admission.py --step mid --max-calls 120
+#
+# `upstream` is the model string the proxy expects. Reasoning effort is a
+# suffix on that string, so the effort a route is admitted at is part of the
+# route. Two models must never be sent without one: glm-5.3 and kimi-k3 at
+# their default effort think until the token budget is gone and can return
+# empty content. gemma4-31b has no reasoning mode and takes no suffix.
+#
+# `provider` is the subscription the model is served from. The admission rule
+# treats "sits on a different provider" as a reason to take a model that is no
+# faster, because a second provider is capacity the first one does not have.
+
+judge_model: "gpt-5.6-sol(high)"
+judge_max_tokens: 800
+
+rule:
+  score_gap: 0.5      # a candidate may score this far below the incumbent
+  speed_gain: 0.30    # ... if it is at least this much faster
+  min_net_rate: 0.5   # specialist lane: (wins - losses) / decided pairs
+
+routes:
+  glm-5.3-flash:
+    upstream: "ollama/glm-5.3-flash(none)"
+    provider: local
+    vision: false
+  glm-5.3:
+    upstream: "ollama/glm-5.3(none)"
+    provider: local
+    vision: false
+  gemma4-31b:
+    upstream: "ollama/gemma4-31b"
+    provider: local
+    vision: true
+  kimi-k3:
+    upstream: "ollama/kimi-k3(none)"
+    provider: local
+    vision: true
+  astra:
+    upstream: "gpt-6-astra(low)"
+    provider: openai
+    vision: true
+  luna:
+    upstream: "gpt-5.6-luna(low)"
+    provider: openai
+    vision: true
+  grok-4.6:
+    upstream: "grok-4.6(low)"
+    provider: xai
+    vision: unknown
+
+steps:
+
+  mid:
+    question: "Can glm-5.3 or luna hold the mid band?"
+    incumbent: astra
+    routes: [glm-5.3, luna, astra]
+    samples: 2
+    cases:
+      # Difficulty 1 to 2, nine code or debugging and three analysis. No
+      # agentic case: the graded route is sent no tool schemas, so a case whose
+      # answer is a tool call cannot be graded fairly.
+      - code-regex-extract-04
+      - code-sql-window-query-05
+      - code-prose-shaped-really-code-09
+      - code-chinese-hooks-08
+      - debug-css-overflow-17
+      - quick-borrow-checker-misleading-75
+      - multilingual-pt-coorte-retencao-161
+      - multiturn-ratelimiter-continue-138
+      - adv-five-second-cron-tz-96
+      - design-index-strategy-26
+      - adv-static-markup-rounding-99
+      - quick-weakmap-vs-map-72
+
+  faithfulness:
+    question: "Do the cheap models invent facts on work where a wrong fact matters?"
+    incumbent: astra
+    routes: [glm-5.3, gemma4-31b, kimi-k3, astra]
+    cached_only: [astra]
+    samples: 2
+    cases:
+      - writing-medical-discharge-38
+      - summarise-trial-abstract-66
+      - extract-invoice-json-62
+      - summarise-meeting-notes-dates-61
+      - adv-sow-dates-91
+
+  fast:
+    question: "Is gemma4-31b a better fast model than glm-5.3-flash?"
+    incumbent: glm-5.3-flash
+    routes: [gemma4-31b, glm-5.3-flash]
+    samples: 2
+    cases:
+      - quick-postgres-port-71
+      - quick-percentage-74
+      - quick-timezone-abbrev-77
+      - quick-bash-for-loop-70
+      - code-shell-oneliner-06
+      - debug-nameerror-typo-14
+      - polish-slack-grammar-54
+      - summarise-blogpost-tldr-63
+      - other-chitchat-85
+      - quick-german-idempotent-76
+      # glm-5.3-flash has no vision, so it is dropped from these four.
+      - img-bar-chart
+      - img-invoice-table
+      - img-handwritten-digits
+      - img-terminal-error
+
+  creative:
+    question: "Does kimi-k3 win creative prose against the frontier model?"
+    incumbent: astra
+    routes: [kimi-k3, astra]
+    mode: pairwise
+    pairs: 2
+    samples: 2
+    cases:
+      - creative-limerick-printer-45
+      - creative-noir-opening-46
+      - creative-npc-dialogue-48
+      - creative-wedding-speech-49
+      - creative-parody-lyrics-50
+      - creative-pov-rewrite-51
+
+  frontier:
+    question: "Is grok-4.6 a safe overflow for the frontier lane?"
+    incumbent: astra
+    routes: [grok-4.6, astra]
+    samples: 2
+    cases:
+      - debug-go-deadlock-short-40-11
+      - debug-adversarial-injection-in-log-16
+      - design-eventbus-tradeoff-20
+      # design-auth-module-review-23 was dropped mid-run on 2026-09-19. It is
+      # a 5.5 KB paste that asks for a full security review, so both routes
+      # write at length; on a proxy that had already slowed from a 6 second
+      # median to 25 seconds it timed out twice and blocked the rest of the
+      # step behind it. Put it back when the proxy is fresh.
+      - writing-legal-clause-39
+      - writing-regulator-response-42
+      - writing-investor-update-numbers-44
+      - other-simple-question-proof-78
+      - other-probability-puzzle-79
+      - other-buy-vs-rent-84
+
+  vision_probe:
+    question: "Does grok-4.6 accept an image at all?"
+    incumbent: grok-4.6
+    routes: [grok-4.6]
+    samples: 1
+    cases:
+      - img-bar-chart
+
+# Image cases. The PNGs are generated by evals/make_images.py into a temporary
+# directory and sent as base64 data URLs; they are never committed. Every
+# expected value below is what the generator drew, so nobody has to read the
+# picture to grade the answer.
+
+image_cases:
+
+  img-bar-chart:
+    image: bar-chart
+    system: "Follow the instruction exactly. Output only the requested result."
+    prompt: |
+      Read the chart in the image and answer with a single JSON object and
+      nothing else:
+      {"highest": "<region name>", "highest_value": <number>,
+       "sum_two_smallest": <number>}
+      `sum_two_smallest` is the sum of the two smallest bars' values.
+    checks:
+      - kind: json_fields
+        weight: 4
+        expected:
+          highest: Rotterdam
+          highest_value: 418
+          sum_two_smallest: 352
+      - kind: max_words
+        limit: 60
+        weight: 1
+
+  img-invoice-table:
+    image: table-screenshot
+    system: "Follow the instruction exactly. Output only the requested result."
+    prompt: |
+      The image is a screenshot of an invoice table. Answer with a single JSON
+      object and nothing else:
+      {"overdue_count": <number>, "overdue_total": <number>,
+       "first_overdue_invoice": "<invoice number>"}
+      `overdue_total` is the sum of the Amount EUR column over the rows whose
+      status is Overdue.
+    checks:
+      - kind: json_fields
+        weight: 4
+        expected:
+          overdue_count: 2
+          overdue_total: 9275.50
+          first_overdue_invoice: INV-2042
+      - kind: max_words
+        limit: 60
+        weight: 1
+
+  img-handwritten-digits:
+    image: handwritten-digits
+    system: "Follow the instruction exactly. Output only the requested result."
+    prompt: >
+      Transcribe the digits written in the image. Reply with the digits only,
+      no spaces and no other text.
+    checks:
+      - kind: contains_all
+        weight: 4
+        patterns: ["4 ?0 ?9 ?2 ?7 ?1 ?8 ?6"]
+      - kind: max_words
+        limit: 20
+        weight: 1
+
+  img-terminal-error:
+    image: terminal-error
+    system: "Follow the instruction exactly. Output only the requested result."
+    prompt: |
+      The image is a terminal window. Answer with a single JSON object and
+      nothing else:
+      {"exception": "<the exception class name>", "file": "<the file name of
+      the innermost frame>", "line": <the line number of the innermost frame>}
+    checks:
+      - kind: json_fields
+        weight: 4
+        expected:
+          exception: ZeroDivisionError
+          file: batching.py
+          line: 219
+      - kind: max_words
+        limit: 60
+        weight: 1

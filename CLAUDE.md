@@ -13,6 +13,8 @@ uv run pytest tests/test_policy.py::test_name -x
 uv run jev-router check-config                # validate router.yaml
 uv run jev-router serve --mode shadow
 uv run jev-router explain request.json        # calls Jev, never forwards
+uv run jev-router explain request.json --pressure openai=0.8
+uv run jev-router quota --poll                # runs each enabled quota source once
 ```
 
 Eval scripts all spend real API quota. `run_eval.py` and `tune.py` need
@@ -43,19 +45,27 @@ uv run python evals/run_eval.py --variants router_yaml --public evals/cases_publ
   `JEV_ROUTER_UPSTREAM` override, the config hash stored with every decision.
 - `features.py` — turns a chat-completions body into counts and flags. Pure.
 - `state.py` — state builders, the registry, the paste/continuation split.
-- `policy.py` — confidence gate, rule matching, caps, floors, capability
-  filters, effort clamping. Pure: no network, no clock, no database.
+- `policy.py` — confidence gate, rule matching, route resolution, quota
+  threshold shifts, route reordering, caps, floors, capability filters, effort
+  clamping. Pure: no network, no clock, no database.
+- `providers.py` — one circuit breaker per provider, in memory, plus the
+  merge of quota pressure and health pressure.
+- `quota.py` — the quota source registry (`command`, `static`, `none`), the
+  background poller, and `compute_pressure`, which is pure.
 - `deciders/base.py` — the `Decision` dataclass and the decider registry.
 - `deciders/jev.py` — calls Jev, evaluates the policy, falls back on any error.
 - `deciders/rules.py` — no-network decider that guesses from counts.
-- `pins.py` — sqlite: pins, decision log, feedback, conversation key.
+- `pins.py` — sqlite: pins, decision log, feedback, conversation key, and the
+  forward-only column migration.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
-- `app.py` — Starlette routes, forwarding, streaming, shadow mode.
-- `cli.py` — serve, check-config, explain, decisions, feedback.
+- `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
+  shadow mode.
+- `cli.py` — serve, check-config, explain, quota, decisions, feedback.
 
 Request flow: `app.chat_completions` → `features.extract_features` →
 `pins.conversation_key` and a pin lookup → `deciders.jev` → `state.build_state`
-→ Jev → `policy.evaluate` → `policy.apply_effort` → `app.forward`.
+→ Jev → `policy.evaluate` (with the pressures) → `app.forward_alias`, which
+walks the route's entries and applies `policy.apply_effort` to each.
 
 - `deciders/jev.py` also holds the optional AutoMix-style draft step. It is off
   unless an alias sets `draft.enabled`, it fails open, and a pinned turn never
@@ -85,19 +95,39 @@ Request flow: `app.chat_completions` → `features.extract_features` →
 
 ## Rules
 
-- Extend through `router.yaml` and the registries. A model, question, rule,
-  ruleset, alias or client floor is config. Only a new state builder or decider
-  needs Python.
+- A model joins the pool through the admission test (`evals/admission.py`,
+  POOL.md), not on vendor numbers. Record the verdict in POOL.md.
+
+- Extend through `router.yaml` and the registries. A provider, model, question,
+  route, rule, ruleset, alias or client floor is config. Only a new state
+  builder, decider or quota source needs Python.
 - `policy.py` and `features.py` stay pure. No I/O, no randomness, no clock.
+  Quota pressure arrives as an argument, never as a lookup.
 - Never log or store message text, prompts or API keys. The conversation key
   hashes the `Authorization` header. `settings.log_state` is for debugging only.
 - A Jev failure must never fail a request. Every path through `deciders/jev.py`
   returns a `Decision`.
+- A quota failure must never fail a request either, and must never change one.
+  A missing source, a failed command, a missing field or a stale snapshot all
+  mean pressure 0, which routes as the router routed before quota existed.
+  Never poll on the request path.
+- Quota pressure may only make a provider harder to reach. Shifts are bounded
+  by `max_shift`, monotone in pressure, and one-directional. A `protected`
+  rule ignores them. Only an `equivalent: true` entry may be promoted ahead of
+  a route's primary.
 - Never reroute a pinned conversation. The one exception is context overflow,
-  which moves up once and takes a new decision id.
+  which moves up once and takes a new decision id. Quota never touches a pin,
+  and a pinned turn has no fallback plan.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
-  on non-streamed replies, and must yield chunks unchanged.
-- `tune.py` proposes a diff and never writes `router.yaml`.
+  on non-streamed replies, and must yield chunks unchanged. An upstream
+  fallback is chosen on the response status, before anything is streamed;
+  never switch model after a byte has been sent.
+- sqlite migrations are forward-only and additive. Add a nullable column to
+  `ADDED_COLUMNS` in `pins.py`; never drop or rewrite one. A database from an
+  older version must keep working.
+- `tune.py` proposes a diff and never writes `router.yaml`. It replays a
+  decision at the pressure it was taken under, so a deliberate quota saving is
+  not scored as a classifier error.
 - Change one classifier variable at a time, and record it in
   `evals/EXPERIMENTS.md` with before/after numbers on both splits, Wilson
   intervals, and a paired bootstrap p-value. On 171 cases two independent runs

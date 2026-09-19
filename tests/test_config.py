@@ -125,3 +125,158 @@ def test_inline_ruleset_on_an_alias_is_allowed(tmp_path):
     }))
     ruleset = cfg.ruleset_for(cfg.aliases["auto"])
     assert ruleset.rules[0].name == "always"
+
+
+# --- providers, routes, default effort ----------------------------------
+
+
+def with_providers(raw):
+    raw["providers"] = {"cloud": {"description": "A"}, "local": {"description": "B"}}
+    raw["models"]["small"]["provider"] = "local"
+    raw["models"]["big"]["provider"] = "cloud"
+    raw["models"]["paramy"]["provider"] = "cloud"
+
+
+def test_a_provider_is_required_once_providers_are_declared(tmp_path):
+    def mutate(raw):
+        with_providers(raw)
+        del raw["models"]["big"]["provider"]
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "'provider' is required" in str(exc.value)
+
+
+def test_an_unknown_provider_on_a_model_is_reported(tmp_path):
+    def mutate(raw):
+        with_providers(raw)
+        raw["models"]["big"]["provider"] = "ghost"
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "unknown provider 'ghost'" in str(exc.value)
+
+
+def test_naming_a_provider_with_no_providers_block_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["models"]["big"].update({"provider": "cloud"}))
+    assert "declares no `providers:` block" in str(exc.value)
+
+
+def test_a_default_effort_must_be_one_the_model_allows(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["models"]["small"].update({"default_effort": "max"}))
+    assert "default_effort" in str(exc.value)
+    assert "is not in models.small.efforts" in str(exc.value)
+
+
+def test_a_default_effort_outside_the_effort_order_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["models"]["small"].update({"default_effort": "turbo"}))
+    assert "settings.effort_order" in str(exc.value)
+
+
+def test_a_good_default_effort_is_accepted(tmp_path):
+    cfg = load_raw(tmp_path, lambda r: r["models"]["small"].update({"default_effort": "low"}))
+    assert cfg.models["small"].default_effort == "low"
+
+
+def test_an_unknown_route_in_a_rule_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            {"name": "bad", "when": {}, "use": {"route": "ghost"}}))
+    assert "unknown route 'ghost'" in str(exc.value)
+
+
+def test_a_route_entry_is_checked_like_any_other_model_and_effort(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r.update({"routes": {
+            "lane": {"primary": {"model": "small", "effort": "xhigh"}}}}))
+    assert "does not allow effort 'xhigh'" in str(exc.value)
+
+
+def test_a_use_block_must_name_something(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            {"name": "bad", "when": {}, "use": {}}))
+    assert "give a 'model' or a 'route'" in str(exc.value)
+
+
+def test_an_effort_beside_a_route_name_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            {"name": "bad", "when": {}, "use": {"route": "lane", "effort": "high"}}))
+    assert "belongs to the route's entries" in str(exc.value)
+
+
+def test_a_route_and_a_model_together_means_the_model_wins(tmp_path):
+    """An overlay that names a model is overriding whatever sat underneath."""
+    cfg = load_raw(tmp_path, lambda r: r.update({
+        "routes": {"lane": {"primary": {"model": "small", "effort": "low"}}},
+        "policy": {**r["policy"], "default": {"route": "lane", "model": "big",
+                                              "effort": "medium"}},
+    }))
+    assert cfg.policy.default.model == "big"
+    assert cfg.policy.default.route is None
+
+
+def test_equivalent_on_a_primary_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r.update({"routes": {
+            "lane": {"primary": {"model": "small", "effort": "low", "equivalent": True}}}}))
+    assert "'equivalent' belongs on a fallback" in str(exc.value)
+
+
+# --- pressure-sensitive conditions --------------------------------------
+
+
+def shift_rule(**cond):
+    return {"name": "shifty", "when": {"difficulty": cond}, "use": {"model": "big"}}
+
+
+def test_a_shift_needs_a_known_provider(tmp_path):
+    def mutate(raw):
+        with_providers(raw)
+        raw["policy"]["rules"].append(shift_rule(gte=2.0, shift_with="ghost", max_shift=0.4))
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "unknown provider 'ghost'" in str(exc.value)
+
+
+def test_a_shift_needs_both_halves(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            shift_rule(gte=2.0, max_shift=0.4)))
+    assert "needs a 'shift_with'" in str(exc.value)
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            shift_rule(gte=2.0, shift_with="default")))
+    assert "needs a 'max_shift'" in str(exc.value)
+
+
+def test_a_shift_needs_a_comparison_to_move(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            shift_rule(eq=2.0, shift_with="default", max_shift=0.4)))
+    assert "needs a 'gte', 'lte' or 'conf_gte'" in str(exc.value)
+
+
+def test_a_negative_max_shift_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["policy"]["rules"].append(
+            shift_rule(gte=2.0, shift_with="default", max_shift=-1)))
+    assert "zero or more" in str(exc.value)
+
+
+def test_an_unknown_quota_source_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r.update({
+            "providers": {"cloud": {"quota": {"source": "telepathy"}}},
+            "models": {**r["models"],
+                       "small": {**r["models"]["small"], "provider": "cloud"},
+                       "big": {**r["models"]["big"], "provider": "cloud"},
+                       "paramy": {**r["models"]["paramy"], "provider": "cloud"}},
+        }))
+    assert "unknown source 'telepathy'" in str(exc.value)

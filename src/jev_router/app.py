@@ -27,8 +27,10 @@ from .deciders.base import Decision
 from .feedback import FeedbackError, validate as validate_feedback
 from .features import Features, extract_features
 from .pins import Store, conversation_key, new_decision_id
-from .policy import apply_effort, clamp_effort, fits, next_model_that_fits
+from .policy import PlanEntry, apply_effort, clamp_effort, fits, next_model_that_fits
 from .policy import finalize as policy_finalize
+from .providers import ProviderBreakers, merge_pressures
+from .quota import QuotaMonitor
 
 log = logging.getLogger("jev_router")
 
@@ -50,6 +52,11 @@ DROP_RESPONSE_HEADERS = HOP_BY_HOP | {"content-length", "content-encoding"}
 PEEK_LIMIT = 512 * 1024  # bodies larger than this are streamed without inspection
 
 
+def _is_retryable_status(status: int) -> bool:
+    """A status that says "try somewhere else", not "your request is wrong"."""
+    return status == 429 or status >= 500
+
+
 class Router:
     def __init__(self, config: RouterConfig, store: Store | None = None) -> None:
         self.config = config
@@ -64,17 +71,29 @@ class Router:
             timeout=config.settings.jev_timeout_ms / 1000,
             limits=httpx.Limits(max_keepalive_connections=4),
         )
-        self.decider = build_decider(
-            config.settings.decider, config, {"jev_client": self.jev_client}
-        )
+        self.breakers = ProviderBreakers(config)
+        self.quota = QuotaMonitor(config)
+        deps: dict[str, Any] = {
+            "jev_client": self.jev_client,
+            "pressures": self.pressures,
+        }
+        self.decider = build_decider(config.settings.decider, config, deps)
         self._alias_deciders: dict[str, Any] = {}
         for alias, acfg in config.aliases.items():
             if acfg.decider:
-                self._alias_deciders[alias] = build_decider(
-                    acfg.decider, config, {"jev_client": self.jev_client}
-                )
+                self._alias_deciders[alias] = build_decider(acfg.decider, config, deps)
+
+    def pressures(self) -> dict[str, float]:
+        """One number per provider. In memory, no clock work, no I/O."""
+        try:
+            self.quota.refresh_staleness()
+            return merge_pressures(self.config, self.quota.pressures(), self.breakers)
+        except Exception:  # noqa: BLE001 - quota may never fail a request
+            log.exception("could not read quota pressure, routing without it")
+            return {}
 
     async def aclose(self) -> None:
+        await self.quota.stop()
         await self.upstream.aclose()
         await self.jev_client.aclose()
         self.store.close()
@@ -165,6 +184,125 @@ class Router:
             if buffer is not None and capture_row:
                 self._record_usage(capture_row, bytes(buffer))
 
+    # --- forwarding an alias, with fallbacks ---------------------------
+
+    async def forward_alias(
+        self,
+        request: Request,
+        body: dict[str, Any],
+        plan: list[PlanEntry],
+        headers: dict[str, str],
+        decision_row: int | None = None,
+    ) -> tuple[Response, int, str, PlanEntry]:
+        """Try the plan in order. Return the response and which entry served it.
+
+        An entry is skipped when its provider's breaker is open. An entry is
+        abandoned when the upstream answers 429 or 5xx, refuses the
+        connection, or times out. All of that happens before a single byte has
+        reached the client, because nothing is streamed until a response has
+        been accepted. Once bytes are flowing the model cannot change.
+        """
+        base_headers = self._forward_headers(request)
+        url = self._upstream_url(request)
+        failures: list[str] = []
+
+        for index, entry in enumerate(plan):
+            provider = entry.provider or self.config.provider_of(entry.model)
+            last_rung = index == len(plan) - 1
+            why = "; ".join(failures)
+
+            if not self.breakers.acquire(provider):
+                if not last_rung:
+                    failures.append(f"{entry.model}: {provider} breaker open")
+                    continue
+                # Nothing else left. Serving through an open breaker beats
+                # refusing to serve at all.
+                log.info("no healthy provider left, trying %s anyway", entry.model)
+
+            content = self._alias_body(body, entry)
+            headers_out = [*base_headers, (b"content-length", str(len(content)).encode())]
+            upstream_request = self.upstream.build_request(
+                request.method, url, headers=headers_out, content=content
+            )
+            try:
+                upstream_response = await self.upstream.send(upstream_request, stream=True)
+            except httpx.HTTPError as exc:
+                self.breakers.record_failure(provider, type(exc).__name__)
+                failures.append(f"{entry.model}: {type(exc).__name__}")
+                if not last_rung:
+                    continue
+                if decision_row:
+                    self.store.update_decision(decision_row, upstream_status=502)
+                error = JSONResponse(
+                    {"error": {"message": f"upstream request failed: {exc}",
+                               "type": "router"}},
+                    status_code=502,
+                )
+                return error, index, "; ".join(failures), entry
+
+            if _is_retryable_status(upstream_response.status_code):
+                self.breakers.record_failure(provider, f"HTTP {upstream_response.status_code}")
+                failures.append(f"{entry.model}: HTTP {upstream_response.status_code}")
+                if not last_rung:
+                    await upstream_response.aclose()
+                    continue
+                # The last rung's answer is the answer, however bad.
+                why = "; ".join(failures)
+            else:
+                self.breakers.record_success(provider)
+
+            return self._respond(upstream_response, headers, index, decision_row), index, why, entry
+
+        # Unreachable with a non-empty plan, and a plan is never empty. Never
+        # leave a caller without a response all the same.
+        return (
+            JSONResponse(
+                {"error": {"message": "no route could be tried", "type": "router"}},
+                status_code=502,
+            ),
+            0,
+            "; ".join(failures),
+            plan[0],
+        )
+
+    def _alias_body(self, body: dict[str, Any], entry: PlanEntry) -> bytes:
+        upstream_model, extra = apply_effort(self.config, entry.model, entry.effort)
+        payload = dict(body)
+        payload["model"] = upstream_model
+        payload.pop("reasoning_effort", None)  # ours wins for an alias request
+        payload.update(extra)
+        return json.dumps(payload).encode()
+
+    def _respond(
+        self,
+        upstream_response: httpx.Response,
+        headers: dict[str, str],
+        index: int,
+        decision_row: int | None,
+    ) -> Response:
+        if decision_row:
+            self.store.update_decision(
+                decision_row, upstream_status=upstream_response.status_code
+            )
+        out_headers = {
+            k: v
+            for k, v in upstream_response.headers.items()
+            if k.lower() not in DROP_RESPONSE_HEADERS
+        }
+        out_headers.update(headers)
+        if index:
+            out_headers["X-Router-Fallback"] = str(index)
+        capture = (
+            decision_row is not None
+            and "text/event-stream" not in upstream_response.headers.get("content-type", "")
+        )
+        return StreamingResponse(
+            self._stream(upstream_response, decision_row if capture else None),
+            status_code=upstream_response.status_code,
+            headers=out_headers,
+            background=BackgroundTask(upstream_response.aclose),
+        )
+
     def _record_usage(self, row_id: int, body: bytes) -> None:
         try:
             usage = json.loads(body).get("usage")
@@ -177,8 +315,9 @@ class Router:
 
     async def route_alias(
         self, alias: str, body: dict[str, Any], features: Features
-    ) -> tuple[Decision, bool, int, str]:
-        """Return the decision, whether it came from a pin, the row id and the decision id."""
+    ) -> tuple[Decision, bool, int, str, str]:
+        """The decision, whether it came from a pin, the row id, the decision
+        id and the conversation key."""
         settings = self.config.settings
         alias_cfg = self.config.aliases[alias]
         key = conversation_key(
@@ -241,8 +380,37 @@ class Router:
             est_tokens=features.est_tokens,
             message_count=features.message_count,
             state=decision.state,
+            route=decision.route,
+            pressures={k: round(v, 4) for k, v in decision.pressures.items() if v},
+            shifted=[s.to_dict() for s in decision.shifts],
+            reordered=decision.reordered,
         )
-        return decision, pinned, row, decision_id
+        return decision, pinned, row, decision_id, key
+
+    def plan_for(
+        self,
+        decision: Decision,
+        chosen_model: str,
+        chosen_effort: str | None,
+        pinned: bool,
+    ) -> list[PlanEntry]:
+        """The rungs the forwarder may try for this request.
+
+        A pinned conversation gets exactly one. Moving it to another model on
+        a transient 429 would throw away the prompt cache and the style the
+        conversation was pinned for, and the pin rule has one exception
+        already (context overflow), which is enough.
+        """
+        head = PlanEntry(
+            model=chosen_model,
+            effort=chosen_effort,
+            provider=self.config.provider_of(chosen_model),
+        )
+        if pinned or not decision.plan:
+            return [head]
+        if decision.plan[0].as_pair() != head.as_pair():
+            return [head]  # shadow mode, or something else overrode the route
+        return list(decision.plan)
 
     def effective_route(
         self, decision: Decision, alias: str, features: Features
@@ -280,14 +448,11 @@ async def chat_completions(request: Request) -> Response:
 
     alias = model
     features = extract_features(body, dict(request.headers))
-    decision, pinned, row, decision_id = await router.route_alias(alias, body, features)
+    decision, pinned, row, decision_id, key = await router.route_alias(alias, body, features)
     chosen_model, chosen_effort = router.effective_route(decision, alias, features)
 
-    upstream_model, extra = apply_effort(router.config, chosen_model, chosen_effort)
-    new_body = dict(body)
-    new_body["model"] = upstream_model
-    new_body.pop("reasoning_effort", None)  # ours wins for an alias request
-    new_body.update(extra)
+    plan = router.plan_for(decision, chosen_model, chosen_effort, pinned)
+    upstream_model, _extra = apply_effort(router.config, chosen_model, chosen_effort)
 
     headers = {
         "X-Router-Model": upstream_model,
@@ -296,26 +461,63 @@ async def chat_completions(request: Request) -> Response:
         "X-Router-Pinned": "true" if pinned else "false",
         "X-Router-Decision": decision_id,
     }
+    if decision.route:
+        headers["X-Router-Route"] = decision.route
     if router.config.settings.mode == "shadow":
         headers["X-Router-Shadow-Model"] = decision.model
     if decision.fallback:
-        headers["X-Router-Fallback"] = "true"
+        headers["X-Router-Decider-Fallback"] = "true"
+    if decision.pressure_changed_the_outcome:
+        headers["X-Router-Pressure"] = _pressure_header(decision)
 
     log.info(
-        "alias=%s model=%s effort=%s rule=%s pinned=%s fallback=%s jev_ms=%s",
+        "alias=%s model=%s effort=%s rule=%s route=%s pinned=%s decider_fallback=%s"
+        " jev_ms=%s pressure=%s shifted=%s reordered=%s",
         alias,
         chosen_model,
         chosen_effort,
         decision.rule,
+        decision.route or "-",
         pinned,
         decision.fallback,
         None if decision.jev_ms is None else round(decision.jev_ms),
+        _pressure_header(decision) or "-",
+        ",".join(f"{s.question}{s.op}{s.base:g}->{s.effective:g}" for s in decision.shifts)
+        or "-",
+        decision.reordered,
     )
-    return await router.forward(
-        request,
-        json.dumps(new_body).encode(),
-        extra_response_headers=headers,
-        decision_row=row,
+
+    response, index, why, served = await router.forward_alias(
+        request, body, plan, headers, decision_row=row
+    )
+
+    if index:
+        log.warning(
+            "served by fallback %d (%s at %s) after: %s",
+            index,
+            served.model,
+            served.effort or "-",
+            why or "no reason recorded",
+        )
+        router.store.update_decision(
+            row,
+            model=served.model,
+            effort=served.effort,
+            intended_model=plan[0].model,
+            intended_effort=plan[0].effort or "",
+            fallback_index=index,
+            fallback_reason=why,
+        )
+        # The conversation follows the model that answered, so the rest of it
+        # keeps one model and one prompt cache.
+        if not pinned and router.config.settings.mode == "active":
+            router.store.set_pin(key, served.model, served.effort, decision_id)
+    return response
+
+
+def _pressure_header(decision: Decision) -> str:
+    return ",".join(
+        f"{name}={value:.2f}" for name, value in sorted(decision.pressures.items()) if value
     )
 
 
@@ -373,11 +575,41 @@ async def health(request: Request) -> Response:
             "upstream": settings.upstream_base_url,
             "aliases": sorted(router.config.aliases),
             "models": sorted(router.config.models),
+            "providers": sorted(router.config.provider_names()),
+            "routes": sorted(router.config.routes),
+            "unhealthy_providers": sorted(
+                name
+                for name in router.config.provider_names()
+                if not router.breakers.healthy(name)
+            ),
             "decider": settings.decider,
             "jev_key_present": bool(os.environ.get(settings.jev_api_key_env)),
             "uptime_s": round(time.time() - router.started, 1),
         }
     )
+
+
+async def providers(request: Request) -> Response:
+    """Circuit breaker state per provider. In memory, lost on restart."""
+    router: Router = request.app.state.router
+    return JSONResponse(
+        {
+            "providers": router.breakers.report(),
+            "pressures": {k: round(v, 4) for k, v in router.pressures().items()},
+        }
+    )
+
+
+async def quota(request: Request) -> Response:
+    """Quota snapshots, pressures, staleness and the last error per provider."""
+    router: Router = request.app.state.router
+    report = router.quota.report()
+    report["breaker_pressure"] = {
+        name: round(router.breakers.pressure(name), 4)
+        for name in router.config.provider_names()
+    }
+    report["effective_pressure"] = {k: round(v, 4) for k, v in router.pressures().items()}
+    return JSONResponse(report)
 
 
 async def decisions(request: Request) -> Response:
@@ -492,10 +724,15 @@ def _alias_in_body(config: RouterConfig, raw: bytes) -> str | None:
 
 @contextlib.asynccontextmanager
 async def _lifespan(app: Starlette) -> AsyncIterator[None]:
+    router: Router = app.state.router
+    try:
+        router.quota.start()
+    except Exception:  # noqa: BLE001 - quota may never stop the router starting
+        log.exception("could not start the quota poller, routing without it")
     try:
         yield
     finally:
-        await app.state.router.aclose()
+        await router.aclose()
 
 
 def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
@@ -504,6 +741,8 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/v1/chat/completions", chat_completions, methods=["POST"]),
         Route("/v1/models", list_models, methods=["GET"]),
         Route("/router/health", health, methods=["GET"]),
+        Route("/router/providers", providers, methods=["GET"]),
+        Route("/router/quota", quota, methods=["GET"]),
         Route("/router/decisions", decisions, methods=["GET"]),
         Route("/router/feedback", post_feedback, methods=["POST"]),
         Route("/router/feedback", list_feedback, methods=["GET"]),

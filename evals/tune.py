@@ -189,6 +189,14 @@ def _normalise(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # --- cases to tune on ---------------------------------------------------
 
 
+# What to do with a decision that was taken while a provider was under quota
+# pressure. Those decisions are not classifier errors: the router deliberately
+# routed them away from the pressured provider, and replaying them at pressure
+# zero would look like an under-route and drag the search towards thresholds
+# that are too low.
+PRESSURE_MODES = ("replay", "exclude")
+
+
 @dataclass
 class TuneCase:
     case_id: str
@@ -200,9 +208,13 @@ class TuneCase:
     weight: float = 1.0
     source: str = "eval"
     slice: str = "chat"
+    # The pressure each provider was under when this decision was taken.
+    # Empty for an eval case, which never runs under pressure.
+    pressures: dict[str, float] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         self.acceptable_tiers = list(self.acceptable_tiers)
+        self.pressures = dict(self.pressures or {})
 
 
 def features_from_facts(facts: dict[str, Any]) -> Features:
@@ -311,21 +323,38 @@ def apply_outcomes(cases: list[TuneCase], outcomes_path: Path) -> int:
     return widened
 
 
-def load_feedback_cases(db_path: Path, config: RouterConfig) -> list[TuneCase]:
+def load_feedback_cases(
+    db_path: Path, config: RouterConfig, pressure_mode: str = "replay"
+) -> list[TuneCase]:
     """One replayable case per feedback row that carries a correction.
 
     `right` confirms what was chosen. `too_weak` and `too_strong` move the
     label to the model and effort the person named, or one step if they did not
     name one. Every row counts FEEDBACK_WEIGHT times.
+
+    Rows taken under quota pressure need care. The router moved those requests
+    on purpose, so scoring them against a zero-pressure replay would count a
+    deliberate saving as a classifier error. `pressure_mode="replay"` hands
+    the recorded pressure back to the policy so the replay reproduces the real
+    decision. `pressure_mode="exclude"` drops those rows instead.
     """
     if not db_path.exists():
         return []
+    if pressure_mode not in PRESSURE_MODES:
+        raise ValueError(
+            f"pressure_mode must be one of {', '.join(PRESSURE_MODES)}, got {pressure_mode!r}"
+        )
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
+        # A database written before quota existed has no `pressures` column.
+        # Those rows were all taken at pressure zero, which is exactly what an
+        # absent column means here.
+        have = {r[1] for r in conn.execute("PRAGMA table_info(decisions)").fetchall()}
+        pressure_col = "d.pressures" if "pressures" in have else "NULL AS pressures"
         rows = conn.execute(
             "SELECT f.verdict, f.better_model, f.better_effort, f.decision_id,"
-            " d.answers, d.features, d.model, d.effort"
+            f" d.answers, d.features, d.model, d.effort, {pressure_col}"
             " FROM feedback f JOIN decisions d"
             " ON d.id = (SELECT MAX(id) FROM decisions WHERE decision_id = f.decision_id)"
             " WHERE d.fallback = 0"
@@ -344,6 +373,9 @@ def load_feedback_cases(db_path: Path, config: RouterConfig) -> list[TuneCase]:
         except ValueError:
             continue
         if not answers:
+            continue
+        pressures = _pressures_of(row)
+        if pressures and pressure_mode == "exclude":
             continue
         model = row["better_model"] or row["model"]
         effort = row["better_effort"] or row["effort"]
@@ -365,9 +397,35 @@ def load_feedback_cases(db_path: Path, config: RouterConfig) -> list[TuneCase]:
                 acceptable_tiers=[tier_of(model)],
                 effort=effort,
                 weight=FEEDBACK_WEIGHT,
-                source="feedback",
+                source="feedback" + (" (under pressure)" if pressures else ""),
+                pressures=pressures,
             )
         )
+    return out
+
+
+def _pressures_of(row: Any) -> dict[str, float]:
+    """The recorded pressure per provider, ignoring zeros and anything odd."""
+    try:
+        raw = row["pressures"]
+    except (IndexError, KeyError):
+        return {}
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for name, value in data.items():
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            out[str(name)] = number
     return out
 
 
@@ -419,7 +477,9 @@ def score_with_config(
     weight = under = over = correct = effort_ok = cost = 0.0
     misses: list[str] = []
     for case in cases:
-        result = evaluate(config, alias_cfg, case.answers, case.features)
+        # Replay under the pressure the decision was really taken under, so a
+        # deliberate saving is not scored as a classifier error.
+        result = evaluate(config, alias_cfg, case.answers, case.features, case.pressures)
         tier = tier_of(result.model)
         w = case.weight
         weight += w
@@ -587,6 +647,9 @@ def main() -> int:
                    help="hold out one whole slice instead of 30%% of the rows")
     p.add_argument("--no-outcomes", action="store_true")
     p.add_argument("--no-feedback", action="store_true")
+    p.add_argument("--pressure-mode", choices=list(PRESSURE_MODES), default="replay",
+                   help="decisions taken under quota pressure: replay them with the "
+                        "recorded pressure, or leave them out")
     args = p.parse_args()
 
     results = Path(args.results)
@@ -611,7 +674,10 @@ def main() -> int:
 
     feedback: list[TuneCase] = []
     if not args.no_feedback:
-        feedback = load_feedback_cases(Path(args.db).expanduser(), config)
+        feedback = load_feedback_cases(
+            Path(args.db).expanduser(), config, pressure_mode=args.pressure_mode
+        )
+    under_pressure = sum(1 for c in feedback if c.pressures)
 
     tune_cases = [c for c in cases if c.split == "tune"] + feedback
     held_out = [c for c in cases if c.split == "held_out"]
@@ -620,6 +686,11 @@ def main() -> int:
           f"({len(feedback)} from feedback, weighted {FEEDBACK_WEIGHT:g}x), "
           f"holding out {len(held_out)}"
           + (f" (the whole `{args.slice_holdout}` slice)" if args.slice_holdout else ""))
+    if args.pressure_mode == "exclude":
+        print("decisions taken under quota pressure were left out")
+    elif under_pressure:
+        print(f"{under_pressure} feedback rows are replayed at the pressure they were "
+              "taken under, not at zero")
     if widened:
         print(f"outcome benchmark widened the acceptable tiers of {widened} cases")
 

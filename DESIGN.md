@@ -115,6 +115,131 @@ There is one exception. If a conversation outgrows the pinned model's context
 window, the router moves it once to the smallest model that fits and re-pins.
 That move gets a new decision id, because it is a different route.
 
+## Fallbacks and quota
+
+Two problems sit beside routing and are not the classifier's business. A
+provider can be down or rate limited. And a provider can be a flat-rate
+subscription with a usage window, being spent faster than the window lasts.
+The classifier should not know about either, so both are handled after the
+decision, by rules in `router.yaml` and by code that never touches a request's
+bytes.
+
+### Fallbacks
+
+A rule may point at a named route instead of a model. A route is a primary and
+an ordered list of fallbacks. The forwarder moves to the next entry when the
+upstream answers 429 or any 5xx, refuses the connection, or times out before
+the first response byte.
+
+Nothing is retried after a byte has reached the client. That is not a policy
+so much as a fact about how the forwarder is written: the choice is made on
+the response status, which arrives before anything is streamed, so once
+streaming starts the model is fixed. It has to be. The client already holds
+part of an answer, and two answers cannot be spliced together.
+
+A 4xx is not retried either. A malformed request is malformed at every
+provider, and retrying it spends a second provider's quota to get the same
+error.
+
+A conversation served by a fallback is pinned to the model that actually
+answered, not to the primary. The alternative is to leave the pin on the
+primary and hope, which would send every turn to a model that is failing and
+would throw away the serving provider's prompt cache on every turn. The
+decision row keeps both: `model` is what served, `intended_model` is what the
+policy chose, and `fallback_reason` says why the earlier entries did not.
+
+A pinned conversation has no fallback plan at all. The pin exists to keep one
+conversation on one model; moving it on a transient 429 gives up the thing the
+pin was for. The pin rule already has one exception, context overflow, and one
+is enough.
+
+### The circuit breaker
+
+Sending a request to a provider that has failed three times in a row does not
+produce an answer, it produces a delay and then a failure. So the breaker
+opens per provider, the router skips that provider's models while it is open,
+and after a cooldown it lets exactly one request through to find out whether
+the provider is back. The cooldown doubles on each reopen so a long outage is
+not probed every two minutes.
+
+The state is in memory. It is a fact about the last few minutes, it is
+per-process, and persisting it would mean a restart inherits a stale opinion
+about a provider that has since recovered.
+
+One exception: a provider that is the only entry left is tried anyway. A
+breaker that is wrong should cost one wasted call, not a refused request.
+
+### Pressure from pace, not from percent
+
+Raw usage percent is the wrong number to route on. A subscription at 80% of a
+weekly window on Friday is fine. The same 80% on Monday morning is not. So
+pressure compares the percent spent against the percent the window says should
+be spent by now: the provider's own pace figure when it reports one, otherwise
+one derived from the window length and the reset time.
+
+Pressure is a number in [0, 1] from a pure function. That matters for two
+reasons. It can be tested without a clock or a subprocess. And `evals/tune.py`
+can replay a decision taken under pressure at the pressure it was really taken
+under, instead of scoring a deliberate saving as a classifier error.
+
+Hysteresis and a per-poll clamp were added because a threshold that moves with
+a measured number will otherwise chatter across a knee, and because one bad
+reading should not swing routing in a single step.
+
+### Bounded, monotone, one-directional
+
+Pressure is allowed to move a rule's threshold, and nothing else about the
+rule. The shift is `pressure × max_shift`, so it is bounded by a number in the
+config, monotone in pressure, and always in the direction that makes the
+pressured provider harder to reach. It can never route more work towards a
+provider that is running out.
+
+The alternative — letting pressure pick the model directly — was rejected. It
+would put a second, invisible router behind the one in `router.yaml`, and the
+reason a request went somewhere would stop being readable from the rules.
+
+### Protected rules
+
+Some rules exist because the request needs them, not because the work looked
+hard: an image needs a model with vision, a request where a small mistake
+causes real harm needs the careful model, a conversation that outgrew its
+context window has to move. Those rules are marked `protected` and ignore
+every shift. Quota is a budget. It is not a reason to answer a medical
+question with the cheap model.
+
+A protected rule still uses its route's fallbacks. Being protected from a
+budget is not the same as being protected from an outage.
+
+### Equivalent-only promotion
+
+Reordering a route within itself is safe when the entries are interchangeable
+and unsafe when they are not. So an entry may only be promoted ahead of the
+primary when the config marks it `equivalent: true`, which is a claim about
+quality that a person has to make deliberately. Without the flag a fallback is
+still reachable, but only by failure. Saving quota is never a reason to answer
+with a weaker model than the rules asked for.
+
+### Pins are untouched
+
+Quota affects new decisions only. A conversation that is already pinned keeps
+its model whatever the numbers say. Rerouting mid-conversation is what the
+whole design avoids, and doing it to save quota would be the same mistake for
+a worse reason.
+
+### Fail-neutral everywhere
+
+A provider with no quota source, a source that is disabled, a command that
+fails or times out, a field missing from the output, a snapshot older than
+`stale_after_seconds`: every one of these means pressure 0 for that provider,
+which routes exactly as the router routed before quota existed. Polling
+happens in a background task and never on the request path, so a slow command
+cannot add latency to a request. A source that raises is caught and recorded
+as an error on the snapshot.
+
+The shipped `router.yaml` has every source disabled. Somebody who clones this
+repository and runs it gets no subprocesses and the same routing the tuner
+measured.
+
 ## Shadow mode
 
 `settings.mode: shadow` makes the router ask Jev, run the rules, and log what

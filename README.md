@@ -41,12 +41,22 @@ For every request to `/v1/chat/completions`:
 6. Run the answers through the rules. A confidence gate runs first, then the
    rules in order, first match wins, then the default. Afterwards the router
    applies the alias's effort cap, any client floor, and the capability filters.
-7. Rewrite `model`, forward, and stream the upstream bytes back untouched.
+7. Rewrite `model`, forward, and stream the upstream bytes back untouched. If
+   the rule named a route rather than a model, and the upstream answers 429 or
+   5xx or will not connect, try the route's next entry before any byte has
+   been streamed.
 
 If the Jev call fails for any reason, the router falls back to a no-network
 decider that guesses from counts, or to the default route. A fallback decision
 is never pinned, so the next turn tries Jev again. Jev being down never blocks
 a request.
+
+Providers, models and routes are separate things. A provider is one account or
+subscription; a model names the provider it belongs to; a route is a named
+lane with a primary model and ordered fallbacks. That split is what lets the
+router skip a provider that is failing, and lean on one subscription when
+another is being spent too fast. See
+[Quota-aware routing](#quota-aware-routing).
 
 ## Quick start
 
@@ -91,6 +101,9 @@ The reply carries the routing headers:
 
 ```sh
 uv run jev-router explain request.json      # features, state, Jev answers, chosen model
+uv run jev-router explain request.json --pressure openai=0.8
+uv run jev-router quota --poll              # quota snapshots and pressure per provider
+uv run jev-router quota --poll --json
 uv run jev-router decisions -n 20           # tail the decision log
 uv run jev-router decisions --json
 uv run jev-router feedback last too_weak --model gpt-6-astra --effort high
@@ -104,6 +117,12 @@ directory. `serve` takes `--host`, `--port`, `--mode shadow|active` and
 `explain` never forwards the request. Its argument is a JSON file holding a
 chat-completions body; an optional `_headers` object inside it stands in for
 request headers, and `--alias` treats the body as a different alias.
+`--pressure provider=N` pretends a provider is under that much quota pressure
+and shows what the decision would be.
+
+`quota` prints the same report as `GET /router/quota`. Without `--poll` it
+shows the configuration and nothing else; with it, each enabled source runs
+once.
 
 ### Endpoints
 
@@ -112,6 +131,8 @@ request headers, and `--alias` treats the body as a different alias.
 | `POST /v1/chat/completions` | aliases are routed, everything else is forwarded unchanged |
 | `GET /v1/models` | the upstream list plus one entry per alias |
 | `GET /router/health` | mode, upstream, aliases, models, decider, whether a Jev key is set, uptime |
+| `GET /router/providers` | circuit breaker state and the pressure per provider |
+| `GET /router/quota` | quota snapshots, pressures, staleness and the last error per provider |
 | `GET /router/decisions?limit=N` | recent decisions as JSON |
 | `POST /router/feedback` | record what you thought of a decision |
 | `GET /router/feedback?limit=N` | recent feedback, joined to its decision |
@@ -119,10 +140,26 @@ request headers, and `--alias` treats the body as a different alias.
 
 An alias name on any other POST endpoint returns 400 with a message saying so.
 
+### Response headers
+
+| Header | Meaning |
+| --- | --- |
+| `X-Router-Model` | the model name sent upstream, effort included |
+| `X-Router-Effort` | the effort that was chosen |
+| `X-Router-Rule` | the rule that fired, or `pin`, `default` or `fallback` |
+| `X-Router-Route` | the named route the rule pointed at, when it used one |
+| `X-Router-Pinned` | whether this came from a pin |
+| `X-Router-Decision` | the decision id, for `jev-router feedback` |
+| `X-Router-Fallback` | the index of the route entry that served the request; absent on the primary |
+| `X-Router-Pressure` | the pressure per provider, only when it changed the outcome |
+| `X-Router-Decider-Fallback` | the decision came from the fallback decider, not from Jev |
+| `X-Router-Shadow-Model` | in shadow mode, what would have been chosen |
+
 ## Configuring router.yaml
 
-Adding a model, a question, a rule, an alias or a client floor is an edit to
-`router.yaml` alone. Only a new state builder or a new decider needs Python.
+Adding a provider, a model, a question, a route, a rule, an alias or a client
+floor is an edit to `router.yaml` alone. Only a new state builder, a new
+decider or a new quota source needs Python.
 
 ### settings
 
@@ -142,6 +179,30 @@ Adding a model, a question, a rule, an alias or a client floor is an edit to
 | `decider`, `fallback_decider` | which decider runs, and which one covers a Jev failure |
 | `upstream_connect_timeout_s`, `upstream_read_timeout_s` | forwarding timeouts |
 | `capture_usage_max_bytes` | how much of a non-streamed reply to buffer for its usage block |
+| `breaker` | the default circuit breaker, which a provider may override |
+
+### A provider
+
+A provider is one account or subscription that several models share. Rate
+limits, outages and quota belong to the provider, not to the model.
+
+```yaml
+providers:
+  frontier-vendor:
+    description: Flat-rate subscription with a usage window.
+    breaker:                     # optional, falls back to settings.breaker
+      failures_to_open: 3
+      cooldown_seconds: 120
+      max_cooldown_seconds: 1920
+      recovery_seconds: 120
+    quota:
+      source: none
+      enabled: false
+```
+
+Declaring a `providers:` block makes `provider` required on every model. A
+config with no `providers:` block still works: every model then belongs to one
+implicit provider called `default`.
 
 ### A model
 
@@ -149,10 +210,12 @@ Adding a model, a question, a rule, an alias or a client floor is an edit to
 models:
   vendor/fast-model:
     upstream_id: vendor/fast-model
+    provider: frontier-vendor
     context_window: 256000
     supports_tools: true
     supports_vision: false
     efforts: [none, low, high]
+    default_effort: none      # optional
     effort_style: suffix      # suffix -> "model(high)", param -> reasoning_effort, none
     tags: [fast]
     description: Quick answers.
@@ -163,7 +226,65 @@ effort is expressed: `suffix` appends `(effort)` to the model name, `param`
 sets `reasoning_effort` in the body, and `none` drops the effort. An effort a
 model does not list is clamped down to the closest one it does.
 
-Then name the model in a rule and add it to the alias's `allowed_models`.
+`default_effort` is for a model that reasons without limit when it is sent
+bare. Such a model can spend its whole token budget thinking and return an
+empty reply. Naming a default here means no code path can send the model
+without an effort: it is filled in when clamping produces nothing, and again
+in `apply_effort` as a last guard. It must be one of the model's own `efforts`.
+
+Then name the model in a rule or a route and add it to the alias's
+`allowed_models`.
+
+### A route
+
+A route is a named lane: one primary and an ordered list of fallbacks. A rule
+points at it by name, and the forwarder walks the list when the upstream
+refuses to answer.
+
+```yaml
+routes:
+  frontier:
+    description: Hard work.
+    primary: {model: vendor/strong, effort: high}
+    fallbacks:
+      - {model: other-vendor/strong, effort: low, equivalent: true}
+      - {model: vendor/fast-model, effort: none}
+```
+
+The router moves to the next entry when the upstream answers 429 or any 5xx,
+refuses the connection, or times out before the first response byte. It never
+switches after a byte has reached the client: the decision is made on the
+response status, which arrives before anything is streamed. An entry whose
+provider's breaker is open is skipped, and an entry that cannot serve the
+request at all (no tool calling, no vision, too small a context window) is
+left out of the plan.
+
+A fallback that served the request sets `X-Router-Fallback: <n>` and is logged
+with the reason each earlier entry failed. The conversation is then pinned to
+the model that actually answered, so the rest of it stays on one model and
+keeps that provider's prompt cache. The decision row records the intended
+primary in `intended_model` and `intended_effort`.
+
+`equivalent: true` says an entry is as good as the primary for this lane's
+work. It is the only thing that lets quota pressure promote an entry ahead of
+the primary. Leave it off and the entry can only ever be reached by failure.
+
+A pinned conversation has no fallback plan. Moving it to another model on a
+transient 429 would throw away the prompt cache and the habits the pin exists
+to keep.
+
+### The circuit breaker
+
+Each provider has one. After `failures_to_open` consecutive 429s, 5xxs or
+connection errors it opens, and the router skips that provider's models while
+it is open. After `cooldown_seconds` it goes half-open and lets exactly one
+request through to find out whether the provider is back. A success closes it;
+a failure reopens it with the cooldown doubled, up to `max_cooldown_seconds`.
+
+The state is in memory, per process, and is lost on restart. That is the right
+lifetime for a fact about the last two minutes. `GET /router/providers` shows
+it. A provider that is the only entry left is tried anyway: refusing to serve
+at all would be worse than one wasted call.
 
 ### A question
 
@@ -184,6 +305,7 @@ Add an entry to `policy.rules`. First match wins.
 
 ```yaml
 - name: risky_writing
+  protected: true
   when:
     task: {in: [high-stakes-writing], conf_gte: 0.6}
     harm_if_wrong: {gte: 0.5}
@@ -191,10 +313,17 @@ Add an entry to `policy.rules`. First match wins.
   use: {model: gpt-6-astra, effort: high}
 ```
 
+`use` takes either `{model, effort}` or `{route: name}`. Both forms work, and
+a rule that names a model has no fallbacks.
+
 Conditions on a choice answer take `in`, `not_in`, `eq` and `conf_gte`; on a
 score answer `gte`, `lte` and `conf_gte`; on a noul answer `gte` and `lte`.
 Score answers are 0-indexed and fractional, so `{gte: 1.8}` sits between the
 levels.
+
+A condition may also carry `shift_with` and `max_shift`, which make its cutoff
+move with a provider's quota pressure. `protected: true` opts the whole rule
+out of those shifts. Both are described under quota below.
 
 Request conditions read the request instead of a Jev answer: `has_tools`,
 `has_images`, `has_code`, `stream`, `est_tokens_gte`, `est_tokens_lte`,
@@ -266,6 +395,180 @@ def _make(config, deps):
 Import it in `deciders/__init__.py`, then set `settings.decider`,
 `settings.fallback_decider`, or an alias's `decider`.
 
+## Quota-aware routing
+
+Several providers are flat-rate subscriptions with a usage window rather than
+a metered bill. When one of them is being spent faster than its window, new
+conversations should lean on the others, and the expensive model should be
+saved for the work that needs it.
+
+The router measures that as one number per provider, called pressure, in the
+range 0 to 1. Pressure is computed from pace, not from raw percent: a provider
+20 points ahead of where the window says it should be is under pressure at 40%
+spent, and a provider on pace is neutral at 80%.
+
+Everything about it fails neutral. A provider with no quota source, a source
+that is switched off, a command that fails, a field that is missing and a
+snapshot that has aged out all mean pressure 0, which routes exactly as the
+router routed before quota existed. Every source ships disabled, so a fresh
+install runs no subprocess.
+
+### A quota source
+
+Sources are registered by name, like deciders. Three ship: `command`, `static`
+and `none`.
+
+```yaml
+providers:
+  frontier-vendor:
+    quota:
+      source: command
+      enabled: true
+      poll_seconds: 300           # a background task, never the request path
+      stale_after_seconds: 1800   # older than this means pressure 0
+      config:
+        argv: [usage-cli, usage, --provider, codex, --json-only]
+        timeout_ms: 5000
+        used_percent:
+          - "0.usage.secondary.usedPercent"
+          - "0.usage.primary.usedPercent"
+        expected_used_percent:
+          - "0.pace.secondary.expectedUsedPercent"
+        window_minutes:
+          - "0.usage.secondary.windowMinutes"
+        resets_at:
+          - "0.usage.secondary.resetsAt"
+          - "0.usage.primary.resetsAt"
+```
+
+`argv` is a list, never a shell string, so nothing is interpolated and no
+shell is involved. The program must print JSON on stdout. Each field is a list
+of dotted paths and the first one that yields a value wins: a numeric step
+indexes a list, so `0.usage.primary.usedPercent` means "the first element,
+then `usage`, then `primary`, then `usedPercent`".
+
+The path lists exist because providers fill in different windows. This is a
+worked example against the open-source CodexBar CLI, which prints
+
+```
+$ codexbar usage --provider codex --json-only
+[{"provider":"codex",
+  "usage":{"secondary":{"usedPercent":20,"windowMinutes":10080,
+                        "resetsAt":"2026-09-24T15:42:05Z"},
+           "primary":null},
+  "pace":{"secondary":{"expectedUsedPercent":29,"willLastToReset":true}}}]
+
+$ codexbar usage --provider grok --json-only
+[{"provider":"grok",
+  "usage":{"primary":{"usedPercent":6,"resetsAt":"2026-09-20T21:28:25Z"}}}]
+```
+
+One fills in `secondary` and reports a pace; the other fills in `primary` and
+does not. The same config reads both. A third provider may report no usage at
+all, and then it has no quota source: `source: none`, and its pressure comes
+from the circuit breaker alone.
+
+The config for the second one would be
+
+```yaml
+providers:
+  other-vendor:
+    quota:
+      source: command
+      enabled: true
+      config:
+        argv: [codexbar, usage, --provider, grok, --json-only]
+        used_percent: ["0.usage.primary.usedPercent", "0.usage.secondary.usedPercent"]
+        resets_at: ["0.usage.primary.resetsAt", "0.usage.secondary.resetsAt"]
+```
+
+`static` takes the numbers straight from `config` and is for tests and demos.
+`none` reports nothing.
+
+To add a source, write a class with `async def fetch() -> QuotaSnapshot` in
+`src/jev_router/quota.py` and register a factory with
+`@register_quota_source("name")`. A source may never raise: return a snapshot
+carrying an `error` instead.
+
+### How pressure is computed
+
+```yaml
+quota_policy:
+  enabled: true
+  pressure_starts_at: 0        # points ahead of pace before pressure begins
+  pressure_full_at: 25         # points ahead of pace that means 1.0
+  full_used_percent: 90        # used at or above this is 1.0 whatever the pace
+  raw_starts_at: 60            # only when there is no pace to compare with
+  raw_full_at: 95
+  hysteresis: 0.05             # a smaller move than this is ignored
+  max_change_per_poll: 0.25    # one poll may not swing routing
+  demote_above: 0.6            # a route entry over this drops behind healthy ones
+```
+
+The expected percent comes from the source when it reports one, otherwise from
+`window_minutes` and `resets_at`: a window that is 40% elapsed should be about
+40% spent. With neither, the raw percent is used with its own knees.
+
+Hysteresis holds a value that moved only a little, so pressure does not flap
+around a knee, and `max_change_per_poll` stops one bad reading from swinging
+routing in a single step.
+
+A provider with no quota source takes its pressure from the circuit breaker
+instead: 1.0 while the breaker is open, then decaying to 0 over
+`recovery_seconds` after it closes. A provider with both takes the higher of
+the two.
+
+### What pressure does
+
+Three things, all bounded.
+
+**It shifts a threshold.** A rule condition may say which provider it is
+sensitive to and by how much:
+
+```yaml
+- name: hard
+  when:
+    difficulty: {gte: 2.4, shift_with: frontier-vendor, max_shift: 0.4}
+  use: {route: frontier_high}
+```
+
+The effective cutoff is `2.4 + pressure × 0.4`. It is bounded by `max_shift`,
+monotone in pressure, and only ever rises, so pressure can only make the
+pressured provider harder to reach, never easier.
+
+**It reorders a route.** Entries whose provider is under more pressure than
+`demote_above` move behind the healthy entries of the same route, keeping
+their order among themselves. An entry may only move ahead of the primary if
+it is marked `equivalent: true`.
+
+**It leaves some rules alone.** A rule with `protected: true` ignores every
+shift. Those are the moves that exist because the request needs them: vision,
+harm if wrong, a context-overflow move. A protected rule still uses its
+route's fallbacks when the provider is actually failing.
+
+At full pressure on a healthy provider, the frontier route still serves the
+protected rules and the top difficulty band. Everything else moves to the next
+entry in its route, or falls through to a cheaper rule.
+
+Pressure never touches a pinned conversation. It affects new decisions only.
+
+### Seeing it
+
+```sh
+uv run jev-router quota --poll            # snapshots, pressures, staleness, errors
+uv run jev-router quota --poll --json
+uv run jev-router explain request.json --pressure frontier-vendor=0.8
+```
+
+`GET /router/quota` returns the same report, and `GET /router/providers`
+returns the breaker state. Every decision is logged with the pressure per
+provider, any threshold that was shifted and by how much, and whether the
+route order changed. A response carries `X-Router-Pressure` only when a shift
+or a reorder actually changed the outcome.
+
+Set `quota_policy.enabled: false` to turn the whole mechanism off. Pressures
+are then empty and no rule is ever shifted.
+
 ## Shadow mode
 
 `settings.mode: shadow` makes the router ask Jev, run the rules and log what it
@@ -295,12 +598,23 @@ The sqlite file (`settings.sqlite_path`, WAL mode) holds three tables.
 | `answers` | the Jev answers as JSON, with confidence and probabilities |
 | `features` | the computed counts and flags, as JSON |
 | `config_hash` | sha256 prefix of the router.yaml that produced this row |
-| `model`, `effort`, `rule` | what was chosen and what fired |
+| `model`, `effort`, `rule` | what served the request, and what fired |
 | `mode`, `fallback`, `pinned` | active or shadow, Jev failure, pin reuse |
 | `jev_ms`, `jev_tokens` | Jev latency and input tokens |
 | `est_tokens`, `message_count` | request size |
 | `upstream_status`, `upstream_usage` | status, and usage for non-streamed replies |
 | `state` | the state sent to Jev, only when `settings.log_state` is true |
+| `route` | the named route the rule pointed at, if any |
+| `intended_model`, `intended_effort` | the primary, when a fallback served instead |
+| `fallback_index`, `fallback_reason` | which entry served, and why the earlier ones did not |
+| `pressures` | the quota pressure per provider at the moment of the decision |
+| `shifted` | every threshold quota pressure moved, with the numbers |
+| `reordered` | whether quota pressure changed the route's order |
+
+The last seven columns were added after the first release. They are nullable,
+and an existing database gains them the next time the router opens it. Rows
+written before then read back with NULL, which is what "this decision predates
+the feature" means. Nothing is dropped or rewritten.
 
 `feedback` — many rows per decision: `decision_id`, `ts`, `verdict` (one of
 `right`, `too_weak`, `too_strong`, `too_slow`), `better_model`,
@@ -539,7 +853,14 @@ uv run pytest -q
 ```
 
 The unit tests mock Jev and the upstream with respx, so nothing leaves the
-machine.
+machine. No test runs a quota source against a real program: the `command`
+source is exercised against a Python one-liner, and the rest use `static`.
+
+Two tests guard upgrades. One runs the shipped `router.yaml` and a copy of the
+configuration as it was before providers existed over a grid of synthetic
+answers and asserts an identical model and effort for every one. The other
+builds a database with the original schema and checks that it gains the new
+columns, keeps its rows, and takes new ones.
 
 ## License
 

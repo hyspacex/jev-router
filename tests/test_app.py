@@ -226,7 +226,10 @@ async def test_a_fallback_decision_is_not_pinned(client):
     respx.post(JEV_URL).mock(side_effect=httpx.ReadTimeout("slow"))
     upstream_ok()
     first = await client.post("/v1/chat/completions", json=chat_body())
-    assert first.headers["X-Router-Fallback"] == "true"
+    # X-Router-Fallback now counts upstream fallbacks, so a decider fallback
+    # has its own header.
+    assert first.headers["X-Router-Decider-Fallback"] == "true"
+    assert "X-Router-Fallback" not in first.headers
     second = await client.post("/v1/chat/completions", json=chat_body())
     assert second.headers["X-Router-Pinned"] == "false"
 

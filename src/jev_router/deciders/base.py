@@ -12,6 +12,7 @@ from typing import Any, Callable, Protocol, runtime_checkable
 
 from ..config import AliasCfg, RouterConfig
 from ..features import Features
+from ..policy import PlanEntry, Shift
 
 
 @dataclass
@@ -28,6 +29,20 @@ class Decision:
     state_builder: str = ""
     notes: list[str] = field(default_factory=list)
     decider: str = ""
+    # The route this came from, the rungs the forwarder may try, and what
+    # quota pressure did to the choice.
+    route: str | None = None
+    plan: list[PlanEntry] = field(default_factory=list)
+    pressures: dict[str, float] = field(default_factory=dict)
+    shifts: list[Shift] = field(default_factory=list)
+    reordered: bool = False
+    pressure_changed_the_outcome: bool = False
+
+    def entries(self) -> list[PlanEntry]:
+        """The plan, or just this decision when there is no plan."""
+        if self.plan:
+            return list(self.plan)
+        return [PlanEntry(model=self.model, effort=self.effort, provider="")]
 
 
 @runtime_checkable
@@ -35,6 +50,16 @@ class Decider(Protocol):
     name: str
 
     async def decide(self, features: Features, alias_cfg: AliasCfg) -> Decision: ...
+
+
+def pressure_source(deps: dict[str, Any]) -> Callable[[], dict[str, float]]:
+    """The dependency that reports quota pressure, or a source of nothing.
+
+    A decider built without one routes exactly as it did before quota
+    existed, which is what the eval scripts and the CLI want.
+    """
+    fn = deps.get("pressures")
+    return fn if callable(fn) else dict
 
 
 DeciderFactory = Callable[[RouterConfig, dict[str, Any]], "Decider"]

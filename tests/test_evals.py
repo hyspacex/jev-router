@@ -66,7 +66,7 @@ def test_labels_are_well_formed(cases):
         # A fast route has no reasoning effort, and a frontier route always has one.
         assert (c.effort == "none") == (c.tier == "fast"), c.id
         assert c.acceptable_tiers, c.id
-        assert set(c.acceptable_tiers) <= {"fast", "frontier"}, c.id
+        assert set(c.labelled_tiers) <= {"fast", "mid", "frontier"}, c.id
         assert c.tier in c.acceptable_tiers, c.id
 
 

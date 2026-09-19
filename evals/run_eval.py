@@ -49,6 +49,8 @@ from common import (  # noqa: E402
     percentile,
     route_cost,
     shuffle_labels,
+    is_over_routed,
+    is_under_routed,
     tier_of,
 )
 from metrics import (  # noqa: E402
@@ -482,11 +484,11 @@ def metrics(
     out["tier_correct"] = rate("tier_correct", lambda r: tier_of(r.model) in r.case.acceptable_tiers)
     out["under_routed"] = rate(
         "under_routed",
-        lambda r: tier_of(r.model) == "fast" and "fast" not in r.case.acceptable_tiers,
+        lambda r: is_under_routed(r.model, r.case.acceptable_tiers),
     )
     out["over_routed"] = rate(
         "over_routed",
-        lambda r: tier_of(r.model) == "frontier" and "frontier" not in r.case.acceptable_tiers,
+        lambda r: is_over_routed(r.model, r.case.acceptable_tiers),
     )
     out["effort_within_1_all"] = rate(
         "effort_within_1_all",
@@ -561,7 +563,7 @@ def slice_table(records: list[Record], variant: Variant, key) -> dict[str, dict[
                 tier_of(r.model) in r.case.acceptable_tiers for r in recs
             ),
             "under_routed": rate_of(
-                tier_of(r.model) == "fast" and "fast" not in r.case.acceptable_tiers
+                is_under_routed(r.model, r.case.acceptable_tiers)
                 for r in recs
             ),
             "mean_cost": statistics.fmean(route_cost(r.model, r.effort) for r in recs),
@@ -1023,7 +1025,7 @@ def write_summary(
                 got_h = answer_value(r.answers, v.faith_question)
                 why = []
                 if tier_of(r.model) not in c.acceptable_tiers:
-                    why.append("under-routed" if tier_of(r.model) == "fast" else "over-routed")
+                    why.append("under-routed" if is_under_routed(r.model, c.acceptable_tiers) else "over-routed")
                 if not score_task(r, v.task_space):
                     why.append("task")
                 if not score_difficulty(r, v.difficulty_levels):

@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import make_config
-from jev_router.features import extract_features
+from jev_router.features import Features, extract_features
 from jev_router.policy import (
     apply_effort,
     clamp_effort,
@@ -175,3 +175,33 @@ def test_apply_effort_none_style_drops_the_effort():
         aliases={"auto": {"allowed_models": ["plain"], "questions": []}},
     )
     assert apply_effort(cfg, "plain", "high") == ("vendor/plain", {})
+
+
+# --- default_effort -----------------------------------------------------
+
+
+def with_default_effort(effort="low"):
+    return make_config(models={"small": {"default_effort": effort}})
+
+
+def test_a_model_with_a_default_effort_is_never_clamped_to_nothing():
+    cfg = with_default_effort()
+    assert clamp_effort(cfg, "small", None) == "low"
+    assert clamp_effort(cfg, "small", "high") == "high"
+    # A model without one still comes back bare.
+    assert clamp_effort(cfg, "big", None) is None
+
+
+def test_apply_effort_is_the_last_guard_against_sending_a_model_bare():
+    cfg = with_default_effort("none")
+    assert apply_effort(cfg, "small", None) == ("vendor/small(none)", {})
+    assert apply_effort(cfg, "big", None) == ("vendor/big", {})
+
+
+def test_a_route_with_no_effort_picks_up_the_models_default():
+    cfg = make_config(
+        models={"small": {"default_effort": "low"}},
+        policy={"rules": [{"name": "always", "when": {}, "use": {"model": "small"}}]},
+    )
+    result = evaluate(cfg, cfg.aliases["auto"], {}, Features(model="auto"))
+    assert (result.model, result.effort) == ("small", "low")

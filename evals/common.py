@@ -64,7 +64,10 @@ TEN_TO_SEVEN = {
 # the seven is the same table.
 TEN_CAT_TO_SEVEN = dict(TEN_TO_SEVEN)
 
-TIERS = ("fast", "frontier")
+# `mid` was added on 2026-09-19 after the admission test. Tiers are ordered:
+# a route below every acceptable tier is under-routed and one above every
+# acceptable tier is over-routed.
+TIERS = ("fast", "mid", "frontier")
 
 # Every case carries one of these. They are shapes of request, not task labels:
 # a case has exactly one shape and any of the ten task labels.
@@ -84,6 +87,10 @@ ROUTE_COST = {
     ("ollama/glm-5.3-flash", "none"): 1.0,
     ("ollama/glm-5.3-flash", "low"): 1.4,
     ("ollama/glm-5.3-flash", "high"): 2.2,
+    ("ollama/gemma4-31b", "none"): 1.0,
+    ("ollama/glm-5.3", "none"): 2.5,
+    ("gpt-5.6-luna", "low"): 4.0,
+    ("grok-4.6", "low"): 10.0,
     ("gpt-6-astra", "low"): 10.0,
     ("gpt-6-astra", "medium"): 14.0,
     ("gpt-6-astra", "high"): 20.0,
@@ -108,8 +115,48 @@ def route_cost(model: str, effort: str | None) -> float:
     return ROUTE_COST.get((model, effort or "none"), 14.0)
 
 
+# Which tier a routed model belongs to. Anything not listed is frontier.
+MODEL_TIERS = {
+    "ollama/glm-5.3-flash": "fast",
+    "ollama/gemma4-31b": "fast",
+    "ollama/glm-5.3": "mid",
+    "gpt-5.6-luna": "mid",
+}
+
+
 def tier_of(model: str) -> str:
-    return "fast" if model.startswith("ollama/") else "frontier"
+    return MODEL_TIERS.get(model.split("(")[0], "frontier")
+
+
+def tier_rank(tier: str) -> int:
+    return TIERS.index(tier)
+
+
+def widen_for_mid(acceptable: list[str], *, difficulty: float, needs_faithfulness: bool,
+                  slice_name: str, label_source: str | None) -> list[str]:
+    """Where a hand label may also accept the mid tier.
+
+    Only the admission cases carry a measured `mid` label. For the rest, mid is
+    accepted when both neighbours are, or when the case looks like the ones the
+    mid model was measured on: frontier-labelled, difficulty 2 or lower, no
+    faithfulness requirement, and no tool loop. Outcome labels are left alone.
+    """
+    if "mid" in acceptable or label_source == "outcome":
+        return list(acceptable)
+    if "fast" in acceptable and "frontier" in acceptable:
+        return [*acceptable, "mid"]
+    if ("frontier" in acceptable and difficulty <= 2 and not needs_faithfulness
+            and slice_name != "agentic"):
+        return [*acceptable, "mid"]
+    return list(acceptable)
+
+
+def is_under_routed(model: str, acceptable: list[str]) -> bool:
+    return tier_rank(tier_of(model)) < min(tier_rank(t) for t in acceptable)
+
+
+def is_over_routed(model: str, acceptable: list[str]) -> bool:
+    return tier_rank(tier_of(model)) > max(tier_rank(t) for t in acceptable)
 
 
 def effort_rank(effort: str | None) -> int:
@@ -183,8 +230,19 @@ class Case:
         return self.expected["effort"]
 
     @property
-    def acceptable_tiers(self) -> list[str]:
+    def labelled_tiers(self) -> list[str]:
+        """`acceptable_tiers` exactly as written in cases.yaml."""
         return list(self.expected["acceptable_tiers"])
+
+    @property
+    def acceptable_tiers(self) -> list[str]:
+        return widen_for_mid(
+            self.labelled_tiers,
+            difficulty=self.difficulty,
+            needs_faithfulness=self.needs_faithfulness,
+            slice_name=self.slice,
+            label_source=self.label_source,
+        )
 
     def features(self) -> Features:
         body = copy.deepcopy(self.body)

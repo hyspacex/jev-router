@@ -64,29 +64,10 @@ providers:
           - "0.usage.primary.resetsAt"
 
   ollama:
-    description: Open-weight models on a cloud subscription. It reports no usage numbers, so pressure comes from the circuit breaker alone.
+    description: Local models. No usage window to read, so no quota source.
     quota:
       source: none
       enabled: false
-  xai:
-    description: Second frontier subscription. Overflow for the frontier lanes.
-    quota:
-      source: command
-      enabled: false
-      poll_seconds: 300
-      stale_after_seconds: 1800
-      config:
-        argv: [codexbar, usage, --provider, grok, --json-only]
-        timeout_ms: 5000
-        used_percent:
-          - "0.usage.primary.usedPercent"
-          - "0.usage.secondary.usedPercent"
-        resets_at:
-          - "0.usage.primary.resetsAt"
-          - "0.usage.secondary.resetsAt"
-        window_minutes:
-          - "0.usage.primary.windowMinutes"
-          - "0.usage.secondary.windowMinutes"
 
 models:
   gpt-6-astra:
@@ -114,49 +95,6 @@ models:
     effort_style: suffix
     tags: [fast, local]
     description: Fast model for short, easy work.
-  ollama/glm-5.3:
-    upstream_id: ollama/glm-5.3
-    provider: ollama
-    context_window: 1000000
-    supports_tools: true
-    supports_vision: false
-    efforts: [none, low, high]
-    default_effort: none          # sent bare, it thinks until the token budget is gone
-    effort_style: suffix
-    tags: [mid, cloud]
-    description: Mid lane. Matched the frontier model on moderate code and analysis at a third of the latency.
-  ollama/gemma4-31b:
-    upstream_id: ollama/gemma4-31b
-    provider: ollama
-    context_window: 256000
-    supports_tools: true
-    supports_vision: true
-    efforts: []
-    effort_style: none
-    tags: [fast, vision, cloud]
-    description: Fast model that reads images. Takes easy requests that carry an image.
-  gpt-5.6-luna:
-    upstream_id: gpt-5.6-luna
-    provider: openai
-    context_window: 1000000
-    supports_tools: true
-    supports_vision: true
-    efforts: [none, low, medium, high]
-    default_effort: low
-    effort_style: suffix
-    tags: [mid, cloud]
-    description: Fallback for the fast and mid lanes on a different provider. Good answers, no faster than the frontier model.
-  grok-4.6:
-    upstream_id: grok-4.6
-    provider: xai
-    context_window: 500000
-    supports_tools: true
-    supports_vision: true
-    efforts: [low]
-    default_effort: low           # at default effort the first token takes about 11 s
-    effort_style: suffix
-    tags: [frontier, cloud]
-    description: Overflow for the frontier lanes. Scored 0.7 points below the frontier model on hard cases, so quota never promotes it ahead.
 
 # Named lanes. A rule may say `use: {route: fast}` instead of naming a model,
 # and then a 429, a 5xx, a refused connection or a timeout before the first
@@ -171,43 +109,27 @@ routes:
   fast:
     description: Short, easy work.
     primary: {model: ollama/glm-5.3-flash, effort: none}
-    fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
-  fast_vision:
-    description: Easy requests that carry an image.
-    primary: {model: ollama/gemma4-31b}
-    fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
-  mid:
-    description: Moderate work without tools.
-    primary: {model: ollama/glm-5.3, effort: none}
-    fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
-      - {model: gpt-6-astra, effort: low}
+    fallbacks: []
 
   frontier_low:
     description: Work that needs the strong model but not much thinking.
     primary: {model: gpt-6-astra, effort: low}
-    fallbacks:
-      - {model: grok-4.6, effort: low}
+    fallbacks: []
 
   frontier_medium:
     description: The default frontier lane.
     primary: {model: gpt-6-astra, effort: medium}
-    fallbacks:
-      - {model: grok-4.6, effort: low}
+    fallbacks: []
 
   frontier_high:
     description: Hard work.
     primary: {model: gpt-6-astra, effort: high}
-    fallbacks:
-      - {model: grok-4.6, effort: low}
+    fallbacks: []
 
   frontier_xhigh:
     description: The hardest band.
     primary: {model: gpt-6-astra, effort: xhigh}
-    fallbacks:
-      - {model: grok-4.6, effort: low}
+    fallbacks: []
 
 # What quota pressure is allowed to do. Pressure is a number per provider in
 # [0, 1], measured from pace rather than raw percent: a provider 20 points
@@ -350,20 +272,19 @@ policy:
   # `protected: true` opts a rule out of shifts. Those are the moves that
   # exist because the request needs them, not because the work looked hard.
   rules:
-    - name: images_easy
-      protected: true            # quota never moves an image request
-      when:
-        has_images: true
-        difficulty: {lte: 1.399}
-        harm_if_wrong: {lte: 0.799}
-      use: {route: fast_vision}
-
     - name: images_need_vision
-      protected: true            # only some models read images
+      protected: true            # the fast model has no vision
       when:
         has_images: true
       use: {route: frontier_medium}
 
+    # The difficulty ladder comes before the harm rule, so that hard and risky
+    # work still gets the high efforts. high_harm is the floor for easy work
+    # where a small mistake would still hurt.
+    #
+    # very_hard carries no shift. The top band reaches the frontier model at
+    # any pressure: saving quota is not worth a wrong answer to the hardest
+    # request of the day.
     - name: very_hard
       when:
         difficulty: {gte: 3.0}
@@ -380,32 +301,22 @@ policy:
         harm_if_wrong: {gte: 0.8}
       use: {route: frontier_medium}
 
-    # The mid model has not been tested in a tool loop yet, so requests that
-    # carry tool schemas stay on the frontier model.
+    - name: coding_middle
+      when:
+        task: {in: [code-edit, debugging, agentic-tool-task]}
+        difficulty: {gte: 1.4, shift_with: openai, max_shift: 0.4}
+      use: {route: frontier_medium}
+
     - name: tool_loop
       when:
         has_tools: true
         difficulty: {gte: 1.4, shift_with: openai, max_shift: 0.4}
       use: {route: frontier_medium}
 
-    # Moderate work where a mistake would matter stays on the frontier model.
-    # Sending it to the mid model under-routed nine faithfulness-sensitive cases
-    # in the routing eval. Code edits are exempt: they are what the mid model
-    # was admitted on, and exempting them cost nothing in that eval.
-    - name: moderate_careful
-      when:
-        task: {not_in: [code-edit]}
-        difficulty: {gte: 1.4}
-        harm_if_wrong: {gte: 0.45}
-      use: {route: frontier_low}
-
-    # Moderate work without tools. evals/ADMISSION.md: the mid model scored
-    # 9.70 against the frontier model's 9.31 on 12 such cases, at a third of
-    # the latency.
     - name: moderate
       when:
-        difficulty: {gte: 1.4}
-      use: {route: mid}
+        difficulty: {gte: 1.4, shift_with: openai, max_shift: 0.6}
+      use: {route: frontier_low}
 
     # Everything left is on the fast model at no reasoning effort. The outcome
     # benchmark (evals/outcomes.md) found that raising this model's effort made
@@ -465,7 +376,7 @@ aliases:
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    allowed_models: [ollama/glm-5.3-flash, gpt-6-astra]
 
   # Keeps the smallest possible state. The questions name fields that
   # last_message_only never produces; an absent field reads as "not present",
@@ -475,7 +386,7 @@ aliases:
     state_builder: last_message_only
     questions: [task, difficulty]
     rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    allowed_models: [ollama/glm-5.3-flash, gpt-6-astra]
     max_effort: low
 
   auto-code:

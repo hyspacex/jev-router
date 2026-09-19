@@ -265,3 +265,134 @@ def test_outcomes_widen_acceptable_tiers_but_never_narrow(tmp_path):
     assert widened == 2
     assert sorted(cases[0].acceptable_tiers) == ["fast", "frontier"]
     assert sorted(cases[1].acceptable_tiers) == ["fast", "frontier"]
+
+
+# --- decisions taken under quota pressure -------------------------------
+
+
+def log_under_pressure(store: Store, decision_id: str, pressures: dict) -> None:
+    """A decision the router deliberately moved away from a pressured provider."""
+    store.log_decision(
+        decision_id=decision_id,
+        alias="auto",
+        client="",
+        conversation_key="k" + decision_id,
+        state_builder="continuation_aware_v1",
+        answers={
+            "task": {"type": "choice", "choice": "code-edit", "confidence": 0.99},
+            "difficulty": {"type": "score", "score": 2.6, "confidence": 0.9},
+            "harm_if_wrong": {"type": "noul", "noul": 0.1},
+        },
+        features={"message_count": 1, "est_tokens": 100, "requested_model": "auto"},
+        config_hash="abc",
+        model="ollama/glm-5.3",
+        effort="none",
+        rule="moderate",
+        mode="active",
+        fallback=False,
+        pinned=False,
+        jev_ms=100.0,
+        jev_tokens=100,
+        est_tokens=100,
+        message_count=1,
+        route="mid",
+        pressures=pressures,
+        shifted=[{"rule": "hard", "question": "difficulty", "op": "gte",
+                  "base": 2.4, "effective": 2.8, "provider": "openai", "pressure": 1.0}],
+        reordered=False,
+    )
+
+
+def test_a_decision_taken_under_pressure_carries_that_pressure(db, tmp_path):
+    log_under_pressure(db, "p1", {"openai": 1.0})
+    db.add_feedback(decision_id="p1", verdict="right")
+    config = tune.config_with_overlay()
+    case = tune.load_feedback_cases(tmp_path / "router.db", config)[0]
+    assert case.pressures == {"openai": 1.0}
+    assert "under pressure" in case.source
+
+
+def test_exclude_mode_leaves_those_rows_out_and_keeps_the_calm_ones(db, tmp_path):
+    log_under_pressure(db, "p1", {"openai": 1.0})
+    log_under_pressure(db, "p2", {})
+    db.add_feedback(decision_id="p1", verdict="right")
+    db.add_feedback(decision_id="p2", verdict="right")
+    config = tune.config_with_overlay()
+
+    replayed = tune.load_feedback_cases(tmp_path / "router.db", config)
+    assert sorted(c.case_id for c in replayed) == ["feedback:p1", "feedback:p2"]
+
+    kept = tune.load_feedback_cases(tmp_path / "router.db", config, pressure_mode="exclude")
+    assert [c.case_id for c in kept] == ["feedback:p2"]
+
+
+def test_a_pressured_decision_is_not_scored_as_a_classifier_error(db, tmp_path):
+    """The router sent this to the mid model on purpose, because the frontier
+    provider was out of pace. Replayed at pressure zero the same row looks
+    like a routing mistake, which would drag the tuned numbers around."""
+    log_under_pressure(db, "p1", {"openai": 1.0})
+    db.add_feedback(decision_id="p1", verdict="right")
+    config = tune.config_with_overlay()
+    alias = config.aliases["auto"]
+    case = tune.load_feedback_cases(tmp_path / "router.db", config)[0]
+    assert case.acceptable_tiers == ["mid"]
+
+    honest = tune.score_with_config(config, alias, [case])
+    assert honest["tier_correct"] == 100.0
+    assert honest["over_routed"] == 0.0
+
+    # The same row replayed as if nothing had been under pressure.
+    as_if_calm = replace_pressures(case, {})
+    wrong = tune.score_with_config(config, alias, [as_if_calm])
+    assert wrong["tier_correct"] == 0.0
+    assert wrong["over_routed"] == 100.0
+
+
+def replace_pressures(case, pressures):
+    return tune.TuneCase(
+        case_id=case.case_id, split=case.split, answers=case.answers,
+        features=case.features, acceptable_tiers=list(case.acceptable_tiers),
+        effort=case.effort, weight=case.weight, pressures=pressures,
+    )
+
+
+def test_an_eval_case_has_no_pressure_at_all():
+    case = tune.TuneCase("c1", "tune", {}, tune.features_from_facts({}), ["fast"], "none")
+    assert case.pressures == {}
+
+
+def test_an_unknown_pressure_mode_is_rejected(db, tmp_path):
+    log_under_pressure(db, "p1", {})
+    config = tune.config_with_overlay()
+    with pytest.raises(ValueError, match="pressure_mode"):
+        tune.load_feedback_cases(tmp_path / "router.db", config, pressure_mode="ignore")
+
+
+def test_a_database_written_before_quota_existed_still_replays(tmp_path):
+    """No `pressures` column at all means every row was taken at pressure zero."""
+    import sqlite3
+
+    from test_migration import OLD_SCHEMA
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(OLD_SCHEMA)
+    conn.execute(
+        "INSERT INTO decisions (decision_id, ts, alias, client, conversation_key,"
+        " state_builder, answers, features, config_hash, model, effort, rule, mode,"
+        " fallback, pinned, est_tokens, message_count)"
+        " VALUES ('old1', 1.0, 'auto', '', 'k', 'summary_v1',"
+        " '{\"difficulty\": {\"type\": \"score\", \"score\": 2.0}}', '{}', 'h',"
+        " 'ollama/glm-5.3-flash', 'none', 'easy', 'active', 0, 0, 100, 1)"
+    )
+    conn.execute(
+        "INSERT INTO feedback (decision_id, ts, verdict, source)"
+        " VALUES ('old1', 2.0, 'right', 'cli')"
+    )
+    conn.commit()
+    conn.close()
+
+    config = tune.config_with_overlay()
+    cases = tune.load_feedback_cases(path, config)
+    assert len(cases) == 1
+    assert cases[0].pressures == {}

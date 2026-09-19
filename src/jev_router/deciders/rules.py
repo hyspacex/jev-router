@@ -12,7 +12,7 @@ from typing import Any
 from ..config import AliasCfg, RouterConfig
 from ..features import Features
 from ..policy import evaluate
-from .base import Decider, Decision, register_decider
+from .base import Decider, Decision, pressure_source, register_decider
 
 # Added to every heuristic difficulty score. This decider runs when Jev is
 # down, and it reads counts, not meaning, so it misses hard work that looks
@@ -36,14 +36,16 @@ HARD_WORDS = (
 class RulesDecider:
     name = "rules"
 
-    def __init__(self, config: RouterConfig) -> None:
+    def __init__(self, config: RouterConfig, pressures: Any = None) -> None:
         self.config = config
+        self.pressures = pressures if callable(pressures) else dict
 
     async def decide(self, features: Features, alias_cfg: AliasCfg) -> Decision:
         answers = self._guess(features)
         # Only answer the questions this alias actually asks about.
         answers = {k: v for k, v in answers.items() if k in alias_cfg.questions}
-        result = evaluate(self.config, alias_cfg, answers, features)
+        pressures = self.pressures()
+        result = evaluate(self.config, alias_cfg, answers, features, pressures)
         return Decision(
             model=result.model,
             effort=result.effort,
@@ -54,6 +56,12 @@ class RulesDecider:
             state_builder=alias_cfg.state_builder,
             notes=result.notes,
             decider=self.name,
+            route=result.route,
+            plan=result.plan,
+            pressures=dict(pressures),
+            shifts=result.shifts,
+            reordered=result.reordered,
+            pressure_changed_the_outcome=result.pressure_changed_the_outcome,
         )
 
     def _guess(self, features: Features) -> dict[str, dict[str, Any]]:
@@ -105,4 +113,4 @@ class RulesDecider:
 
 @register_decider("rules")
 def _make_rules(config: RouterConfig, deps: dict[str, Any]) -> Decider:
-    return RulesDecider(config)
+    return RulesDecider(config, pressure_source(deps))
