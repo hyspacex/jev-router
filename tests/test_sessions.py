@@ -886,6 +886,8 @@ def written_session(tmp_path) -> tuple[str, str]:
             "decision_reason": "difficulty=0.10@0.90",
             "decision_source": "jev",
             "reserve_tokens": 4096,
+            "config_hash": config.config_hash,
+            "state_builder": "summary_v1",
             "quota_status": json.dumps({"default": "unknown"}),
         }
     )
@@ -965,3 +967,23 @@ def test_prune_leaves_a_session_tombstone(tmp_path, capsys):
     finally:
         sessions.close()
         store.close()
+
+
+def test_sessions_show_reports_the_versions_a_replay_would_need(tmp_path, capsys):
+    from jev_router.cli import main
+
+    path, session_id = written_session(tmp_path)
+    assert main(["-c", path, "sessions", "show", session_id, "--json"]) == 0
+    row = json.loads(capsys.readouterr().out)
+    assert row["config_hash"] and row["state_builder"] == "summary_v1"
+    assert row["unresolved_requests"] == 0
+
+
+@respx.mock
+async def test_an_admission_records_the_versions_it_was_taken_under(caller, service):
+    mock_jev()
+    await caller.resolve()
+    row = service.sessions.get(caller.session_id)
+    assert row["config_hash"] == "testhash"
+    assert row["state_builder"] == "summary_v1"
+    assert row["question_hash"] and row["jev_model"]

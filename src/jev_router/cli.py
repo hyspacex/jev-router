@@ -441,6 +441,11 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
     )
     print(f"  binding:  {row['binding_revision'] or '-'}")
     print(
+        f"  versions: config={row['config_hash'] or '-'} "
+        f"questions={row['question_hash'] or '-'} jev={row['jev_model'] or '-'} "
+        f"state_builder={row['state_builder'] or '-'}"
+    )
+    print(
         f"  decision: {row['decision_id'] or '-'} rule={row['decision_rule'] or '-'} "
         f"source={row['decision_source'] or '-'} lane={row['quality_lane'] or '-'}"
     )
@@ -456,6 +461,9 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
         )
     if quota:
         print("            now " + ", ".join(f"{k}={v}" for k, v in sorted(quota.items())))
+    unresolved = row.get("unresolved_requests") or 0
+    if unresolved:
+        print(f"  requests: {unresolved} with no settled outcome; reconcile before reuse")
     print(f"  created:  {created}  last seen {seen}")
 
 
@@ -488,7 +496,10 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     quota = _quota_freshness(config)
     try:
         if args.action == "list":
-            rows = sessions.recent(args.limit)
+            rows = [
+                row | {"unresolved_requests": sessions.unresolved(row["session_id"])}
+                for row in sessions.recent(args.limit)
+            ]
             if args.json:
                 print(json.dumps(rows, indent=2, default=str))
                 return 0
@@ -504,6 +515,7 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         if row is None:
             print(f"unknown session {args.session_id!r}", file=sys.stderr)
             return 1
+        row["unresolved_requests"] = sessions.unresolved(args.session_id)
         if args.action == "close":
             if row["state"] == "closed":
                 print(f"{args.session_id} was already closed")

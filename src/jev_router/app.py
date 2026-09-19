@@ -17,7 +17,7 @@ import time
 import zlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from starlette.applications import Starlette
@@ -792,6 +792,11 @@ class Router:
                 "quota_changed_choice": int(decision.pressure_changed_the_outcome),
                 "config_hash": config.config_hash,
                 "state_builder": alias_cfg.state_builder,
+                # What this decision could be replayed against later.
+                "question_hash": S.fingerprint(
+                    {qid: config.questions.get(qid) for qid in alias_cfg.questions}
+                )[:16],
+                "jev_model": config.settings.jev_model,
                 "fingerprint": req.idempotency_fingerprint(),
                 "estimate_method": check.estimate_method,
                 "estimated_input_tokens": check.input_tokens,
@@ -1006,7 +1011,7 @@ class Router:
         reconfigures, compacts or starts a new session deliberately.
         """
 
-        def stop(why: str) -> None:
+        def stop(why: str) -> NoReturn:
             self.sessions.block(row["session_id"], row["version"], why)
             raise SessionError(
                 S.PROFILE_CHANGED,
@@ -1018,7 +1023,6 @@ class Router:
         alias_cfg = self.config.aliases.get(row["alias"] or "")
         if mcfg is None:
             stop(f"model {row['model_key']!r} is no longer configured")
-            raise AssertionError  # unreachable; stop always raises
         if alias_cfg is None or row["model_key"] not in self.config.alias_pool(alias_cfg):
             stop(f"alias {row['alias']!r} no longer permits {row['model_key']!r}")
         if (
@@ -1718,12 +1722,16 @@ def session_report(router: Router, row: dict[str, Any]) -> dict[str, Any]:
         "decision_reason": row["decision_reason"],
         "decision_source": row["decision_source"],
         "quality_lane": row["quality_lane"],
+        "config_hash": row["config_hash"],
+        "question_hash": row["question_hash"],
+        "jev_model": row["jev_model"],
         "quota_at_admission": quota if isinstance(quota, dict) else {},
         "quota_now": router.quota_status(),
         "blocked_reason": row["blocked_reason"],
         "created": row["created"],
         "last_seen": row["last_seen"],
         "in_flight": router.sessions.inflight(row["session_id"]),
+        "unresolved_requests": router.sessions.unresolved(row["session_id"]),
     }
 
 

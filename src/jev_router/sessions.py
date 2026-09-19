@@ -157,6 +157,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     quota_changed_choice INTEGER,
     config_hash TEXT,
     state_builder TEXT,
+    question_hash TEXT,
+    jev_model TEXT,
     fingerprint TEXT,
     estimate_method TEXT,
     estimated_input_tokens INTEGER,
@@ -513,6 +515,16 @@ class Sessions:
             self._conn.commit()
 
     # --- request records -----------------------------------------------
+
+    def unresolved(self, session_id: str) -> int:
+        """Attempts nobody can call settled. They block a clean reconciliation."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM session_requests WHERE session_id = ?"
+                " AND status IN ('in_flight', 'accepted', 'stream_failed', 'unknown')",
+                (session_id,),
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def get_request(self, session_id: str, request_id: str) -> dict[str, Any] | None:
         with self._lock:
