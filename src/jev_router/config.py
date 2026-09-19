@@ -254,6 +254,40 @@ class EffortThresholds(Base):
     context_safety_fraction: float = Field(default=0.8, gt=0.0, le=1.0)
 
 
+class EffortTargets(Base):
+    """Which rung a turn's evidence asks for, rather than simply "one more".
+
+    Owner decision, 2026-09-19: an upward change goes straight to the rung the
+    evidence names, so a demanding turn on `low` may land on `high` in one
+    move. This block is that mapping, and `AdaptiveEffortCfg.upward` is the
+    switch that restores the old one-rung climb.
+
+    The names here are rungs of a ladder. A rung a profile does not offer is
+    ignored rather than being an error, because one mapping is shared by every
+    ladder and a profile may offer only two rungs. `"top"` means the strongest
+    rung the session is allowed, whatever it is called.
+    """
+
+    # The difficulty at or above which each rung becomes the target, on the
+    # 0-3 score scale Jev answers a Score question on. The live run of
+    # 2026-09-19 saw 2.95 on a turn a person would call clearly hard, and 1.9
+    # on a moderately hard one, so the defaults put those two turns on
+    # different rungs.
+    difficulty: dict[str, float] = Field(
+        default_factory=lambda: {"medium": 1.8, "high": 2.6}
+    )
+    # Difficulty mass sitting on the top level. At or above this the turn asks
+    # for the top rung outright, whatever the mean difficulty says.
+    p_hard_top: float = Field(default=0.6, ge=0.0, le=1.0)
+    # What a follow-up that names a defect in the earlier result asks for. A
+    # concise corrective message may need a great deal of effort (spec 10.5).
+    corrective_rung: str = "top"
+    # What a turn asks for when a protected admission rule bound this session
+    # and the evidence asks for more at all. Protected work exists because
+    # somebody said it must not be served weakly.
+    protected_rung: str = "top"
+
+
 class AdaptiveEffortCfg(Base):
     """The between-turn effort experiment (spec 10). Off unless asked for.
 
@@ -300,6 +334,16 @@ class AdaptiveEffortCfg(Base):
     ladder: list[str] = Field(default_factory=lambda: ["low", "medium", "high"])
     ladders: dict[str, list[str]] = Field(default_factory=dict)
     thresholds: EffortThresholds = Field(default_factory=EffortThresholds)
+    # How far one upward change may move. `jump` goes to the rung the evidence
+    # asks for, which is the owner's decision of 2026-09-19; `step` restores
+    # the single rung the policy used to climb.
+    upward: Literal["jump", "step"] = "jump"
+    # How far one confirmed downward change may move. `step` is one rung and
+    # is the default on purpose: a downgrade is the change that can cost
+    # quality, so each further rung is argued and confirmed again on its own
+    # evidence. `jump` drops straight to the floor.
+    downward: Literal["step", "jump"] = "step"
+    targets: EffortTargets = Field(default_factory=EffortTargets)
     # What is asked at a turn boundary. These are turn questions, not the
     # alias's admission questions.
     questions: list[str] = Field(

@@ -37,6 +37,34 @@ arm that matters, and its own verdict says provisional. A row in this table
 is a standing claim about a shipped deployment; that report is permission for
 one person to try something for an afternoon.
 
+## Owner decisions, 2026-09-19
+
+Two decisions override what was built before, and the second overrides the R2
+spec as well. They are written down here so a reader who finds the code
+disagreeing with `docs/R2_SPEC.md` can see that the difference is deliberate.
+
+**1. An upward effort change may jump.** Spec 10.5 says an upward
+recommendation "may act at the next eligible boundary" and the first
+implementation read that as one rung per turn, so a demanding turn starting
+from `low` landed on `medium` and needed a second demanding turn to reach
+`high`. The owner decided an upward change goes straight to the rung the
+evidence asks for: `low` to `high` in one move when the turn deserves it. The
+mapping is `experiments.adaptive_effort.targets`, the direction switch is
+`upward: jump|step`, and `jump` is the default. Everything else in 10.5 is
+unchanged: one change per user turn, floors, a classifier failure keeps the
+current effort, quota only above the floor, and a downward change still needs
+low-risk evidence and its confirmations.
+
+**2. Codex's own compaction keeps working.** Spec 10.3 and F17 say automatic
+compaction and truncation are refused for the initial native experiment, and
+the adapter used to strip Codex's `x-codex-beta-features` header for the same
+reason. The owner decided compaction stays exactly what Codex does natively.
+The router passes it through, records a compaction epoch, and still never
+builds a compactor, never summarises, never rewrites a provider item and
+never changes model. `truncation: auto` and router-side compaction are still
+refused. See "Compaction" below for what was measured on the wire and what
+the router does with it.
+
 ## The three modes
 
 | Mode | Jev call per turn | What the client sends | What moves |
@@ -75,8 +103,15 @@ experiments:
     downgrade_confirmations: 2
     on_unknown: keep
     hysteresis: true
+    upward: jump                  # jump | step
+    downward: step                # step | jump
     ladder: [low, medium, high]
     ladders: {gpt-6-astra: [low, medium, high]}
+    targets:
+      difficulty: {medium: 1.8, high: 2.6}
+      p_hard_top: 0.6
+      corrective_rung: top
+      protected_rung: top
     thresholds:
       upgrade_difficulty: 1.8
       upgrade_harm: 0.6
@@ -116,14 +151,34 @@ and there is nothing for a turn assessment to reselect.
 
 The mechanics, all configurable and all recorded on the plan:
 
-- **Upward** may act at the next eligible boundary, one rung, no waiting.
+- **Upward** may act at the next eligible boundary, with no waiting, and it
+  goes straight to the rung the evidence asks for. `thresholds` still decide
+  *whether* a turn wants more; `targets` decides *how far*, and the answer is
+  never less than one rung and never past the top of the permitted ladder.
+  `upward: step` restores the old single rung.
 - **Downward** needs low-risk evidence and `downgrade_confirmations`
   consecutive eligible-turn recommendations for the lower rung. A turn that
-  recommends something else breaks the run.
+  recommends something else breaks the run. A confirmed downgrade moves
+  **one rung**, which is the deliberate asymmetry: underserving a turn costs
+  one turn's quality and is corrected on the next boundary, while a drop that
+  is too deep is only noticed after the weak answer has been given. Each
+  further rung down is therefore argued again on its own evidence and
+  confirmed again. `downward: jump` drops straight to the floor instead.
 - **At most one change per user turn.** A tool continuation is part of the
   same turn and never gets a decision of its own.
 - **A short "continue"** is not evidence for a downgrade. "yes, go on" says
   nothing about how hard the next step is.
+- **How far up is the strongest of four readings.** The difficulty entry for
+  each rung (`targets.difficulty`, default `medium` at 1.8 and `high` at 2.6
+  on the 0-3 score scale); `p_hard_top`, where the difficulty mass sitting on
+  the top level asks for the top rung whatever the mean says; a corrective
+  follow-up (`corrective_rung`, default the top rung); and a protected
+  admission rule (`protected_rung`, default the top rung) on a turn that asks
+  for more at all. Harm on its own asks for one rung: it says a mistake would
+  be expensive, not that the work is hard. The rung the evidence reached and
+  the rule that reached it are recorded on the plan as `target` and
+  `target_reason`, and a plan that skipped a rung says which rule did it in
+  its reason.
 - **A corrective follow-up can raise**, unless `failure_mode` says the
   obstacle is a missing credential or a missing fact. More reasoning is not
   the remedy for either. `failure_mode` ships as a **shadow** question, and a
@@ -525,8 +580,10 @@ uv run python evals/run_sessions.py --arms fixed_effort_vs_adaptive \
 ```
 
 `effort_replay.py` compares fixed-low, fixed-medium, fixed-high, a simple
-threshold rule and the policy with and without hysteresis, resampling by
-session. Its fixtures are synthetic and labelled synthetic.
+threshold rule, and the policy in three configurations: with hysteresis,
+without it, and climbing one rung at a time (`jev_upward_step`). It resamples
+by session. Its fixtures are synthetic and labelled synthetic, so the two
+upward modes can be compared there for mechanics and for nothing else.
 
 `qualify_effort.py` plans by default. Running it live needs `--confirm-live`,
 `JEV_ROUTER_QUALIFY_LIVE=1`, an allowlisted profile, credentials and a call

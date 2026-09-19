@@ -78,7 +78,10 @@ async def test_c25_a_shadow_failure_mode_never_changes_the_plan(service, failure
 
     body = (await caller.turn_plan("turn-0002", observations=OBSERVATIONS)).json()
     assert body["action"] == "change_effort"
-    assert body["next_effective_effort"] == "medium"
+    # A corrective follow-up asks for the top rung outright (owner decision,
+    # 2026-09-19); what this test is about is that the shadow answer does not
+    # change the answer, whatever rung it lands on.
+    assert body["next_effective_effort"] == "high"
     assert "follow-up names a defect" in body["reason"]
 
 

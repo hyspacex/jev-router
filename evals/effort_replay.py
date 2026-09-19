@@ -15,6 +15,12 @@ Five arms over the same sessions:
 | `simple_rule` | one threshold on difficulty, no hysteresis, no floors |
 | `jev_hysteresis` | the shipped policy: `effort.plan_turn` with hysteresis |
 | `jev_no_hysteresis` | the same policy with the confirmations turned off |
+| `jev_upward_step` | the same policy climbing one rung at a time |
+
+`jev_hysteresis` raises to the rung the evidence asks for, which may be two
+rungs in one move (owner decision, 2026-09-19). `jev_upward_step` is the
+older mechanic, kept as an arm so the two can be compared rather than
+asserted about.
 
 It makes no calls. It replays `effort.plan_turn`, which is pure, over turn
 sequences and scores each arm against the effort each turn is labelled as
@@ -60,7 +66,16 @@ ARMS = (
     "simple_rule",
     "jev_hysteresis",
     "jev_no_hysteresis",
+    "jev_upward_step",
 )
+
+# Which arm runs the policy, and how it is configured. The upward mode is an
+# arm of its own so the jump and the step can be measured against each other.
+POLICY_ARMS = {
+    "jev_hysteresis": {"hysteresis": True, "upward": "jump"},
+    "jev_no_hysteresis": {"hysteresis": False, "upward": "jump"},
+    "jev_upward_step": {"hysteresis": True, "upward": "step"},
+}
 
 
 # --- fixtures ------------------------------------------------------------
@@ -158,10 +173,8 @@ def validate(sessions: list[Session]) -> list[str]:
 # --- the arms ------------------------------------------------------------
 
 
-def policy_cfg(hysteresis: bool) -> AdaptiveEffortCfg:
-    return AdaptiveEffortCfg(
-        mode="shadow", ladder=list(LADDER), hysteresis=hysteresis
-    )
+def policy_cfg(arm: str) -> AdaptiveEffortCfg:
+    return AdaptiveEffortCfg(mode="shadow", ladder=list(LADDER), **POLICY_ARMS[arm])
 
 
 def simple_rule(turn: Turn, ladder: list[str], floor: str | None) -> str:
@@ -203,7 +216,7 @@ def run_arm(arm: str, session: Session) -> list[dict[str, Any]]:
             current = sent
         else:
             plan = plan_turn(
-                cfg=policy_cfg(arm == "jev_hysteresis"),
+                cfg=policy_cfg(arm),
                 ladder=ladder,
                 current=current,
                 base=session.base,
@@ -349,6 +362,19 @@ def report(
             "turns. Whether that trade is worth taking is a question for a "
             "live comparison on a deployment somebody has qualified, not for "
             "this file."
+        )
+
+    lines += ["", "## Upward: jump against step", ""]
+    jump, step = scores.get("jev_hysteresis"), scores.get("jev_upward_step")
+    if jump and step:
+        lines.append(
+            f"Going straight to the rung the evidence asks for reaches "
+            f"{jump.adequate} adequate turns of {jump.turns} in {jump.changes} "
+            f"changes; climbing one rung at a time reaches {step.adequate} in "
+            f"{step.changes}. It costs {jump.mean_over:.2f} rungs of overshoot "
+            f"a turn against {step.mean_over:.2f}. These are synthetic turns "
+            "with the fixture author's labels, so this says what the two "
+            "mechanics do to each other and nothing about answer quality."
         )
 
     lines += ["", "## Sessions", "", "| session | turns | provenance | what it is |",

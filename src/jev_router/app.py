@@ -1108,7 +1108,7 @@ class Router:
         if blocked_because:
             return _keep_response(req, row, mode, blocked_because, action="blocked")
 
-        ladder, floor = self.turn_ladder(row)
+        ladder, floor, protected = self.turn_ladder(row)
         mcfg = self.config.models[row["model_key"]]
         strategy = mcfg.effort_control.between_turn
         started = time.perf_counter()
@@ -1126,6 +1126,7 @@ class Router:
                 evidence=evidence,
                 recommendations=history,
                 pressure=pressure,
+                protected=protected,
             )
 
         evidence = _turn_evidence(req, semantics)
@@ -1265,12 +1266,19 @@ class Router:
             return budget
         return ""
 
-    def turn_ladder(self, row: dict[str, Any]) -> tuple[list[str], str | None]:
-        """The rungs this session may move between, and the floor under them.
+    def turn_ladder(
+        self, row: dict[str, Any]
+    ) -> tuple[list[str], str | None, bool]:
+        """The rungs this session may move between, the floor, and whether it is protected.
 
         The ladder is the profile's configured rungs, kept inside the alias
         cap, the client minimum and the quality lane the admission rule named.
         Capability and adequacy are different filters and both apply.
+
+        The third value says a protected admission rule bound this session.
+        That is already a floor; it is reported as well because a turn that
+        asks for more effort on protected work asks for the top rung rather
+        than the next one along.
         """
         model = row["model_key"] or ""
         rungs = self.config.effort_ladder(model)
@@ -1280,6 +1288,7 @@ class Router:
         floor = client_cfg.min_effort if client_cfg else None
         cap = alias_cfg.max_effort if alias_cfg else None
 
+        protected = False
         if alias_cfg is not None:
             ruleset = self.config.ruleset_for(alias_cfg)
             for rule in ruleset.rules:
@@ -1287,6 +1296,7 @@ class Router:
                     # A protected rule exists because the request needs it.
                     # Whatever it admitted is a floor, not a starting point.
                     floor = _stronger(order, floor, row["base_effort"])
+                    protected = True
             if row["decision_rule"] == "low_confidence":
                 floor = _stronger(order, floor, row["base_effort"])
 
@@ -1300,7 +1310,11 @@ class Router:
             if lane is not None and not lane.allows(model, effort):
                 continue
             keep.append(effort)
-        return keep, (floor if floor in keep else (keep[0] if keep else None))
+        return (
+            keep,
+            (floor if floor in keep else (keep[0] if keep else None)),
+            protected,
+        )
 
     async def classify_turn(
         self, req: S.TurnPlanRequest, row: dict[str, Any]

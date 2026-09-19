@@ -998,24 +998,45 @@ comparison, and both say so.
 
 ### The offline replay
 
-`uv run python evals/effort_replay.py` over 12 synthetic sessions and 51
+`uv run python evals/effort_replay.py` over 13 synthetic sessions and 55
 turns. The sessions were written by hand to exercise the shapes the policy has
 to handle, and the per-turn `wants` labels are the fixture author's opinion of
 what each turn needs. They are not observations of any model.
 
 | arm | adequate | under-served | mean rungs over | effort changes |
 | --- | --- | ---: | ---: | ---: |
-| `fixed_low` | 30/51 [0.45, 0.71] | 0.41 | 0.00 | 0 |
-| `fixed_medium` | 39/51 [0.63, 0.86] | 0.24 | 0.53 | 0 |
-| `fixed_high` | 51/51 [0.93, 1.00] | 0.00 | 1.29 | 0 |
-| `simple_rule` | 45/51 [0.77, 0.94] | 0.12 | 0.20 | 18 |
-| `jev_hysteresis` | 50/51 [0.90, 1.00] | 0.02 | 0.33 | 20 |
-| `jev_no_hysteresis` | 50/51 [0.90, 1.00] | 0.02 | 0.14 | 24 |
+| `fixed_low` | 32/55 [0.45, 0.70] | 0.42 | 0.00 | 0 |
+| `fixed_medium` | 41/55 [0.62, 0.84] | 0.25 | 0.53 | 0 |
+| `fixed_high` | 55/55 [0.93, 1.00] | 0.00 | 1.27 | 0 |
+| `simple_rule` | 49/55 [0.78, 0.95] | 0.11 | 0.18 | 20 |
+| `jev_hysteresis` | 54/55 [0.90, 1.00] | 0.02 | 0.36 | 20 |
+| `jev_no_hysteresis` | 54/55 [0.90, 1.00] | 0.02 | 0.16 | 25 |
+| `jev_upward_step` | 53/55 [0.88, 0.99] | 0.04 | 0.35 | 22 |
 
 Paired by session, `jev_hysteresis` separates from `fixed_low` and
 `fixed_medium` (p = 0.000 in both directions) and does not separate from
-`fixed_high` (p = 0.602), `simple_rule` (p = 0.220) or `jev_no_hysteresis`
-(p = 1.000).
+`fixed_high` (p = 0.602), `simple_rule` (p = 0.220), `jev_no_hysteresis`
+(p = 1.000) or `jev_upward_step` (p = 1.000).
+
+### The upward jump (owner decision, 2026-09-19)
+
+The policy used to climb one rung per eligible turn, so a turn nobody would
+call anything but hard was served at `medium` and reached `high` only if the
+next turn was hard too. The owner decided an upward change goes straight to
+the rung the evidence asks for. `jev_upward_step` is the old mechanic, kept
+as an arm.
+
+The `cold-start-hard` fixture was added with this change, because the twelve
+sessions that existed could not tell the two apart at all: they had no turn
+that was hard from a standing start. With it, the jump serves one more turn
+adequately in two fewer changes and costs 0.01 rungs more overshoot per turn.
+
+**That is a demonstration, not a measurement.** The fixture was written by the
+person who wanted the jump, on the same day, to show the case the jump is
+for; a paired bootstrap over thirteen synthetic sessions cannot separate the
+two arms (p = 1.000) and would not be worth believing if it could. What
+decides between them is a live comparison of answer quality at a fixed model
+on real work, which still does not exist for any rung of this ladder.
 
 **Read that as almost nothing.** The labels and the policy were written by the
 same person on the same day, so the policy agreeing with the labels is closer

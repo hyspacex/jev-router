@@ -2,6 +2,15 @@
 
 No app, no store, no network: everything here is `effort.plan_turn` and the
 status transitions, called directly with numbers.
+
+**Owner decision, 2026-09-19.** Spec 10.5 starts an upward change at one rung
+per eligible turn. The owner decided an upward change goes straight to the
+rung the evidence asks for, so `low` may become `high` in a single move. The
+tests below are written to that decision, and the assertions that used to
+encode the one-rung climb say so where they changed. Everything else that
+section lists still holds: one change per user turn, floors, a classifier
+failure keeps the current effort, quota only above the floor, and a downward
+change still needs low-risk evidence and its confirmations.
 """
 
 from __future__ import annotations
@@ -92,7 +101,9 @@ def test_a_corrective_follow_up_raises():
     out = plan(current="low", evidence=Evidence(
         difficulty=0.3, harm_if_wrong=0.1, corrective_followup=0.9
     ))
-    assert out.action == CHANGE and out.to_effort == "medium"
+    # It used to raise one rung to medium. Owner decision, 2026-09-19: a
+    # follow-up naming a defect in the earlier result asks for the top rung.
+    assert out.action == CHANGE and out.to_effort == "high"
     assert "names a defect" in out.reason
 
 
@@ -139,6 +150,115 @@ def test_a_corrective_follow_up_blocks_a_downgrade():
         recommendations=["medium"],
     )
     assert out.action == KEEP
+
+
+# --- how far one upward change reaches (owner decision, 2026-09-19) -------
+
+
+def test_a_clearly_hard_turn_goes_straight_to_the_top_rung():
+    # 2.95 is what the live run of 2026-09-19 saw on a turn a person would
+    # call clearly hard. It used to land on medium and need a second turn.
+    out = plan(current="low", evidence=Evidence(difficulty=2.95, harm_if_wrong=0.3))
+    assert out.action == CHANGE
+    assert (out.from_effort, out.to_effort) == ("low", "high")
+    assert out.direction == "up"
+    assert out.target == "high"
+    assert "asks for high" in out.reason
+
+
+def test_a_moderately_hard_turn_still_asks_for_the_middle_rung():
+    out = plan(current="low", evidence=Evidence(difficulty=1.9, harm_if_wrong=0.3))
+    assert out.action == CHANGE and out.to_effort == "medium"
+
+
+def test_the_step_switch_restores_the_one_rung_climb():
+    out = plan(
+        current="low",
+        evidence=Evidence(difficulty=2.95, harm_if_wrong=0.3),
+        cfg=cfg(upward="step"),
+    )
+    assert out.action == CHANGE and out.to_effort == "medium"
+    assert out.to_facts()["upward"] == "step"
+
+
+def test_top_difficulty_mass_asks_for_the_top_rung():
+    out = plan(current="low", evidence=Evidence(difficulty=1.0, harm_if_wrong=0.1, p_hard=0.7))
+    assert out.action == CHANGE and out.to_effort == "high"
+    assert "top level" in out.reason
+
+
+def test_protected_work_asks_for_the_top_rung_when_it_asks_for_more():
+    out = plan(
+        current="low",
+        evidence=Evidence(difficulty=1.9, harm_if_wrong=0.3),
+        protected=True,
+    )
+    assert out.action == CHANGE and out.to_effort == "high"
+    assert "protected rule" in out.reason
+
+
+def test_protected_work_that_asks_for_nothing_still_moves_nothing():
+    out = plan(current="medium", evidence=middling(), protected=True)
+    assert out.action == KEEP
+
+
+def test_a_jump_never_crosses_the_alias_cap():
+    # The ladder the caller hands in is already the permitted one.
+    out = plan(
+        current="low",
+        evidence=Evidence(difficulty=2.95, harm_if_wrong=0.3),
+        ladder=["low", "medium"],
+    )
+    assert out.action == CHANGE and out.to_effort == "medium"
+
+
+def test_the_target_mapping_is_configurable():
+    strict = cfg(targets={"difficulty": {"medium": 1.0, "high": 1.5}})
+    out = plan(current="low", evidence=Evidence(difficulty=1.9, harm_if_wrong=0.3), cfg=strict)
+    assert out.action == CHANGE and out.to_effort == "high"
+
+
+def test_a_rung_the_ladder_does_not_offer_is_ignored():
+    odd = cfg(targets={"difficulty": {"enormous": 1.0}})
+    out = plan(current="low", evidence=Evidence(difficulty=2.0, harm_if_wrong=0.3), cfg=odd)
+    assert out.action == CHANGE and out.to_effort == "medium"
+
+
+def test_the_target_and_the_modes_are_recorded_on_the_plan():
+    out = plan(current="low", evidence=Evidence(difficulty=2.95, harm_if_wrong=0.3))
+    facts = out.to_facts()
+    assert facts["target"] == "high"
+    assert facts["upward"] == "jump" and facts["downward"] == "step"
+    assert "2.6" in facts["target_reason"]
+
+
+# --- how far one downward change reaches ---------------------------------
+
+
+def test_a_confirmed_downgrade_steps_one_rung():
+    out = plan(current="high", evidence=easy(), recommendations=["medium"])
+    assert out.action == CHANGE and out.to_effort == "medium"
+
+
+def test_the_jump_switch_takes_a_downgrade_to_the_floor():
+    out = plan(
+        current="high",
+        evidence=easy(),
+        cfg=cfg(downward="jump"),
+        recommendations=["low"],
+    )
+    assert out.action == CHANGE and out.to_effort == "low"
+
+
+def test_a_downward_jump_still_stops_at_the_floor():
+    out = plan(
+        current="high",
+        evidence=easy(),
+        cfg=cfg(downward="jump"),
+        floor="medium",
+        recommendations=["medium"],
+    )
+    assert out.action == CHANGE and out.to_effort == "medium"
 
 
 # --- hysteresis ----------------------------------------------------------
