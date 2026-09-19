@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build a complete test config for the between-turn effort experiment.
 
 `router.yaml` ships with the experiment off and nothing qualified, and it
