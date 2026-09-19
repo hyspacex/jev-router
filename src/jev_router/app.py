@@ -808,9 +808,30 @@ class Router:
             # The classifier could not answer. A strict binding may only fall
             # back onto a profile this alias named for it, and the result is
             # as fixed as any other binding: recovery does not revisit it.
-            model, effort = self.conservative(scoped, features, decision.reason)
+            #
+            # What the discarded decider guessed is not what bound, so none of
+            # it is recorded as though it were: the lane, the route and the
+            # intended model come from the fallback, pressure changed nothing
+            # because pressure was never consulted, there is no counterfactual
+            # to draw, and the semantic answers are absent rather than
+            # synthetic (spec 8.4).
+            result = self.conservative(scoped, features, decision.reason)
+            model, effort = result.model, result.effort
+            decision = Decision(
+                model=model,
+                effort=effort,
+                rule="admission_fallback",
+                reason=f"classifier unavailable: {decision.reason}",
+                fallback=True,
+                decider="admission_fallback",
+                route=result.route,
+                plan=list(result.plan),
+                lane=result.lane,
+                qualification_ref=result.qualification_ref,
+                evidence="none",
+            )
             answers, source, rule = {}, "admission_fallback", "admission_fallback"
-            reason = f"classifier unavailable: {decision.reason}"
+            reason = decision.reason
         else:
             try:
                 model, effort = guard_candidate(
@@ -975,10 +996,12 @@ class Router:
             )
         return pool
 
-    def conservative(
-        self, alias_cfg: AliasCfg, features: Features, why: str
-    ) -> tuple[str, str | None]:
-        """The explicitly configured fallback, or no admission at all."""
+    def conservative(self, alias_cfg: AliasCfg, features: Features, why: str) -> Any:
+        """The explicitly configured fallback, or no admission at all.
+
+        The whole result, not just the pair: what bound is what gets recorded,
+        including the route it came from.
+        """
         route = alias_cfg.admission_fallback
         if route is None:
             raise SessionError(
@@ -987,7 +1010,7 @@ class Router:
                 "no admission_fallback to bind instead",
             )
         try:
-            result = policy_finalize(
+            return policy_finalize(
                 self.config, alias_cfg, route, "admission_fallback", why, features
             )
         except RoutingError as exc:
@@ -995,7 +1018,6 @@ class Router:
                 S.NO_SAFE_ADMISSION,
                 f"the configured admission_fallback cannot serve this request: {exc}",
             ) from None
-        return result.model, result.effort
 
     # --- the between-turn effort experiment (spec 10) ---------------------
 

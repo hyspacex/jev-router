@@ -13,7 +13,6 @@ import pytest
 import respx
 import session_harness as H
 from session_harness import ADMIN, Service, upstream
-from test_app import JEV_URL
 from test_turn_plan import adaptive, turn_jev
 
 from jev_router.config import AdaptiveEffortCfg

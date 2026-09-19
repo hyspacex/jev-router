@@ -14,7 +14,6 @@ import pytest
 import respx
 import session_harness as H
 import yaml
-from conftest import BASE_CONFIG
 from session_harness import ADMIN, Client, Service, upstream
 from test_app import JEV_URL
 

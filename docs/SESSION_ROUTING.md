@@ -58,6 +58,14 @@ one, an admission with no classifier answer returns `NO_SAFE_ADMISSION` rather
 than guessing. Whatever it binds is as fixed as any other binding: Jev coming
 back does not revisit it.
 
+What is recorded for such a binding is the fallback, not the heuristic guess
+that was discarded on the way to it. `quality_lane` and the logged route are
+the fallback's, `quota_changed_choice` is false because pressure was never
+consulted, there is no counterfactual to draw, and the semantic answers are
+stored as absent rather than synthetic. `decisions replay` re-runs the alias's
+`admission_fallback` for such a row, which is the only thing about it that is
+reproducible, and says so in a note.
+
 A model may also describe its deployment:
 
 ```yaml

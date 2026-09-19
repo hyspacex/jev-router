@@ -214,6 +214,9 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   failure uses the alias's explicit `admission_fallback` or returns
   `NO_SAFE_ADMISSION`, its answers are stored as absent, and recovery does not
   revisit the binding. A resolve retry must not spend another Jev call.
+  Record the fallback that bound, never the discarded heuristic guess: its
+  route and lane, `quota_changed_choice: false`, and no counterfactual.
+  `decisions replay` re-runs the fallback route for such a row.
 - The binding digest covers profile identity and negotiated limits only.
   Never quota, timestamps or effort.
 - `session_requests` distinguishes accepted, completed, rejected, stream

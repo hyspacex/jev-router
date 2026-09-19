@@ -18,7 +18,10 @@ from typing import Any
 
 from .config import AliasCfg, RouterConfig
 from .features import Features
-from .policy import RoutingError, select
+from .policy import RoutingError, finalize, select
+
+# The rule name an admission that never reached the classifier is stored under.
+ADMISSION_FALLBACK = "admission_fallback"
 
 # Bumped when the shape of a packet version changes, so two strings from
 # different releases can never be compared as if they meant the same thing.
@@ -228,6 +231,12 @@ def replay_decision(config: RouterConfig, row: dict[str, Any]) -> Replay:
     if not isinstance(facts, dict):
         out.error = "the stored request facts are unreadable"
         return out
+    if out.stored_rule == ADMISSION_FALLBACK:
+        # The classifier never answered, so the ruleset never ran. Replaying
+        # it against no answers would compare this binding with a route it
+        # was never offered. What is reproducible here is the alias's own
+        # admission fallback, so that is what is run.
+        return _replay_fallback(config, alias_cfg, facts, out)
     try:
         result = select(
             config, alias_cfg, answers, features_from_facts(facts), out.pressures
@@ -240,6 +249,40 @@ def replay_decision(config: RouterConfig, row: dict[str, Any]) -> Replay:
     out.lane = result.lane
     out.evidence = result.evidence
     out.counterfactual = result.counterfactual
+    out.notes.extend(result.notes)
+    return out
+
+
+def _replay_fallback(
+    config: RouterConfig, alias_cfg: AliasCfg, facts: dict[str, Any], out: Replay
+) -> Replay:
+    """Re-resolve the alias's `admission_fallback`, which is what bound."""
+    out.notes.append(
+        "the classifier was unavailable, so this binding came from the alias's "
+        "admission_fallback; there are no semantic answers to replay"
+    )
+    route = alias_cfg.admission_fallback
+    if route is None:
+        out.error = f"alias {alias_cfg.description!r} declares no admission_fallback any more"
+        return out
+    try:
+        result = finalize(
+            config,
+            alias_cfg,
+            route,
+            ADMISSION_FALLBACK,
+            "replayed admission fallback",
+            features_from_facts(facts),
+        )
+    except RoutingError as exc:
+        out.error = str(exc)
+        return out
+    out.replayed = (result.model, result.effort)
+    out.replayed_rule = result.rule
+    # No lane was matched and no counterfactual was drawn, because no rule ran
+    # and pressure was never consulted. Both stay empty rather than borrowing
+    # a value from a decision that did not happen.
+    out.evidence = "none"
     out.notes.extend(result.notes)
     return out
 
