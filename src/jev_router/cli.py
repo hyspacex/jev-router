@@ -745,6 +745,21 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
             else ""
         )
     )
+    epoch = int(row.get("compaction_epoch") or 0)
+    if epoch:
+        state = row.get("compaction_state") or "known"
+        folded = (
+            f"  compact:  the client has folded this history up {epoch} time(s); "
+            f"the model is unchanged ({row['model_key'] or '-'}) and the effort "
+            f"went back to the base effort ({row['base_effort'] or '-'}) with the "
+            "last one, because an update does not survive a compaction"
+        )
+        if state == "unknown":
+            folded += (
+                "\n            the last compaction was sent and nothing came "
+                "back to say it finished; reconcile before adapting again"
+            )
+        print(folded)
     _print_ledger(row)
     print(f"  binding:  {row['binding_revision'] or '-'}")
     print(

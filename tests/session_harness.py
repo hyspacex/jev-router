@@ -515,12 +515,60 @@ RESPONSES = f"{UPSTREAM}/v1/responses"
 COMPACT = f"{UPSTREAM}/v1/responses/compact"
 
 
+# Codex's own metadata header. Only two of its fields matter here: it says
+# whether a request is a `turn` or Codex folding its own history up. The
+# shapes below were read off codex-cli 0.155.1 on 2026-09-19 with a logging
+# pass-through, and scrubbed of everything but identifiers and field names.
+CODEX_TURN_METADATA = "x-codex-turn-metadata"
+
+
+def codex_metadata(kind: str = "turn", window: int = 0) -> str:
+    """What Codex sends about one request. Identifiers and flags only."""
+    meta: dict[str, Any] = {
+        "session_id": "01a0bbf2-31ed-7b32-803b-27a5f3f07d51",
+        "thread_id": "01a0bbf2-31ed-7b32-803b-27a5f3f07d51",
+        "turn_id": "01a0bbf2-6523-7300-b279-d44a53ec7879",
+        "window_id": f"01a0bbf2-31ed-7b32-803b-27a5f3f07d51:{window}",
+        "window_number": window,
+        "request_kind": kind,
+    }
+    if kind == "compaction":
+        meta["compaction"] = {
+            "trigger": "auto",
+            "reason": "context_limit",
+            "implementation": "responses",
+            "phase": "pre_turn",
+            "strategy": "memento",
+        }
+    return json.dumps(meta)
+
+
+def trigger_item() -> dict[str, Any]:
+    """The provider's own explicit compaction request. Always the last item."""
+    return {"type": "compaction_trigger"}
+
+
+def compaction_item(item_id: str = "cmp_0001") -> dict[str, Any]:
+    """A folded-up history, as the provider returns it.
+
+    `encrypted_content` is opaque, about 1.8 kB on the deployment this was
+    measured against. Nothing in the router ever looks inside it, so a short
+    stand-in is enough and keeps no transcript in a fixture.
+    """
+    return {
+        "type": "compaction",
+        "id": item_id,
+        "encrypted_content": "OPAQUE-" + "x" * 48,
+    }
+
+
 def response_payload(
     response_id: str,
     status: str = "completed",
     *,
     base_effort: str = "low",
     tool_calls: bool = False,
+    compaction: bool = False,
     text: str = "Done.",
 ) -> dict[str, Any]:
     """One terminal response object.
@@ -544,6 +592,10 @@ def response_payload(
                 "arguments": '{"path":"csv.py"}',
             }
         )
+    if compaction:
+        # The provider answers an explicit trigger with one opaque item and
+        # nothing else.
+        output = [compaction_item(f"cmp_{response_id[-4:]}")]
     return {
         "id": response_id,
         "object": "response",
@@ -607,17 +659,23 @@ def responses_upstream(
     counter = [0]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(json.loads(request.content))
+        body = json.loads(request.content)
+        seen.append(body)
         if isinstance(response, Exception):
             raise response
         if response is not None:
             return response
         counter[0] += 1
+        items = body.get("input") or []
+        triggered = bool(items) and isinstance(items[-1], dict) and (
+            items[-1].get("type") == "compaction_trigger"
+        )
         payload = response_payload(
             f"resp_{counter[0]:04d}",
             status,
             base_effort=base_effort,
             tool_calls=tool_calls,
+            compaction=triggered,
         )
         if body_override is not None:
             raw.append(body_override)
@@ -801,6 +859,67 @@ class ResponsesClient(Client):
             return plan, None  # type: ignore[return-value]
         self.record(plan, text)
         return plan, await self.send(plan)
+
+    async def compact(
+        self, *, trigger: bool = False, declare: bool = True, **extra: Any
+    ) -> httpx.Response:
+        """Fold this history up, the way a client does it.
+
+        Two shapes, both read off the wire on 2026-09-19. `trigger` is the
+        provider's explicit flow: the whole history with a `compaction_trigger`
+        as the final item, answered with one opaque `compaction` item. The
+        default is Codex's own: an ordinary request carrying a summarising
+        message, which nothing in the body distinguishes from a turn, so the
+        client says what it is in a header.
+
+        The transcript afterwards is the client's business, and both shapes
+        rebuild it: this stands in for that.
+        """
+        items = list(self.items)
+        if trigger:
+            items.append(trigger_item())
+        else:
+            items.append(user_item("Summarise the work so far. Do not continue it."))
+        body = {
+            "model": self.wire_model(),
+            "reasoning": {"effort": self.base_effort},
+            "input": items,
+        }
+        body.update(extra)
+        sent = self.execution_headers()
+        if declare:
+            sent["x-router-request-kind"] = "compaction"
+            sent[CODEX_TURN_METADATA] = codex_metadata("compaction")
+        response = await self.service.client.post(
+            "/v1/responses", json=body, headers=sent
+        )
+        if response.status_code == 200:
+            self.rebuild(response, folded=trigger)
+        return response
+
+    def rebuild(self, response: httpx.Response, *, folded: bool = False) -> None:
+        """Start the window the client keeps after a compaction.
+
+        Codex 0.155.1 throws its transcript away and writes a new one from the
+        summary. The provider's explicit flow replays the opaque item instead.
+        Either way every earlier update item is gone, which is the whole point
+        of the epoch.
+        """
+        self.items = []
+        self.sent_upto = 0
+        if folded:
+            events = (
+                read_sse(response.content)
+                if "text/event-stream" in response.headers.get("content-type", "")
+                else [json.loads(response.content or b"{}")]
+            )
+            for event in events:
+                payload = event.get("response") if isinstance(event, dict) else None
+                payload = payload if isinstance(payload, dict) else event
+                for item in (payload or {}).get("output") or []:
+                    if isinstance(item, dict) and item.get("type") == "compaction":
+                        self.items = [item]
+        self.parent = ""
 
     async def continuation(self, output: str = "def parse(line): ...") -> httpx.Response:
         """Carry the same turn on after a tool result. No new plan."""

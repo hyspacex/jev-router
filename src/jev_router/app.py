@@ -1133,7 +1133,7 @@ class Router:
         plan = decide(evidence)
         # What a shadow answer would have done, recorded and never applied.
         counterfactual = _shadow_counterfactual(decide, plan, evidence, semantics)
-        hole = E.reconciliation_hole(self.sessions.plans(req.session_id))
+        hole = E.reconciliation_hole(self._plans_this_epoch(req.session_id, row))
         if hole is not None and plan.action == E.CHANGE:
             # Somebody confirmed an earlier update by hand and nobody could
             # record where it landed. Keeping the effort is still fine, and
@@ -1168,6 +1168,9 @@ class Router:
                 "recommendation": plan.recommendation,
                 "expected_effort": plan.to_effort,
                 "history_mode": req.context.history_mode,
+                # Which side of the last compaction this plan is on. A plan
+                # from an earlier epoch is kept and never asked for again.
+                "compaction_epoch": int(row.get("compaction_epoch") or 0),
                 "request_fingerprint": evidence_fingerprint,
                 "request_id": req.request_id,
                 "reason": plan.reason[:500],
@@ -1236,12 +1239,18 @@ class Router:
         exactly where they are and the ledger keeps every update already
         applied. It is not an error and it is not a reset.
         """
+        if row.get("compaction_state") == "unknown":
+            return (
+                "a compaction was sent and nothing came back to say it "
+                "finished, so nobody can say what this session's history looks "
+                "like now; reconcile before adapting again"
+            )
         if row.get("effort_lineage") == "unknown":
             return (
                 "the lineage or usage of an earlier response could not be read; "
                 "reconcile the open plan before adapting again"
             )
-        open_row = E.open_change(self.sessions.plans(req.session_id))
+        open_row = E.open_change(self._plans_this_epoch(req.session_id, row))
         if open_row is not None:
             if open_row["status"] == E.OUTCOME_UNKNOWN:
                 raise SessionError(
@@ -1265,6 +1274,24 @@ class Router:
         if budget:
             return budget
         return ""
+
+    def _plans_this_epoch(
+        self, session_id: str, row: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """The plans on this side of the last compaction.
+
+        A change left in the air when the provider folded the history up
+        cannot be carried out or checked any more: the item it was going to
+        anchor is inside a compaction item nobody may look into, and the
+        effort is back at base either way. So it stops standing in the way of
+        the next change. The row itself is kept exactly as it was.
+        """
+        epoch = int(row.get("compaction_epoch") or 0)
+        return [
+            plan
+            for plan in self.sessions.plans(session_id)
+            if int(plan.get("compaction_epoch") or 0) >= epoch
+        ]
 
     def turn_ladder(
         self, row: dict[str, Any]
@@ -1446,9 +1473,18 @@ class Router:
         return "shadow" if live == "shadow" else stored
 
     async def managed_execution(
-        self, request: Request, raw: bytes, protocol: str = P.CHAT
+        self,
+        request: Request,
+        raw: bytes,
+        protocol: str = P.CHAT,
+        maintenance: str = "",
     ) -> Response:
-        """Execute one request against a binding. One entry, no substitution."""
+        """Execute one request against a binding. One entry, no substitution.
+
+        `maintenance` names a request the endpoint already knows is not a
+        turn, which today means the standalone compaction endpoint. A request
+        on the ordinary endpoint says so for itself.
+        """
         owner = self.session_owner(request)
         session_id = request.headers.get("x-router-session", "")
         revision = request.headers.get("x-router-binding", "")
@@ -1501,7 +1537,10 @@ class Router:
         _check_model_name(body["model"], row)
         features = extract_features(body, dict(request.headers))
         check = _execution_budget(row, mcfg, features, body)
-        pending, anchor = self.check_effort_contract(request, body, row, mcfg)
+        maintenance = maintenance or P.compaction_request(body, request.headers)
+        pending, anchor = self.check_effort_contract(
+            request, body, row, mcfg, maintenance=maintenance
+        )
 
         if not self.sessions.claim(session_id):
             raise SessionError(
@@ -1539,7 +1578,14 @@ class Router:
 
         try:
             return await self.forward_session(
-                request, body, row, row_id, finish, pending=pending, anchor=anchor
+                request,
+                body,
+                row,
+                row_id,
+                finish,
+                pending=pending,
+                anchor=anchor,
+                maintenance=maintenance,
             )
         except BaseException:
             finish("unknown")
@@ -1555,6 +1601,7 @@ class Router:
         body: dict[str, Any],
         row: dict[str, Any],
         mcfg: Any,
+        maintenance: str = "",
     ) -> tuple[dict[str, Any] | None, Any]:
         """Validate the effort history before a byte is forwarded.
 
@@ -1566,6 +1613,11 @@ class Router:
         It runs for any session that was resolved under the experiment, even
         after the experiment has been switched off, because a full replay that
         drops an update already in the provider's history would corrupt it.
+
+        `maintenance` names a request that is not a turn - today only a
+        compaction. It is held to the same history, the same base effort and
+        the same one-owner rule as any other request, and it carries no plan
+        and no new item, because nobody decided anything about effort for it.
         """
         if (row.get("adaptation_mode") or "off") == "off":
             return None, None
@@ -1578,6 +1630,14 @@ class Router:
         plan_id = request.headers.get("x-router-turn-plan", "")
         pending = None
         expected: str | None = None
+
+        if maintenance:
+            # A compaction is not a turn: it asks for no effort change and
+            # gets no plan of its own, whatever headers a client sent with it.
+            plan_id = ""
+            problem = P.check_trigger_placement(body)
+            if problem:
+                raise SessionError(S.EFFORT_HISTORY_MISMATCH, problem)
 
         if plan_id:
             pending = self.sessions.plan_by_id(plan_id)
@@ -1625,7 +1685,11 @@ class Router:
             raise SessionError(S.EFFORT_HISTORY_MISMATCH, problem)
 
         items = P.input_items(body)
-        ledger = self.sessions.applied_updates(session_id)
+        # Only this epoch's updates. What the provider folded up at the last
+        # compaction is not in the history any more and is not asked for.
+        ledger = self.sessions.applied_updates(
+            session_id, epoch=int(row.get("compaction_epoch") or 0)
+        )
         if body.get("previous_response_id"):
             lineage = {row.get("last_response_id") or ""} | {
                 plan.get("response_id") or "" for plan in self.sessions.plans(session_id)
@@ -1704,6 +1768,67 @@ class Router:
             result["effective_effort"],
         )
         return result
+
+    def open_compaction_epoch(self, row: dict[str, Any], how: str) -> int:
+        """The provider has been asked to fold this session's history up.
+
+        Owner decision, 2026-09-19: Codex's own compaction stays exactly what
+        Codex does, so the router lets it through and records that it happened
+        rather than refusing it. What it records is an epoch. Updates the
+        ledger accepted before it are no longer position-validated and no
+        longer required in a replay, because the positions they were anchored
+        at no longer name anything.
+
+        The effective effort goes back to the base effort with it. That was
+        measured on this deployment on 2026-09-19: replaying a compaction made
+        from a history that carried an update to `high` produced the same
+        reasoning work as the base arm, and a fresh update after the
+        compaction item restored it. The next eligible new user turn may plan
+        that update again.
+
+        The ledger rows themselves are not touched. Nothing is erased by a
+        compaction; it only stops being something the client has to reproduce.
+        """
+        try:
+            epoch = self.sessions.compact(row["session_id"])
+            current = self.sessions.get(row["session_id"]) or row
+            base = row["base_effort"]
+            self.sessions.update(
+                row["session_id"],
+                current["version"],
+                effective_effort=base,
+                confirmed_effort=base,
+                expected_effort=base,
+            )
+            log.info(
+                "compaction session=%s how=%s epoch=%s effective=%s (back to base)",
+                row["session_id"],
+                how,
+                epoch,
+                base,
+            )
+            return epoch
+        except Exception:  # noqa: BLE001 - bookkeeping may never fail a reply
+            log.exception("could not record the compaction")
+            return int(row.get("compaction_epoch") or 0)
+
+    def mark_compaction_unknown(self, row: dict[str, Any]) -> None:
+        """A compaction went out and nothing came back to say it finished.
+
+        The same answer as an unreadable reply: lineage is unknown, further
+        effort changes stop until somebody reconciles, and the reply itself is
+        untouched and never retried.
+        """
+        try:
+            current = self.sessions.get(row["session_id"]) or row
+            self.sessions.update(
+                row["session_id"],
+                current["version"],
+                compaction_state="unknown",
+                effort_lineage="unknown",
+            )
+        except Exception:  # noqa: BLE001 - bookkeeping may never fail a reply
+            log.exception("could not record the compaction outcome")
 
     def record_observation(self, row: dict[str, Any], observation: Any) -> None:
         """Keep the lineage and the usage a chain request is checked against."""
@@ -1834,6 +1959,7 @@ class Router:
         *,
         pending: dict[str, Any] | None = None,
         anchor: Any = None,
+        maintenance: str = "",
     ) -> Response:
         """The one-entry execution plan.
 
@@ -1899,6 +2025,7 @@ class Router:
 
         status = upstream_response.status_code
         accepted = 200 <= status < 300
+        epoch = int(row.get("compaction_epoch") or 0)
         if accepted:
             self.breakers.record_success(provider)
         elif _is_retryable_status(status):
@@ -1940,6 +2067,8 @@ class Router:
                     anchor_prefix_hash=getattr(anchor, "prefix", "") or None,
                     parent_response_id=body.get("previous_response_id"),
                 )
+            if maintenance:
+                epoch = self.open_compaction_epoch(row, maintenance)
 
         observer = (
             P.Observer(
@@ -1966,6 +2095,12 @@ class Router:
                         "completed" if seen.completed and state == "completed" else "unknown",
                         observation=seen,
                     )
+                if maintenance and not (seen.completed and state == "completed"):
+                    # The compaction went out and nobody can say what the
+                    # client's history looks like now. The epoch already moved,
+                    # which only relaxes what a replay is checked against; what
+                    # stops is the next effort change, until somebody says.
+                    self.mark_compaction_unknown(row)
             finish(
                 {"completed": "completed", "failed": "stream_failed"}.get(
                     state, "unknown"
@@ -1983,9 +2118,14 @@ class Router:
         }
         effective = row["effective_effort"] or row["base_effort"]
         if (row.get("adaptation_mode") or "off") != "off":
+            if maintenance and accepted:
+                # A compaction folds the history up, and with it the updates
+                # in it: what runs after this is the base effort again.
+                effective = row["base_effort"]
             headers["X-Router-Effective-Effort"] = (
                 pending["to_effort"] if pending else (effective or "")
             )
+            headers["X-Router-Compaction-Epoch"] = str(epoch)
         return self._respond(
             upstream_response,
             headers,
@@ -2591,29 +2731,23 @@ async def responses(request: Request) -> Response:
 
 
 async def compact_responses(request: Request) -> Response:
-    """Standalone compaction. Refused for a session running the experiment.
+    """Standalone compaction, forwarded as maintenance for a managed session.
 
-    The ledger has to be able to find every update again at the position it
-    was accepted at. A compaction the router did not perform and cannot see
-    makes that impossible, so this is refused rather than allowed to corrupt
-    the history (spec 10.3).
+    Owner decision, 2026-09-19: compaction stays exactly what the client does
+    natively, so this is passed through and recorded as a compaction epoch
+    rather than refused. The router still never compacts anything itself,
+    never reads inside a compaction item and never changes model.
+
+    Codex 0.155.1 does not call this endpoint - its compaction is an ordinary
+    `POST /v1/responses` - and the CLIProxyAPI deployment of 2026-09-19
+    answers it with a 404. It is supported here because the contract says a
+    client's compaction is the client's, not because anything has used it.
     """
     router: Router = request.app.state.router
     raw = await request.body()
     if _managed(request):
-        owner = router.session_owner(request)
-        session_id = request.headers.get("x-router-session", "")
-        row = router.live_session(session_id, owner) if session_id else None
-        if row is not None and (row.get("adaptation_mode") or "off") != "off":
-            raise SessionError(
-                S.UNSUPPORTED_PROFILE,
-                "standalone compaction is not supported while the between-turn "
-                "effort experiment is on for this session; its history has to "
-                "stay findable by the update ledger",
-            )
-        raise SessionError(
-            S.UNSUPPORTED_PROFILE,
-            "a managed session executes on /v1/chat/completions or /v1/responses",
+        return await router.managed_execution(
+            request, raw, protocol=P.RESPONSES, maintenance=P.COMPACTION_KIND
         )
     return await _forward_unmanaged(router, request, raw)
 
@@ -2901,6 +3035,12 @@ def session_report(router: Router, row: dict[str, Any]) -> dict[str, Any]:
         "adaptation": router.session_adaptation(row),
         "adaptation_agreed": row.get("adaptation_mode") or "off",
         "effort_lineage": row.get("effort_lineage") or "known",
+        # How many times the provider has folded this session's history up,
+        # and whether the last one was seen to finish. A client that restarts
+        # needs the epoch to know which of its recorded update positions still
+        # mean anything.
+        "compaction_epoch": int(row.get("compaction_epoch") or 0),
+        "compaction_state": row.get("compaction_state") or "none",
         "turn_plans": router.sessions.plans(row["session_id"], limit=10),
         "decision_id": row["decision_id"],
         "decision_rule": row["decision_rule"],

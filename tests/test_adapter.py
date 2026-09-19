@@ -21,6 +21,7 @@ from starlette.routing import Route
 from jev_router import protocols as P
 from jev_router.adapter import (
     Adapter,
+    codex_compaction,
     conversation_id_of,
     create_adapter_app,
     read_key_file,
@@ -68,6 +69,9 @@ class FakeRouter:
         self.known: set[str] = set()
         self.plan_answers: list[dict[str, Any] | Response] = []
         self.execution_answer: Response | None = None
+        # What the real router puts on an execution reply, when a test needs
+        # the adapter to read something off it.
+        self.execution_headers: dict[str, str] = {}
         self.report: dict[str, Any] = {}
         self.counter = 0
 
@@ -134,7 +138,9 @@ class FakeRouter:
             return self.execution_answer
         self.counter += 1
         return Response(
-            sse(f"resp_{self.counter:04d}"), media_type="text/event-stream"
+            sse(f"resp_{self.counter:04d}"),
+            media_type="text/event-stream",
+            headers=self.execution_headers,
         )
 
     async def models(self, request: Request) -> Response:
@@ -663,13 +669,130 @@ def test_the_key_file_is_read_and_stripped(tmp_path):
 # --- what leaves this process --------------------------------------------
 
 
-async def test_the_compaction_opt_in_header_is_dropped(rig, router):
+async def test_the_compaction_opt_in_header_is_forwarded(rig, router):
+    """It used to be stripped here. Owner decision, 2026-09-19: it is not.
+
+    Compaction stays exactly what the client does natively, so this hop has
+    no business editing the client's opt-in. (Against codex-cli 0.155.1 the
+    header is vestigial anyway: `codex features list` reports
+    `remote_compaction_v2` as removed, and the client compacts locally.)
+    """
     await send(
         rig,
         body(user_item("one", "m1")),
         headers={"x-codex-beta-features": "remote_compaction_v2"},
     )
-    assert "x-codex-beta-features" not in router.headers[0]
+    assert router.headers[0]["x-codex-beta-features"] == "remote_compaction_v2"
+
+
+# --- compaction -----------------------------------------------------------
+
+
+def codex_compaction_headers() -> dict[str, str]:
+    """Codex's own metadata for a compaction request, as measured on the wire."""
+    return {
+        "x-codex-beta-features": "remote_compaction_v2",
+        "x-codex-turn-metadata": json.dumps(
+            {
+                "session_id": "01a0bbf2",
+                "turn_id": "01a0bbf2-6523",
+                "window_id": "01a0bbf2:0",
+                "window_number": 0,
+                "request_kind": "compaction",
+                "compaction": {
+                    "trigger": "auto",
+                    "reason": "context_limit",
+                    "implementation": "responses",
+                    "phase": "pre_turn",
+                    "strategy": "memento",
+                },
+            }
+        ),
+    }
+
+
+def test_a_codex_compaction_is_recognised_from_its_metadata():
+    assert codex_compaction(codex_compaction_headers())
+    assert not codex_compaction({"x-codex-turn-metadata": '{"request_kind":"turn"}'})
+    assert not codex_compaction({"x-codex-turn-metadata": "not json at all"})
+    assert not codex_compaction({})
+
+
+async def test_a_compaction_asks_for_no_plan_and_inserts_no_item(rig, router):
+    router.plan_answers = [change_plan("medium")]
+    await send(rig, body(user_item("one", "m1")))
+    planned = len(router.plans)
+
+    # Codex's compaction looks exactly like a new user turn on the wire.
+    await send(
+        rig,
+        body(user_item("one", "m1"), user_item("Summarise the work so far.")),
+        headers=codex_compaction_headers(),
+    )
+    assert len(router.plans) == planned, "a compaction is not a turn boundary"
+    sent = router.executions[-1]
+    # The update this history already carries is still there; nothing new is.
+    assert [i for i in sent["input"] if i.get("type") == "configuration_update"] == [
+        {"type": "configuration_update", "reasoning": {"effort": "medium"}}
+    ]
+    assert router.headers[-1]["x-router-request-kind"] == "compaction"
+    assert "x-router-turn-plan" not in router.headers[-1]
+
+
+async def test_a_compaction_makes_this_hop_forget_where_it_put_its_items(rig, router):
+    router.plan_answers = [change_plan("medium")]
+    await send(rig, body(user_item("one", "m1")))
+    conv = rig.adapter.conversations["conv-1"]
+    assert len(conv.updates) == 1
+
+    router.execution_headers = {"x-router-compaction-epoch": "1"}
+    await send(
+        rig,
+        body(user_item("one", "m1"), user_item("Summarise the work so far.")),
+        headers=codex_compaction_headers(),
+    )
+    assert conv.updates == []
+    assert conv.epoch == 1
+
+    # The rebuilt window carries no update, and this hop does not put one back.
+    await send(rig, body(user_item("a fresh window", "m9")))
+    assert [
+        i for i in router.executions[-1]["input"] if i.get("type") == "configuration_update"
+    ] == []
+
+
+async def test_a_restart_after_a_compaction_restores_only_this_epoch(rig, router):
+    """The ledger keeps every row; only the current epoch is replayable."""
+    router.known.add(session_id_for("conv-1"))
+    router.report = {
+        "compaction_epoch": 1,
+        "turn_plans": [
+            {
+                "sequence": 1,
+                "action": "change_effort",
+                "status": "confirmed",
+                "anchor_position": 0,
+                "to_effort": "medium",
+                "plan_id": "p1",
+                "turn_id": "turn-0001",
+                "compaction_epoch": 0,
+            },
+            {
+                "sequence": 2,
+                "action": "change_effort",
+                "status": "confirmed",
+                "anchor_position": 2,
+                "to_effort": "high",
+                "plan_id": "p2",
+                "turn_id": "turn-0002",
+                "compaction_epoch": 1,
+            },
+        ],
+    }
+    await send(rig, body(user_item("a", "m1"), user_item("b", "m2"), user_item("c", "m3")))
+    conv = rig.adapter.conversations["conv-1"]
+    assert conv.epoch == 1
+    assert [u.effort for u in conv.updates] == ["high"]
 
 
 async def test_the_reply_bytes_are_returned_unchanged(rig, router):

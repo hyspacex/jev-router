@@ -7,7 +7,7 @@ import time
 
 from jev_router.config import SessionRoutingCfg
 from jev_router.pins import Store
-from jev_router.sessions import EFFORT_COLUMNS, Sessions
+from jev_router.sessions import COMPACTION_COLUMNS, EFFORT_COLUMNS, Sessions
 
 NEW_SESSION_COLUMNS = {name for name, _ in EFFORT_COLUMNS["sessions"]}
 
@@ -82,6 +82,74 @@ def test_a_fresh_database_needs_no_effort_migration(tmp_path):
     try:
         assert sessions.migrated_effort == []
         assert NEW_SESSION_COLUMNS <= columns(tmp_path / "fresh.db", "sessions")
+    finally:
+        sessions.close()
+        store.close()
+
+
+def test_a_database_written_before_compaction_epochs_gains_them(tmp_path):
+    """Additive and nullable, like every column before them.
+
+    A row written before this release has NULL in all of them, which reads as
+    "this session has never compacted" and is exactly right.
+    """
+    path = tmp_path / "old.db"
+    store, sessions = open_sessions(path)
+    sessions.record_plan("s1", a_plan())
+    sessions.close()
+    store.close()
+    conn = sqlite3.connect(str(path))
+    for table, names in COMPACTION_COLUMNS.items():
+        for name, _type in names:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN {name}")
+    conn.commit()
+    conn.close()
+
+    store, sessions = open_sessions(path)
+    try:
+        assert sorted(sessions.migrated_compaction) == sorted(
+            f"{table}.{name}"
+            for table, names in COMPACTION_COLUMNS.items()
+            for name, _type in names
+        )
+        assert {"compaction_epoch", "compacted_at"} <= columns(path, "sessions")
+        assert "compaction_epoch" in columns(path, "turn_plans")
+        # The row written before the columns existed still reads back, and
+        # its epoch is the one every pre-compaction row is in.
+        old = sessions.get_plan("s1", plan_id="plan-1")
+        assert old is not None and old["compaction_epoch"] is None
+        assert sessions.applied_updates("s1", epoch=0) == []  # it is only planned
+    finally:
+        sessions.close()
+        store.close()
+
+
+def test_an_epoch_hides_earlier_updates_without_deleting_them(tmp_path):
+    store, sessions = open_sessions(tmp_path / "router.db")
+    try:
+        sessions.record_plan(
+            "s1", a_plan(status="confirmed", compaction_epoch=0, anchor_position=0)
+        )
+        sessions.record_plan(
+            "s1",
+            a_plan(
+                plan_id="plan-2",
+                turn_id="turn-2",
+                sequence=2,
+                status="confirmed",
+                compaction_epoch=1,
+                anchor_position=4,
+            ),
+        )
+        assert [p["plan_id"] for p in sessions.applied_updates("s1", epoch=0)] == [
+            "plan-1",
+            "plan-2",
+        ]
+        assert [p["plan_id"] for p in sessions.applied_updates("s1", epoch=1)] == [
+            "plan-2"
+        ]
+        # Nothing was removed: the ledger still holds both.
+        assert len(sessions.plans("s1")) == 2
     finally:
         sessions.close()
         store.close()

@@ -483,13 +483,23 @@ async def test_f12_reconcile_settles_it_in_either_direction(service, outcome, ex
 
 
 # --- F17: compaction ------------------------------------------------------
+#
+# **Owner decision, 2026-09-19.** F17 said automatic compaction, truncation
+# and the standalone compaction endpoint were all refused for the initial
+# native experiment. The owner decided that a compaction the client asks for
+# stays exactly what the client does natively: the router passes it through,
+# records a compaction epoch, and still never compacts anything itself, never
+# reads inside a provider compaction item and never changes model. What is
+# still refused is a rewrite with no request of its own for the ledger to
+# see - `truncation: auto` and the automatic-management fields - and that
+# half of F17 is unchanged below.
 
 
 @respx.mock
 @pytest.mark.parametrize(
     "field", [{"truncation": "auto"}, {"context_management": {"mode": "auto"}}]
 )
-async def test_f17_automatic_compaction_and_truncation_are_refused(service, field):
+async def test_f17_automatic_compaction_and_truncation_are_still_refused(service, field):
     turn_jev(difficulty=0.5)
     seen = H.responses_upstream()
     caller = await started(service)
@@ -502,18 +512,218 @@ async def test_f17_automatic_compaction_and_truncation_are_refused(service, fiel
 
 
 @respx.mock
-async def test_f17_the_standalone_compaction_endpoint_is_refused(service):
-    turn_jev()
+async def test_f17_a_client_compaction_is_forwarded_unchanged(service):
+    """Codex's own compaction: an ordinary request it declares as maintenance."""
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    assert updates(seen[0])  # the session is carrying an update
+
+    response = await caller.compact()
+    assert response.status_code == 200, response.text
+    sent = seen[-1]
+    # Forwarded as it arrived: the update this history already carries is
+    # still in it, at its own position, and the router added nothing.
+    assert updates(sent) == [
+        {"type": "configuration_update", "reasoning": {"effort": "medium"}}
+    ]
+    assert sent["reasoning"]["effort"] == "low"
+    assert sent["model"] == "vendor/astra"
+
+
+@respx.mock
+async def test_f17_a_compaction_opens_an_epoch_and_returns_to_the_base_effort(service):
+    turn_jev(difficulty=1.9)
     H.responses_upstream()
     caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    before = service.sessions.get(caller.session_id)
+    assert before["effective_effort"] == "medium"
+
+    response = await caller.compact()
+    assert response.headers["x-router-compaction-epoch"] == "1"
+
+    after = service.sessions.get(caller.session_id)
+    assert after["compaction_epoch"] == 1
+    # Measured on this deployment: an update does not survive a compaction.
+    assert after["effective_effort"] == "low"
+    assert after["confirmed_effort"] == "low"
+    # The model and the binding did not move, and the ledger was not erased.
+    assert after["model_key"] == before["model_key"]
+    assert after["binding_revision"] == before["binding_revision"]
+    assert len(service.sessions.plans(caller.session_id)) == 1
+
+
+@respx.mock
+async def test_f17_a_replay_after_a_compaction_need_not_carry_the_old_update(service):
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    await caller.compact()
+
+    # The client's new window has no update item in it at all, which before
+    # the epoch would have been a missing update at position 0.
+    turn_jev(difficulty=0.5)
+    plan, response = await caller.turn("And now the simple half.")
+    assert response.status_code == 200, response.text
+    assert plan["action"] == "keep"
+    assert updates(seen[-1]) == []
+
+
+@respx.mock
+async def test_f17_the_next_user_turn_may_ask_for_the_effort_again(service):
+    """Post-compaction reapplication (spec 10.3)."""
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    await caller.compact()
+
+    # A follow-up naming a defect asks for the top rung outright.
+    turn_jev(difficulty=1.9, corrective=0.9)
+    plan, response = await caller.turn("That is still wrong; derive it properly.")
+    assert plan["action"] == "change_effort"
+    assert (plan["previous_effective_effort"], plan["next_effective_effort"]) == (
+        "low",
+        "high",
+    )
+    assert response.status_code == 200
+    assert updates(seen[-1]) == [
+        {"type": "configuration_update", "reasoning": {"effort": "high"}}
+    ]
+    row = service.sessions.get(caller.session_id)
+    assert row["effective_effort"] == "high"
+    assert row["compaction_epoch"] == 1
+
+
+@respx.mock
+async def test_f17_the_providers_explicit_trigger_flow_passes_through(service):
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+
+    response = await caller.compact(trigger=True, declare=False)
+    assert response.status_code == 200, response.text
+    # The trigger went out as the final item and nothing was added.
+    assert seen[-1]["input"][-1] == {"type": "compaction_trigger"}
+    # The client now replays one opaque item, and the router neither reads
+    # inside it nor asks for the old update back.
+    assert caller.items[0]["type"] == "compaction"
+    assert service.sessions.get(caller.session_id)["compaction_epoch"] == 1
+
+    turn_jev(difficulty=1.9, corrective=0.9)
+    plan, following = await caller.turn("That is still wrong; derive it properly.")
+    assert following.status_code == 200, following.text
+    items = seen[-1]["input"]
+    assert items[0]["type"] == "compaction"
+    # The new update is after the folded-up history, which is where the
+    # provider requires it.
+    assert items[1] == {"type": "configuration_update", "reasoning": {"effort": "high"}}
+    assert plan["next_effective_effort"] == "high"
+
+
+@respx.mock
+async def test_f17_a_trigger_that_is_not_the_last_item_is_refused(service):
+    turn_jev(difficulty=0.5)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    caller.items = [H.trigger_item(), H.user_item("carry on")]
+    response = await caller.send(headers={"x-router-request-kind": "compaction"})
+    assert response.status_code == 409
+    assert code(response) == "EFFORT_HISTORY_MISMATCH"
+    assert "final input item" in response.json()["error"]["message"]
+    assert seen == []
+
+
+@respx.mock
+async def test_f17_a_compaction_still_refuses_a_client_authored_update(service):
+    """The router is the only owner of these items, compaction or not."""
+    turn_jev(difficulty=0.5)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    caller.items = [
+        {"type": "configuration_update", "reasoning": {"effort": "high"}},
+        H.user_item("Summarise the work so far."),
+    ]
+    response = await caller.compact()
+    assert response.status_code == 409
+    assert code(response) == "EFFORT_HISTORY_MISMATCH"
+    assert seen == []
+
+
+@respx.mock
+async def test_f17_an_ambiguous_compaction_stops_the_next_effort_change(service):
+    turn_jev(difficulty=1.9)
+    broken = b"event: response.completed\ndata: {not json at all\n\n"
+    H.responses_upstream(body_override=broken)
+    caller = await started(service)
+
+    response = await caller.compact()
+    assert response.status_code == 200
+    assert response.content == broken  # the reply is untouched
+
+    row = service.sessions.get(caller.session_id)
+    assert row["compaction_state"] == "unknown"
+    assert row["compaction_epoch"] == 1
+
+    turn_jev(difficulty=1.9, corrective=0.9)
+    blocked = await caller.plan("That is still wrong; derive it properly.")
+    assert blocked["action"] == "blocked"
+    assert "compaction" in blocked["reason"]
+
+
+@respx.mock
+async def test_f17_the_standalone_compaction_endpoint_is_maintenance_now(service):
+    route = respx.post(H.COMPACT).mock(
+        return_value=httpx.Response(
+            200, json=H.response_payload("resp_c1", compaction=True)
+        )
+    )
+    turn_jev(difficulty=1.9)
+    H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+
     response = await service.client.post(
         "/v1/responses/compact",
-        json={"model": caller.wire_model(), "previous_response_id": "resp_0001"},
-        headers=caller.execution_headers(),
+        json={
+            "model": caller.wire_model(),
+            "reasoning": {"effort": caller.base_effort},
+            "input": list(caller.items),
+        },
+        headers=caller.execution_headers("compact-0001"),
     )
-    assert response.status_code == 422
-    assert code(response) == "UNSUPPORTED_PROFILE"
-    assert "standalone compaction" in response.json()["error"]["message"]
+    assert response.status_code == 200, response.text
+    assert route.called
+    row = service.sessions.get(caller.session_id)
+    assert row["compaction_epoch"] == 1
+    assert row["effective_effort"] == "low"
+
+
+@respx.mock
+async def test_f18_the_safety_limit_stops_the_experiment_and_lets_a_compaction_through(
+    service,
+):
+    """The experiment stops near the window; the way out of it does not."""
+    turn_jev(difficulty=1.9)
+    H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+
+    crowded = {"estimated_total_tokens": 190_000, "history_mode": "full_history"}
+    blocked = await caller.plan("and now the hard part", context=crowded)
+    assert blocked["action"] == "blocked"
+    assert "safety limit" in blocked["reason"]
+
+    # The client's answer to a full window is to compact, and that is allowed.
+    response = await caller.compact()
+    assert response.status_code == 200, response.text
+    row = service.sessions.get(caller.session_id)
+    assert row["compaction_epoch"] == 1
+    assert row["model_key"] == "astra"
 
 
 @respx.mock
@@ -524,6 +734,31 @@ async def test_an_unmanaged_compaction_request_is_passed_through(service):
     )
     assert response.status_code == 200
     assert route.called
+
+
+@respx.mock
+async def test_the_router_never_writes_a_compaction_item_of_its_own(service):
+    """Whatever else happens, the router does not build a compactor (I11).
+
+    Codex's own compaction carries no provider item in either direction, so
+    every forwarded body in this run should be free of one. If the router had
+    grown a compactor of its own, this is where it would show.
+    """
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    await caller.compact()
+    turn_jev(difficulty=0.5)
+    await caller.turn("carry on")
+    for body in seen:
+        kinds = [
+            item.get("type")
+            for item in body.get("input") or []
+            if isinstance(item, dict)
+        ]
+        assert "compaction" not in kinds
+        assert "compaction_trigger" not in kinds
 
 
 # --- F19: the observer ----------------------------------------------------

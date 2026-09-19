@@ -164,6 +164,37 @@ def test_sessions_show_prints_the_mode_the_efforts_and_the_ledger(tmp_path, caps
     assert "turn-0003 [outcome_unknown]" in out
 
 
+def test_sessions_show_says_a_compaction_put_the_effort_back_to_base(tmp_path, capsys):
+    """A reader has to see why the effective effort moved without a plan."""
+    path, session_id = written(tmp_path)
+    store = Store(tmp_path / "router.db")
+    sessions = Sessions(store, guard=False)
+    sessions.compact(session_id)
+    row = sessions.get(session_id)
+    sessions.update(session_id, row["version"], effective_effort="low")
+    sessions.close()
+    store.close()
+
+    assert main(["-c", path, "sessions", "show", session_id]) == 0
+    out = capsys.readouterr().out
+    assert "folded this history up 1 time(s)" in out
+    assert "the model is unchanged (astra)" in out
+    assert "went back to the base effort (low)" in out
+
+
+def test_sessions_show_says_when_a_compaction_went_quiet(tmp_path, capsys):
+    path, session_id = written(tmp_path)
+    store = Store(tmp_path / "router.db")
+    sessions = Sessions(store, guard=False)
+    sessions.compact(session_id, state="unknown")
+    sessions.close()
+    store.close()
+
+    assert main(["-c", path, "sessions", "show", session_id]) == 0
+    out = capsys.readouterr().out
+    assert "nothing came back to say it finished" in out
+
+
 def test_sessions_list_carries_the_same_summary(tmp_path, capsys):
     path, _ = written(tmp_path)
     assert main(["-c", path, "sessions", "list"]) == 0
