@@ -14,6 +14,7 @@ what keeps the clock and the subprocess out of the routing code.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -657,6 +658,130 @@ def clamp_effort(config: RouterConfig, model_id: str, effort: str | None) -> str
     if lower:
         return max(lower, key=lambda e: _rank(order, e))
     return min(mcfg.efforts, key=lambda e: _rank(order, e))
+
+
+# --- the context budget --------------------------------------------------
+
+# The floor under the uncertainty reserve, and its share of the estimated
+# input above that floor. Engineering heuristics, not a measured error bound.
+MIN_RESERVE_TOKENS = 4096
+RESERVE_SHARE = 0.10
+# How far from the ceiling an estimate with unknown parts has to stay. An
+# image or a provider-held history we could not measure may not be admitted
+# right on the boundary.
+UNKNOWN_MARGIN = 0.05
+
+
+@dataclass(frozen=True)
+class BudgetCheck:
+    """Does `I + O + S` fit inside `C` for a shared-window profile?
+
+    Pure arithmetic over numbers somebody else measured. Quota never appears
+    here: capacity pressure may change which profile is chosen, never whether
+    a request fits the one that was.
+    """
+
+    fits: bool
+    reason: str
+    context_window: int
+    input_tokens: int
+    output_tokens: int
+    reserve_tokens: int
+    headroom: int
+    estimate_method: str = ""
+    unknown: tuple[str, ...] = ()
+
+    def to_facts(self) -> dict[str, Any]:
+        return {
+            "context_window": self.context_window,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "reserve_tokens": self.reserve_tokens,
+            "headroom": self.headroom,
+            "estimate_method": self.estimate_method,
+            "unknown_parts": list(self.unknown),
+        }
+
+
+def _whole(value: Any) -> int | None:
+    """A count, or nothing. Rejects NaN, infinities, booleans and text."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    number = int(value)
+    if number != value or number < 0:
+        return None
+    return number
+
+
+def reserve_tokens(input_tokens: int, requested: int = 0) -> int:
+    """`max(4096, ceil(0.10 * I))`, and never less than the client asked for."""
+    return max(MIN_RESERVE_TOKENS, math.ceil(RESERVE_SHARE * input_tokens), requested)
+
+
+def context_budget(
+    *,
+    context_window: Any,
+    input_tokens: Any,
+    output_tokens: Any,
+    requested_reserve: Any = 0,
+    estimate_method: str = "",
+    unknown: tuple[str, ...] = (),
+) -> BudgetCheck:
+    """The admission check of spec 6.4, as one pure function."""
+    numbers = {
+        "context_window": _whole(context_window),
+        "input_tokens": _whole(input_tokens),
+        "output_tokens": _whole(output_tokens),
+        "requested_reserve": _whole(requested_reserve),
+    }
+    bad = sorted(name for name, value in numbers.items() if value is None)
+    if bad:
+        return BudgetCheck(
+            fits=False,
+            reason=f"{', '.join(bad)} must be a whole number of zero or more",
+            context_window=numbers["context_window"] or 0,
+            input_tokens=numbers["input_tokens"] or 0,
+            output_tokens=numbers["output_tokens"] or 0,
+            reserve_tokens=0,
+            headroom=0,
+            estimate_method=estimate_method,
+            unknown=tuple(unknown),
+        )
+
+    window = numbers["context_window"] or 0
+    inputs = numbers["input_tokens"] or 0
+    output = numbers["output_tokens"] or 0
+    reserve = reserve_tokens(inputs, numbers["requested_reserve"] or 0)
+    needed = inputs + output + reserve
+    ceiling = window
+    if unknown:
+        ceiling = int(window * (1 - UNKNOWN_MARGIN))
+    fits = needed <= ceiling
+    if fits:
+        reason = "input, output and reserve fit the negotiated window"
+    elif unknown and needed <= window:
+        reason = (
+            f"{', '.join(unknown)} of unknown size, and {needed} tokens is within "
+            f"{UNKNOWN_MARGIN:.0%} of the {window} token window"
+        )
+    else:
+        reason = (
+            f"{inputs} input + {output} output + {reserve} reserve = {needed} tokens "
+            f"exceeds the negotiated window of {window}"
+        )
+    return BudgetCheck(
+        fits=fits,
+        reason=reason,
+        context_window=window,
+        input_tokens=inputs,
+        output_tokens=output,
+        reserve_tokens=reserve,
+        headroom=ceiling - needed,
+        estimate_method=estimate_method,
+        unknown=tuple(unknown),
+    )
 
 
 def apply_effort(

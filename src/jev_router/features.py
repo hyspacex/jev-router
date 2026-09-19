@@ -6,6 +6,7 @@ questions only ever see short text plus these computed fields.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,20 @@ from typing import Any
 CODE_FENCE = re.compile(r"```([A-Za-z0-9_+#.\-]*)")
 # A long run of base64-ish characters, the usual sign of an inlined file.
 BASE64_BLOB = re.compile(r"[A-Za-z0-9+/=]{512,}")
+
+# Characters that carry about one token each instead of about a quarter of
+# one: Han, Kana, Hangul and the full-width forms. Four characters per token
+# is a Latin-text rule and it undercounts CJK by roughly four to one.
+CJK = re.compile(
+    r"[ᄀ-ᇿ⺀-꓏ꥠ-꥿가-퟿豈-﫿"
+    r"︰-﹏＀-｠￠-￦]"
+    r"|[\U00020000-\U0003ffff]"
+)
+
+# What one image is charged when nobody has told us its real cost. It is an
+# allowance, not a measurement, which is why an image also marks the estimate
+# uncertain and keeps it away from the capacity boundary.
+IMAGE_TOKEN_ALLOWANCE = 1200
 
 
 @dataclass(frozen=True)
@@ -179,3 +194,107 @@ def extract_features(
         max_tokens=max_tokens,
         auth_header=headers.get("authorization", ""),
     )
+
+
+# --- serialized input size, for the strict session budget ----------------
+
+
+@dataclass(frozen=True)
+class InputEstimate:
+    """How large the serialized input looks, and what we could not see.
+
+    `est_tokens` on Features is the number the legacy ladder has always used
+    and it stays exactly as it was. This is a second, more careful count for
+    admission, where undercounting means a session that overflows on its
+    third turn. It adds tool schemas, charges CJK properly and names the
+    parts whose real size is unknown.
+    """
+
+    tokens: int
+    method: str
+    unknown: tuple[str, ...] = ()
+
+    def to_facts(self) -> dict[str, Any]:
+        return {
+            "estimated_input_tokens": self.tokens,
+            "estimate_method": self.method,
+            "unknown_parts": list(self.unknown),
+        }
+
+
+def text_tokens(text: str) -> int:
+    """Four characters per token, except CJK characters, which cost one each."""
+    if not text:
+        return 0
+    cjk = len(CJK.findall(text))
+    return cjk + (len(text) - cjk + 3) // 4
+
+
+def _image_parts(content: Any) -> int:
+    if not isinstance(content, list):
+        return 0
+    return sum(
+        1
+        for part in content
+        if isinstance(part, dict)
+        and part.get("type") in ("image_url", "image", "input_image")
+    )
+
+
+def estimate_input(
+    body: dict[str, Any],
+    *,
+    accumulated_input_tokens: int | None = None,
+) -> InputEstimate:
+    """Estimate the whole serialized input of one chat-completions body.
+
+    Pure. Counts instructions, message text, tool-call arguments, tool
+    schemas and provider framing, charges an allowance per image, and adds a
+    client-reported accumulated usage figure when the history itself is not
+    present. Anything it had to guess at is named in `unknown`, and the
+    caller refuses admission near the capacity boundary when that list is not
+    empty.
+    """
+    tokens = 0
+    unknown: list[str] = []
+
+    if isinstance(body.get("system"), str):
+        tokens += text_tokens(body["system"])
+    if isinstance(body.get("instructions"), str):
+        tokens += text_tokens(body["instructions"])
+
+    for raw in body.get("messages") or []:
+        if not isinstance(raw, dict):
+            tokens += text_tokens(str(raw))
+            continue
+        text, _ = _content_text(raw.get("content"))
+        tokens += text_tokens(text)
+        tokens += _image_parts(raw.get("content")) * IMAGE_TOKEN_ALLOWANCE
+        if _image_parts(raw.get("content")):
+            unknown.append("image")
+        for call in raw.get("tool_calls") or []:
+            if isinstance(call, dict):
+                fn = call.get("function") or {}
+                if isinstance(fn, dict):
+                    tokens += text_tokens(str(fn.get("name", "")))
+                    tokens += text_tokens(str(fn.get("arguments", "")))
+        # Role, name and the separators every provider wraps a message in.
+        tokens += 4
+
+    for schema in list(body.get("tools") or []) + list(body.get("functions") or []):
+        tokens += text_tokens(json.dumps(schema, ensure_ascii=False, default=str))
+
+    if body.get("previous_response_id"):
+        # The history is on the provider's side. A short delta is not the
+        # context; without a reported total there is nothing to add up.
+        if accumulated_input_tokens is None:
+            unknown.append("previous_response")
+        else:
+            tokens += max(0, int(accumulated_input_tokens))
+
+    method = "router-serialized-v1"
+    if accumulated_input_tokens is not None:
+        method = "router-serialized-v1+reported-usage"
+    # Stable order, one entry per kind.
+    ordered = tuple(k for k in ("image", "previous_response") if k in unknown)
+    return InputEstimate(tokens=tokens, method=method, unknown=ordered)

@@ -199,6 +199,35 @@ class Settings(Base):
         return self
 
 
+class EffortControlCfg(Base):
+    """What this deployment is allowed to do to effort between turns.
+
+    `fixed` is the only setting that does anything today. The others record
+    what a later experiment would have to be qualified for, and `verified`
+    means somebody ran a dated deployment test and wrote down where it is.
+    A model name alone is never the qualification: the endpoint, the proxy in
+    front of it and the adapter revision are part of what was tested.
+    """
+
+    between_turn: Literal[
+        "fixed", "native_configuration_update", "request_parameter"
+    ] = "fixed"
+    qualification: Literal["unverified", "verified"] = "unverified"
+    cache_behavior: Literal[
+        "verified_preserving", "verified_breaking", "unverified"
+    ] = "unverified"
+    qualification_ref: str | None = None
+
+    @model_validator(mode="after")
+    def _verified_needs_a_report(self) -> EffortControlCfg:
+        if self.qualification == "verified" and not (self.qualification_ref or "").strip():
+            raise ValueError(
+                "qualification 'verified' needs a 'qualification_ref' naming the dated "
+                "deployment test report"
+            )
+        return self
+
+
 class ModelCfg(Base):
     upstream_id: str
     provider: str = ""
@@ -212,6 +241,16 @@ class ModelCfg(Base):
     effort_style: Literal["suffix", "param", "none"] = "none"
     tags: list[str] = Field(default_factory=list)
     description: str = ""
+    # --- execution profile, used by strict sessions ---------------------
+    # The wire protocol this deployment actually speaks. Configure what the
+    # endpoint does, not what the model family supports elsewhere.
+    protocol: Literal["openai-chat", "openai-responses"] = "openai-chat"
+    # An operational cap on one reply, not a claim about the model's maximum.
+    max_output_tokens: int | None = Field(default=None, gt=0)
+    # Names the deployment this row was checked against: model, endpoint and
+    # adapter revision together.
+    compatibility_revision: str = ""
+    effort_control: EffortControlCfg = Field(default_factory=EffortControlCfg)
 
 
 class Rule(Base):
@@ -267,6 +306,26 @@ class DraftCfg(Base):
     state_field: str = "draft_answer_from_a_fast_model"
 
 
+class StaticEnvelopeCfg(Base):
+    """One static model descriptor over a homogeneous pool (spec 6.3).
+
+    For a client that cannot read resolved metadata. The envelope it may
+    advertise is the intersection of the pool: one wire protocol, the smallest
+    context window, the smallest output ceiling, and a capability only if
+    every model in the pool has it. Declaring more than the pool can keep is a
+    config error, because the client would size its history against a window
+    the chosen model does not have.
+    """
+
+    enabled: bool = True
+    # The name the client is registered with and may send as `model`. It is
+    # accepted only because this block declares it. Empty means the alias name.
+    model_name: str = ""
+    # Advertise less than the pool minimum if you like; never more.
+    context_window: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
+
+
 class AliasCfg(Base):
     state_builder: str = "summary_v1"
     questions: list[str] = Field(default_factory=list)
@@ -277,6 +336,15 @@ class AliasCfg(Base):
     decider: str | None = None
     draft: DraftCfg | None = None
     description: str = ""
+    # `legacy` is every alias that existed before strict sessions: a TTL pin
+    # the router may replace. `strict` is a durable binding that is resolved
+    # once and never moved. An omitted field means legacy.
+    session_mode: Literal["legacy", "strict"] = "legacy"
+    static_envelope: StaticEnvelopeCfg | None = None
+    # What a strict admission may use when Jev is down (spec 8.4). Without one
+    # the admission returns NO_SAFE_ADMISSION rather than guessing, because a
+    # strict binding taken under a fallback is as fixed as any other.
+    admission_fallback: Route | None = None
 
 
 class ClientCfg(Base):
@@ -285,6 +353,24 @@ class ClientCfg(Base):
     min_effort: str | None = None
     allowed_models: list[str] | None = None
     description: str = ""
+
+
+class SessionRoutingCfg(Base):
+    """The strict session service. Off unless router.yaml turns it on."""
+
+    enabled: bool = False
+    # How long a resolved but never executed binding stays usable.
+    prepared_ttl_seconds: int = Field(default=600, gt=0)
+    # One execution per session at a time. A second concurrent one is a
+    # conflict, not a queue.
+    max_inflight_per_session: int = Field(default=1, ge=1)
+    # Strict control and execution requests need the router credential even on
+    # loopback, where the read-only endpoints do not.
+    require_control_token: bool = True
+    # How many finished request-ID records one session keeps. Records whose
+    # outcome is unknown are never dropped, so a forgotten ID is never read as
+    # proof that it did not execute.
+    max_request_history: int = Field(default=200, gt=0)
 
 
 class RouterConfig(Base):
@@ -298,6 +384,7 @@ class RouterConfig(Base):
     aliases: dict[str, AliasCfg] = Field(default_factory=dict)
     clients: dict[str, ClientCfg] = Field(default_factory=dict)
     quota_policy: QuotaPolicyCfg = Field(default_factory=QuotaPolicyCfg)
+    session_routing: SessionRoutingCfg = Field(default_factory=SessionRoutingCfg)
 
     # Set by load_config; stored with every decision so a later tuning run
     # knows which router.yaml produced it.
@@ -351,6 +438,47 @@ class RouterConfig(Base):
     def quota_cfg(self, provider: str) -> QuotaSourceCfg | None:
         pcfg = self.providers.get(provider)
         return pcfg.quota if pcfg is not None else None
+
+    def alias_pool(self, alias_cfg: AliasCfg) -> list[str]:
+        """The models an alias may use, in configured order."""
+        names = self.models if alias_cfg.allowed_models is None else alias_cfg.allowed_models
+        return [m for m in names if m in self.models]
+
+    def envelope_limits(self, alias: str, alias_cfg: AliasCfg) -> dict[str, Any] | None:
+        """The static descriptor an envelope alias advertises, or nothing.
+
+        Every number is the minimum over the pool and every capability is the
+        intersection, so anything the router later picks fits inside what the
+        client was told. Config load already refused a pool that cannot agree
+        on one protocol.
+        """
+        env = alias_cfg.static_envelope
+        if env is None or not env.enabled:
+            return None
+        pool = self.alias_pool(alias_cfg)
+        if not pool:
+            return None
+        rows = [self.models[m] for m in pool]
+        outs = [r.max_output_tokens for r in rows]
+        floor_output = min(o for o in outs if o is not None) if all(outs) else None
+        window = min(r.context_window for r in rows)
+        if env.context_window is not None:
+            window = min(window, env.context_window)
+        if env.max_output_tokens is not None:
+            floor_output = (
+                env.max_output_tokens
+                if floor_output is None
+                else min(floor_output, env.max_output_tokens)
+            )
+        return {
+            "model_name": env.model_name or alias,
+            "protocol": rows[0].protocol,
+            "context_window": window,
+            "max_output_tokens": floor_output,
+            "supports_tools": all(r.supports_tools for r in rows),
+            "supports_vision": all(r.supports_vision for r in rows),
+            "pool": pool,
+        }
 
     # --- cross-field validation ----------------------------------------
 
@@ -500,6 +628,12 @@ class RouterConfig(Base):
                 problems.append(
                     f"aliases.{alias}.max_effort: {acfg.max_effort!r} is not in settings.effort_order"
                 )
+            check_route(acfg.admission_fallback, f"aliases.{alias}.admission_fallback")
+            if acfg.session_mode == "strict" and not self.session_routing.enabled:
+                problems.append(
+                    f"aliases.{alias}.session_mode: 'strict' needs session_routing.enabled"
+                )
+            problems.extend(self._check_envelope(alias, acfg))
 
         for cid, ccfg in self.clients.items():
             if ccfg.min_effort and ccfg.min_effort not in order:
@@ -513,6 +647,51 @@ class RouterConfig(Base):
         if problems:
             raise ValueError("\n".join(f"- {p}" for p in problems))
         return self
+
+    def _check_envelope(self, alias: str, acfg: AliasCfg) -> list[str]:
+        """A static envelope may only advertise what the whole pool can keep."""
+        env = acfg.static_envelope
+        if env is None or not env.enabled:
+            return []
+        where = f"aliases.{alias}.static_envelope"
+        pool = self.alias_pool(acfg)
+        if not pool:
+            return [f"{where}: the alias permits no known model"]
+        rows = [self.models[m] for m in pool]
+        problems: list[str] = []
+        protocols = sorted({r.protocol for r in rows})
+        if len(protocols) > 1:
+            problems.append(
+                f"{where}: one static descriptor needs one wire protocol, but the pool "
+                f"mixes {', '.join(protocols)}"
+            )
+        floor_context = min(r.context_window for r in rows)
+        if env.context_window is not None and env.context_window > floor_context:
+            problems.append(
+                f"{where}.context_window: {env.context_window} is larger than the "
+                f"smallest window in the pool ({floor_context})"
+            )
+        outs = [r.max_output_tokens for r in rows]
+        if env.max_output_tokens is not None:
+            if not all(outs):
+                bare = ", ".join(m for m, r in zip(pool, rows) if r.max_output_tokens is None)
+                problems.append(
+                    f"{where}.max_output_tokens: every model in the pool needs a "
+                    f"max_output_tokens before one can be advertised (missing: {bare})"
+                )
+            else:
+                floor_output = min(o for o in outs if o is not None)
+                if env.max_output_tokens > floor_output:
+                    problems.append(
+                        f"{where}.max_output_tokens: {env.max_output_tokens} is larger "
+                        f"than the smallest output ceiling in the pool ({floor_output})"
+                    )
+        if env.model_name and env.model_name in self.models:
+            problems.append(
+                f"{where}.model_name: {env.model_name!r} is also a real model id; "
+                "give the descriptor its own name"
+            )
+        return problems
 
     def _check_when(self, when: dict[str, Any], where: str) -> list[str]:
         from .policy import FEATURE_CONDITIONS  # local import avoids a cycle
