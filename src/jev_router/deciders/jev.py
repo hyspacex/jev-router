@@ -18,6 +18,7 @@ from ..policy import (
     eligible_models,
     evaluate,
     finalize,
+    select,
 )
 from ..semantic import (
     SemanticResult,
@@ -216,8 +217,13 @@ class JevDecider:
             return decision
         try:
             pressures = self.pressures()
-            result = evaluate(
-                self.config, alias_cfg, semantics.answers, features, pressures
+            result = select(
+                self.config,
+                alias_cfg,
+                semantics.answers,
+                features,
+                pressures,
+                evaluate_rules=evaluate,
             )
         except RoutingError as exc:
             return refused(str(exc))
@@ -251,6 +257,11 @@ class JevDecider:
             reordered=result.reordered,
             pressure_changed_the_outcome=result.pressure_changed_the_outcome,
             experiments=result.experiments,
+            lane=result.lane,
+            qualification_ref=result.qualification_ref,
+            counterfactual=result.counterfactual,
+            exclusions=result.exclusions,
+            evidence=result.evidence,
         )
 
     async def _fallback(

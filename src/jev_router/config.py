@@ -718,11 +718,26 @@ class RouterConfig(Base):
             for rule in rs.rules:
                 check_route(rule.use, f"{where}.rules[{rule.name}].use")
                 problems.extend(self._check_when(rule.when, f"{where}.rules[{rule.name}].when"))
-                if rule.lane and rule.lane not in self.quality_lanes:
+                if not rule.lane:
+                    continue
+                lane_cfg = self.quality_lanes.get(rule.lane)
+                if lane_cfg is None:
                     problems.append(
                         f"{where}.rules[{rule.name}].lane: unknown quality lane "
                         f"{rule.lane!r} (known: "
                         f"{', '.join(sorted(self.quality_lanes)) or 'none'})"
+                    )
+                    continue
+                # The primary is the adequacy claim and has to be qualified.
+                # The fallbacks below it are for failure, which is a different
+                # question, so they are left alone.
+                pairs = self.route_pairs(rule.use)
+                if pairs and not lane_cfg.allows(*pairs[0]):
+                    model, effort = pairs[0]
+                    problems.append(
+                        f"{where}.rules[{rule.name}]: it routes to "
+                        f"{model}({effort or '-'}), which is not in the qualified "
+                        f"set of lane {rule.lane!r}"
                     )
 
         for alias, acfg in self.aliases.items():
@@ -824,20 +839,18 @@ class RouterConfig(Base):
             if route is None:
                 continue
             check_route(route, f"{where}.conservative_default")
-            pairs = self._route_pairs(route)
-            outside = [
-                f"{model}({effort or '-'})"
-                for model, effort in pairs
-                if not lane.allows(model, effort)
-            ]
-            if outside:
+            # Its primary is the adequacy claim. Anything below that is a
+            # failure fallback, which says nothing about adequacy.
+            pairs = self.route_pairs(route)
+            if pairs and not lane.allows(*pairs[0]):
+                model, effort = pairs[0]
                 problems.append(
-                    f"{where}.conservative_default: {', '.join(outside)} is not in "
-                    f"this lane's qualified set"
+                    f"{where}.conservative_default: {model}({effort or '-'}) is not "
+                    "in this lane's qualified set"
                 )
         return problems
 
-    def _route_pairs(self, route: Route) -> list[tuple[str, str | None]]:
+    def route_pairs(self, route: Route) -> list[tuple[str, str | None]]:
         """Every model/effort a `use:` could reach, primary and fallbacks."""
         if route.route is not None:
             lane = self.routes.get(route.route)

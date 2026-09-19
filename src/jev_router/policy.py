@@ -256,6 +256,203 @@ def evaluate(
     return result
 
 
+def select(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float] | None = None,
+    *,
+    evaluate_rules: Callable[..., PolicyResult] | None = None,
+) -> PolicyResult:
+    """The whole admission decision, in the order spec 8.1 sets out.
+
+    One pure function, used by the resolve endpoint, by `explain` and by eval
+    replay, so all three answer the same question the same way.
+
+      1. permissions, capabilities and the context budget (`eligible_models`)
+      2. the quality lane the matched rule names
+      3. the confidence gate, and the ruleset's own explicit default
+      4. quota and health pressure, bounded by the lane
+      5. effort clamped inside the negotiated bounds
+      6. the chosen profile, the reasons, the exclusions and the choice that
+         would have been made at pressure zero
+
+    With no lanes configured this is `evaluate` plus a counterfactual, which
+    is exactly what the router did before lanes existed.
+
+    `evaluate_rules` is the rule pass this composes over. It defaults to
+    `evaluate`; a caller with its own pass passes that one instead.
+    """
+    run = evaluate_rules or evaluate
+    ruleset = config.ruleset_for(alias_cfg)
+    live = _live_pressures(config, pressures)
+    result = run(config, alias_cfg, answers, features, live)
+    calm = run(config, alias_cfg, answers, features, None) if live else result
+
+    result.counterfactual = (calm.model, calm.effort)
+    result.exclusions = excluded_models(config, alias_cfg, features)
+
+    lane_name, lane = _rule_lane(config, ruleset, result.rule)
+    result.lane = lane_name
+    if lane is None:
+        result.evidence = "weak"
+        return result
+
+    chosen = (result.model, result.effort)
+    if live and chosen != (calm.model, calm.effort) and not lane.allows(*chosen):
+        # Pressure found a cheaper way through. It is not one this lane has
+        # evidence for, so the adequate provider is kept and the deferral is
+        # recorded rather than quietly taken.
+        exclusions = [
+            *result.exclusions,
+            {
+                "model": result.model,
+                "effort": result.effort,
+                "reason": f"not qualified for lane {lane_name!r} under pressure",
+            },
+        ]
+        shifts, experiments = result.shifts, result.experiments
+        notes = [
+            *result.notes,
+            f"deferred/kept under pressure: {result.model}"
+            f"({result.effort or '-'}) is not qualified for lane {lane_name!r}, "
+            f"kept {calm.model}({calm.effort or '-'})",
+        ]
+        result = calm
+        result.shifts = shifts
+        result.experiments = experiments
+        result.notes = notes
+        result.lane = lane_name
+        result.counterfactual = (calm.model, calm.effort)
+        result.exclusions = exclusions
+        result.pressure_changed_the_outcome = False
+        chosen = (result.model, result.effort)
+
+    if not lane.allows(*chosen):
+        # A capability replacement, or a config that routes outside its own
+        # lane. Replace it from inside the lane, or refuse: a hard constraint
+        # is never recovered from by taking a model nobody measured.
+        result = _repair_into_lane(
+            config, alias_cfg, features, lane, lane_name, result
+        )
+        chosen = (result.model, result.effort)
+
+    result.qualification_ref = lane.reference_for(*chosen)
+    result.evidence = (
+        "qualified"
+        if lane.allows(*chosen) and lane.allows(calm.model, calm.effort)
+        else "weak"
+    )
+    return result
+
+
+def _rule_lane(
+    config: RouterConfig, ruleset: Ruleset, rule_name: str
+) -> tuple[str, Any]:
+    for rule in ruleset.rules:
+        if rule.name == rule_name and rule.lane:
+            return rule.lane, config.quality_lanes.get(rule.lane)
+    return "", None
+
+
+def _repair_into_lane(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    features: Features,
+    lane: Any,
+    lane_name: str,
+    result: PolicyResult,
+) -> PolicyResult:
+    """Put an unqualified choice back inside its lane, or refuse."""
+    result.exclusions.append(
+        {
+            "model": result.model,
+            "effort": result.effort,
+            "reason": f"not qualified for lane {lane_name!r}",
+        }
+    )
+    order: list[tuple[str, str | None]] = []
+    default = lane.conservative_default
+    if default is not None:
+        order.extend(
+            pair
+            for pair in config.route_pairs(default)
+            if lane.allows(pair[0], pair[1])
+        )
+    order.extend(pair for pair in lane.pairs() if pair not in order)
+
+    for model, effort in order:
+        try:
+            guarded = guard_candidate(config, alias_cfg, features, model, effort)
+        except RoutingError:
+            continue
+        if not lane.allows(*guarded):
+            continue
+        result.notes = [
+            *result.notes,
+            f"{result.model}({result.effort or '-'}) is not qualified for lane "
+            f"{lane_name!r}; using {guarded[0]}({guarded[1] or '-'}) from it",
+        ]
+        result.model, result.effort = guarded
+        result.plan = [
+            PlanEntry(
+                model=guarded[0],
+                effort=guarded[1],
+                provider=config.provider_of(guarded[0]),
+            )
+        ]
+        return result
+    raise RoutingError(
+        f"no model qualified for lane {lane_name!r} can serve this request"
+    )
+
+
+def excluded_models(
+    config: RouterConfig, alias_cfg: AliasCfg, features: Features
+) -> list[dict[str, Any]]:
+    """Every permitted model this request cannot use, and why.
+
+    Hard constraints only. Quota never appears here: capacity decides which of
+    the usable models is preferred, never whether one is usable.
+    """
+    out: list[dict[str, Any]] = []
+    pool = list(
+        config.models if alias_cfg.allowed_models is None else alias_cfg.allowed_models
+    )
+    client_cfg = config.clients.get(features.client) if features.client else None
+    for model in pool:
+        mcfg = config.models.get(model)
+        if mcfg is None:
+            out.append({"model": model, "reason": "unknown model"})
+            continue
+        if client_cfg and client_cfg.allowed_models is not None and (
+            model not in client_cfg.allowed_models
+        ):
+            out.append({"model": model, "reason": "the client does not permit it"})
+            continue
+        if features.has_tools and not mcfg.supports_tools:
+            out.append({"model": model, "reason": "the request carries tools"})
+            continue
+        if features.has_images and not mcfg.supports_vision:
+            out.append({"model": model, "reason": "the request carries an image"})
+            continue
+        if features.budget_tokens > mcfg.context_window:
+            out.append(
+                {
+                    "model": model,
+                    "reason": f"{features.budget_tokens} tokens is over its "
+                    f"{mcfg.context_window} token window",
+                }
+            )
+            continue
+        try:
+            constrained_effort(config, alias_cfg, features, model, None)
+        except RoutingError as exc:
+            out.append({"model": model, "reason": str(exc)})
+    return out
+
+
 def _experiment_routes(
     config: RouterConfig,
     alias_cfg: AliasCfg,

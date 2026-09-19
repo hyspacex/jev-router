@@ -209,6 +209,79 @@ routes:
     fallbacks:
       - {model: grok-4.6, effort: low}
 
+# Quality lanes: which model and effort pairs somebody has measured for which
+# kind of work, and where the evidence is.
+#
+# Capability and adequacy are different questions. A model that supports tools
+# is not thereby qualified to finish a tool-driven coding task, so a rule that
+# names a lane may only be moved inside that lane: quota pressure, an
+# `equivalent` promotion and a capability replacement all have to land on a
+# pair listed here, or the adequate provider is kept and the deferral is
+# recorded. A route's failure fallbacks are a separate matter and are not
+# listed: reaching one after a 429 is not a claim that it was good enough.
+#
+# Every reference points at evals/POOL.md, which is where the admission test
+# verdicts are written down.
+quality_lanes:
+  simple-work:
+    description: Short, easy work with nothing much at stake.
+    qualification_ref: "POOL.md: Verdicts (2026-09-19)"
+    qualified:
+      - model: ollama/glm-5.3-flash
+        effort: none
+        qualification_ref: "POOL.md: in the pool since the first release; evals/outcomes.md shows raising its effort made answers slightly worse"
+      - model: gpt-5.6-luna
+        effort: low
+        qualification_ref: "POOL.md: fallback for the fast, image and mid lanes, scored 9.72"
+    conservative_default: {model: gpt-5.6-luna, effort: low}
+
+  simple-vision:
+    description: Easy requests that carry an image.
+    qualification_ref: "POOL.md: Verdicts (2026-09-19)"
+    qualified:
+      - model: ollama/gemma4-31b
+        qualification_ref: "POOL.md: read all four test images; admitted for easy image work only"
+      - model: gpt-5.6-luna
+        effort: low
+        qualification_ref: "POOL.md: fallback for the fast, image and mid lanes"
+    conservative_default: {model: gpt-5.6-luna, effort: low}
+
+  moderate-work:
+    description: Moderate work without tools, where a slip would be spotted.
+    qualification_ref: "POOL.md: Verdicts (2026-09-19); evals/ADMISSION.md question 1"
+    qualified:
+      - model: ollama/glm-5.3
+        effort: none
+        qualification_ref: "evals/ADMISSION.md: 9.70 against the frontier model's 9.31 on 12 moderate cases"
+      - model: gpt-5.6-luna
+        effort: low
+        qualification_ref: "POOL.md: good answers (9.72), no faster than the frontier model"
+      - model: gpt-6-astra
+        effort: low
+        qualification_ref: "POOL.md: the model this band was measured against"
+    conservative_default: {model: gpt-6-astra, effort: low}
+
+  frontier-work:
+    description: Hard work, high consequence work, and tool loops.
+    # grok-4.6 is deliberately absent. It is a failure fallback for the
+    # frontier routes and POOL.md records it 0.72 below the frontier model on
+    # nine hard cases, so no amount of quota pressure may promote it here.
+    qualification_ref: "POOL.md: Verdicts (2026-09-19)"
+    qualified:
+      - model: gpt-6-astra
+        effort: low
+        qualification_ref: "POOL.md: in the pool since the first release"
+      - model: gpt-6-astra
+        effort: medium
+        qualification_ref: "POOL.md: in the pool since the first release"
+      - model: gpt-6-astra
+        effort: high
+        qualification_ref: "POOL.md: in the pool since the first release"
+      - model: gpt-6-astra
+        effort: xhigh
+        qualification_ref: "POOL.md: in the pool since the first release"
+    conservative_default: {route: frontier_medium}
+
 # What quota pressure is allowed to do. Pressure is a number per provider in
 # [0, 1], measured from pace rather than raw percent: a provider 20 points
 # ahead of where the window says it should be is under pressure even at 40%
@@ -487,6 +560,7 @@ policy:
   # exist because the request needs them, not because the work looked hard.
   rules:
     - name: images_easy
+      lane: simple-vision
       protected: true            # quota never moves an image request
       when:
         has_images: true
@@ -495,22 +569,26 @@ policy:
       use: {route: fast_vision}
 
     - name: images_need_vision
+      lane: frontier-work
       protected: true            # only some models read images
       when:
         has_images: true
       use: {route: frontier_medium}
 
     - name: very_hard
+      lane: frontier-work
       when:
         difficulty: {gte: 3.0}
       use: {route: frontier_xhigh}
 
     - name: hard
+      lane: frontier-work
       when:
         difficulty: {gte: 2.4, shift_with: openai, max_shift: 0.4}
       use: {route: frontier_high}
 
     - name: high_harm
+      lane: frontier-work
       protected: true            # a small mistake here costs more than quota
       when:
         harm_if_wrong: {gte: 0.8}
@@ -519,6 +597,7 @@ policy:
     # The mid model has not been tested in a tool loop yet, so requests that
     # carry tool schemas stay on the frontier model.
     - name: tool_loop
+      lane: frontier-work
       when:
         has_tools: true
         difficulty: {gte: 1.4, shift_with: openai, max_shift: 0.4}
@@ -529,6 +608,7 @@ policy:
     # in the routing eval. Code edits are exempt: they are what the mid model
     # was admitted on, and exempting them cost nothing in that eval.
     - name: moderate_careful
+      lane: frontier-work
       when:
         task: {not_in: [code-edit]}
         difficulty: {gte: 1.4}
@@ -539,6 +619,7 @@ policy:
     # 9.70 against the frontier model's 9.31 on 12 such cases, at a third of
     # the latency.
     - name: moderate
+      lane: moderate-work
       when:
         difficulty: {gte: 1.4}
       use: {route: mid}
@@ -550,6 +631,7 @@ policy:
     # there is no ladder here, and evals/cases.yaml labels every fast case
     # `effort: none` for the same reason.
     - name: easy
+      lane: simple-work
       when: {}
       use: {route: fast}
 

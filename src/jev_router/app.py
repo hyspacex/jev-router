@@ -788,7 +788,7 @@ class Router:
                 "decision_rule": rule,
                 "decision_reason": reason[:500],
                 "decision_source": source,
-                "quality_lane": decision.route,
+                "quality_lane": decision.lane or decision.route,
                 "quota_changed_choice": int(decision.pressure_changed_the_outcome),
                 "config_hash": config.config_hash,
                 "state_builder": alias_cfg.state_builder,
@@ -845,7 +845,7 @@ class Router:
             event_type=S.EVENT_ADMISSION,
             session_id=req.session_id,
             request_id=req.request_id,
-            quality_lane=decision.route,
+            quality_lane=decision.lane or decision.route,
         )
         log.info(
             "admitted session alias=%s model=%s effort=%s rule=%s source=%s"
