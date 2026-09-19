@@ -15,6 +15,8 @@ uv run jev-router serve --mode shadow
 uv run jev-router explain request.json        # calls Jev, never forwards
 uv run jev-router explain request.json --pressure openai=0.8
 uv run jev-router quota --poll                # runs each enabled quota source once
+uv run jev-router sessions list               # strict session bindings
+uv run jev-router sessions show <id>
 ```
 
 Eval scripts all spend real API quota. `run_eval.py` and `tune.py` need
@@ -57,6 +59,10 @@ uv run python evals/run_eval.py --variants router_yaml --public evals/cases_publ
 - `deciders/rules.py` — no-network decider that guesses from counts.
 - `pins.py` — sqlite: pins, decision log, feedback, conversation key, and the
   forward-only column migration.
+- `sessions.py` — strict session bindings and the bounded request-ID history,
+  on the connection `pins.py` owns. Conditional version writes, the in-process
+  execution claim, the startup guard, the binding digest, the resolve request
+  schema and the 13 error codes. Legacy pins are never read or written here.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
@@ -68,6 +74,12 @@ Request flow: `app.chat_completions` → `features.extract_features` →
 `pins.conversation_key` and a pin lookup → `deciders.jev` → `state.build_state`
 → Jev → `policy.evaluate` (with the pressures) → `app.forward_alias`, which
 walks the route's entries and applies `policy.apply_effort` to each.
+
+Strict sessions (`session_mode: strict`, `docs/R2_SPEC.md`, `docs/SESSION_ROUTING.md`)
+take a second path: `app.resolve` → `features.extract_features` →
+`deciders.jev` → `policy.evaluate` → `policy.context_budget` → a `prepared`
+row in `sessions.py`. Execution goes through `app.managed_execution`, which is
+recognised before the "a concrete model means passthrough" branch.
 
 - `deciders/jev.py` also holds the optional AutoMix-style draft step. It is off
   unless an alias sets `draft.enabled`, it fails open, and a pinned turn never
@@ -127,13 +139,31 @@ walks the route's entries and applies `policy.apply_effort` to each.
   recorded separately and never switches models. Valid reused pins keep their TTL.
 - Empty allowed intersections or impossible effort/capability/context constraints
   return a routing error; failure recovery must not silently discard constraints.
+
+- A strict binding is a contract, not a cache entry. It never repins, never
+  expires on `pin_ttl_seconds`, and gets a one-entry execution plan: no
+  cross-model fallback on 429/5xx/timeout, no decider call, no quota
+  influence. Overflow, a lost capability or a reduced configured limit report
+  a machine code and keep the binding; only the caller replaces it. An
+  omitted `session_mode` means legacy, and legacy behaviour stays byte for
+  byte what it was.
+- Admission runs the decider exactly once and never executes anything. Jev
+  failure uses the alias's explicit `admission_fallback` or returns
+  `NO_SAFE_ADMISSION`, its answers are stored as absent, and recovery does not
+  revisit the binding. A resolve retry must not spend another Jev call.
+- The binding digest covers profile identity and negotiated limits only.
+  Never quota, timestamps or effort.
+- `session_requests` distinguishes accepted, completed, rejected, stream
+  failure and unknown. A repeated id never calls the provider again, and a
+  record whose outcome is unknown is never pruned.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
   on non-streamed replies, and must yield chunks unchanged. An upstream
   fallback is chosen on the response status, before anything is streamed;
   never switch model after a byte has been sent.
 - sqlite migrations are forward-only and additive. Add a nullable column to
-  `ADDED_COLUMNS` in `pins.py`; never drop or rewrite one. A database from an
-  older version must keep working.
+  `ADDED_COLUMNS` in `pins.py`, or in `sessions.py` for a session-era column;
+  never drop or rewrite one. A database from an older version must keep
+  working.
 - `tune.py` proposes a diff and never writes `router.yaml`. It replays a
   decision at the pressure it was taken under, so a deliberate quota saving is
   not scored as a classifier error.
