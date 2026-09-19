@@ -1,4 +1,4 @@
-"""Command line: serve, check-config, explain, decisions."""
+"""Command line: serve, adapter, check-config, explain, decisions."""
 
 from __future__ import annotations
 
@@ -125,6 +125,64 @@ def cmd_check_config(args: argparse.Namespace) -> int:
             f"questions=[{', '.join(acfg.questions)}] rules={len(ruleset.rules)} "
             f"max_effort={acfg.max_effort or '-'}"
         )
+    return 0
+
+
+def cmd_adapter(args: argparse.Namespace) -> int:
+    """Run the experimental Responses client adapter.
+
+    It is a client, not a second router: it resolves one binding per
+    conversation, acknowledges it, reports turn boundaries and records the
+    update item the router hands back. See docs/ADAPTIVE_EFFORT.md.
+    """
+    import uvicorn
+
+    from .adapter import Adapter, create_adapter_app, read_key_file
+
+    token = os.environ.get(args.admin_token_env, "")
+    if not token:
+        print(
+            f"{args.admin_token_env} is not set. Strict control and execution "
+            "requests need the router control credential, even on loopback.",
+            file=sys.stderr,
+        )
+        return 2
+    key = ""
+    if args.upstream_key_file:
+        try:
+            key = read_key_file(args.upstream_key_file)
+        except (OSError, ValueError) as exc:
+            print(f"--upstream-key-file: {exc}", file=sys.stderr)
+            return 2
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    adapter = Adapter(
+        router_url=args.router,
+        alias=args.alias,
+        client_name=args.client,
+        admin_token=token,
+        upstream_key=key,
+        placeholder_token=args.placeholder_token,
+    )
+    print(
+        f"adapter on http://{args.host}:{args.port} -> {args.router} "
+        f"alias={args.alias} client={args.client} "
+        f"upstream-key={'from file' if key else 'from the client'}"
+    )
+    print(
+        "experimental: point a Responses client at this address. It never "
+        "chooses a model or an effort; every item it inserts came from a "
+        "/router/turn-plan answer."
+    )
+    uvicorn.run(
+        create_adapter_app(adapter),
+        host=args.host,
+        port=args.port,
+        log_level=args.log_level,
+        access_log=False,
+    )
     return 0
 
 
@@ -854,6 +912,12 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Imported here, as `serve` imports uvicorn here: the adapter is a client
+    # and pulls in the HTTP stack, which `check-config` has no use for.
+    from .adapter import DEFAULT_CLIENT as ADAPTER_CLIENT
+    from .adapter import DEFAULT_PORT as ADAPTER_PORT
+    from .adapter import DEFAULT_ROUTER as ADAPTER_ROUTER
+
     parser = argparse.ArgumentParser(prog="jev-router", description=__doc__)
     parser.add_argument(
         "-c", "--config", default=DEFAULT_CONFIG, help="path to router.yaml"
@@ -866,6 +930,29 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--mode", choices=["shadow", "active"])
     p_serve.add_argument("--log-level", default="info")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_adapter = sub.add_parser(
+        "adapter",
+        help="run the experimental Responses client adapter in front of the router",
+    )
+    p_adapter.add_argument("--router", default=ADAPTER_ROUTER)
+    p_adapter.add_argument("--alias", required=True, help="the strict alias to resolve")
+    p_adapter.add_argument("--client", default=ADAPTER_CLIENT)
+    p_adapter.add_argument("--host", default="127.0.0.1")
+    p_adapter.add_argument("--port", type=int, default=ADAPTER_PORT)
+    p_adapter.add_argument(
+        "--upstream-key-file",
+        help="a file holding the upstream credential, used only in place of "
+        "the client's placeholder token",
+    )
+    p_adapter.add_argument(
+        "--placeholder-token",
+        default="placeholder",
+        help="the bearer token a client sends when it has no real key",
+    )
+    p_adapter.add_argument("--admin-token-env", default="JEV_ROUTER_ADMIN_TOKEN")
+    p_adapter.add_argument("--log-level", default="info")
+    p_adapter.set_defaults(func=cmd_adapter)
 
     p_prune = sub.add_parser(
         "prune", help="delete old decisions, feedback and pins (irreversible)"
