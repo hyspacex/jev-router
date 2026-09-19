@@ -149,6 +149,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     supports_vision INTEGER,
     compatibility_revision TEXT,
     binding_revision TEXT,
+    last_input_tokens INTEGER,
+    last_output_tokens INTEGER,
     base_effort TEXT,
     effective_effort TEXT,
     effort_mode TEXT,
@@ -306,6 +308,15 @@ EFFORT_COLUMNS: dict[str, list[tuple[str, str]]] = {
 # every row written before this release means.
 RECONCILE_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "turn_plans": [("reconciled", "TEXT")],
+    "sessions": [
+        # What the last reply this session got reported it had used. Two
+        # counts and nothing else: no text, no ids, no reply. They are what a
+        # `previous_response_id` request is budgeted against, because the
+        # history is on the provider's side and a short delta is not it.
+        # NULL means nobody has measured it, which is not zero.
+        ("last_input_tokens", "INTEGER"),
+        ("last_output_tokens", "INTEGER"),
+    ],
 }
 
 # The decision-log events a session produces.

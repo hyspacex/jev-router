@@ -7,8 +7,6 @@ something for the router to quietly rewrite.
 
 from __future__ import annotations
 
-import json
-
 import httpx
 import pytest
 import respx
@@ -183,3 +181,157 @@ def test_i06_a_body_with_no_output_ask_is_read_as_no_ask():
     assert _requested_output({"max_tokens": True}) is None
     assert _requested_output({"max_tokens": "lots"}) is None
     assert _requested_output({"max_tokens": 10, "max_output_tokens": 20}) == 20
+
+
+# --- spec 6.4: a history the provider holds ------------------------------
+
+
+def a_row(**over):
+    """A bound session row, as `_execution_budget` reads one."""
+    row = {
+        "session_id": "session-2f766788",
+        "context_window": 50_000,
+        "max_output_tokens": 43_000,
+        "binding_revision": "sha256:abc",
+        "last_input_tokens": None,
+        "last_output_tokens": None,
+    }
+    row.update(over)
+    return row
+
+
+class Profile:
+    supports_tools = True
+    supports_vision = True
+
+
+def budget(row, body):
+    from jev_router.app import _execution_budget
+    from jev_router.features import extract_features
+
+    return _execution_budget(row, Profile(), extract_features(body, {}), body)
+
+
+DELTA = {
+    "model": "vendor/astra",
+    "previous_response_id": "resp_0001",
+    "input": [{"type": "message", "role": "user", "content": "carry on"}],
+}
+
+
+def test_a_chain_with_no_measured_history_is_unknown_not_empty():
+    """A short delta is not the context, so it is not budgeted as one."""
+    with pytest.raises(Exception) as raised:
+        budget(a_row(), DELTA)
+    error = raised.value
+    assert error.code == "CONTEXT_BUDGET_EXCEEDED"
+    assert error.detail["budget"]["unknown_parts"] == ["previous_response"]
+    # The uncertainty reserve is taken against the whole window, not the delta.
+    assert error.detail["budget"]["reserve_tokens"] == 5_000
+
+
+def test_a_chain_with_a_reported_figure_is_budgeted_against_it():
+    check = budget(a_row(last_input_tokens=100, last_output_tokens=20), DELTA)
+    assert check.fits
+    # The figure is in the input count, and it stopped being unknown.
+    assert check.input_tokens > 120
+    assert check.unknown == ()
+    assert "reported-usage" in check.estimate_method
+
+
+def test_a_reported_figure_can_itself_exceed_the_window():
+    with pytest.raises(Exception) as raised:
+        budget(a_row(last_input_tokens=49_000, last_output_tokens=500), DELTA)
+    assert raised.value.code == "CONTEXT_BUDGET_EXCEEDED"
+    assert raised.value.detail["budget"]["input_tokens"] > 49_000
+
+
+def test_a_full_history_request_never_adds_an_accumulated_figure():
+    """Only a chain has a history somewhere else."""
+    body = {
+        "model": "vendor/astra",
+        "input": [{"type": "message", "role": "user", "content": "carry on"}],
+    }
+    check = budget(a_row(last_input_tokens=49_000, last_output_tokens=500), body)
+    assert check.fits and check.input_tokens < 100
+
+
+@respx.mock
+async def test_the_responses_observer_records_the_reported_usage(tmp_path, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    monkeypatch.setenv("JEV_ROUTER_ADMIN_TOKEN", ADMIN)
+    service = Service(tmp_path, config=H.adaptive_config(tmp_path, mode="off"))
+    try:
+        jev_ok()
+        H.responses_upstream()
+        caller = H.ResponsesClient(service, history_mode="previous_response_id")
+        assert (await caller.start()).status_code == 200
+
+        caller.items.append(H.user_item("Add quoted CSV fields."))
+        assert (await caller.send()).status_code == 200
+
+        row = service.sessions.get(caller.session_id)
+        assert row["last_input_tokens"] == 1200
+        assert row["last_output_tokens"] == 64
+
+        # And the next delta is budgeted against that, not against itself.
+        from jev_router.app import _accumulated_input
+
+        assert _accumulated_input(row) == 1264
+    finally:
+        await service.close()
+
+
+@respx.mock
+async def test_a_chain_request_is_refused_once_the_reported_history_fills_the_window(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    monkeypatch.setenv("JEV_ROUTER_ADMIN_TOKEN", ADMIN)
+    service = Service(tmp_path, config=H.adaptive_config(tmp_path, mode="off"))
+    try:
+        jev_ok()
+        seen = H.responses_upstream()
+        caller = H.ResponsesClient(service, history_mode="previous_response_id")
+        assert (await caller.start()).status_code == 200
+        caller.items.append(H.user_item("Add quoted CSV fields."))
+        assert (await caller.send()).status_code == 200
+        sent = len(seen)
+
+        row = service.sessions.get(caller.session_id)
+        service.sessions.update(
+            caller.session_id, row["version"], last_input_tokens=199_000
+        )
+
+        caller.items.append(H.user_item("and now the other half"))
+        refused = await caller.send()
+        assert refused.status_code == 422
+        assert code(refused) == "CONTEXT_BUDGET_EXCEEDED"
+        assert len(seen) == sent  # nothing was forwarded
+        # The binding is kept: this is the harness's cue to compact.
+        assert service.sessions.get(caller.session_id)["state"] == "active"
+    finally:
+        await service.close()
+
+
+@respx.mock
+async def test_a_non_streamed_chat_reply_records_its_usage_on_the_session(service):
+    jev_ok()
+    upstream(
+        httpx.Response(
+            200,
+            json={
+                "id": "cmpl-1",
+                "choices": [],
+                "usage": {"prompt_tokens": 1500, "completion_tokens": 80},
+            },
+        )
+    )
+    caller = await bound(service)
+    response = await caller.execute()
+    assert response.status_code == 200
+    await response.aread()
+
+    row = service.sessions.get(caller.session_id)
+    assert row["last_input_tokens"] == 1500
+    assert row["last_output_tokens"] == 80

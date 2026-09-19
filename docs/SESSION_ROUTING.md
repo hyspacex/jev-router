@@ -260,6 +260,17 @@ estimate is marked uncertain and admission also requires five per cent of
 headroom. Send the accumulated usage figure if you have one; a short delta is
 not the context.
 
+On execution the router supplies that figure itself where it can. It keeps
+the input and output token counts the last reply reported for the session —
+two numbers, nothing else — from the Responses observer and from a
+non-streamed chat reply's own `usage` block. A `previous_response_id` request
+is budgeted against their sum plus the new delta.
+
+With no such figure the size stays unknown rather than being read as zero.
+The uncertainty reserve is then taken against the whole negotiated window
+instead of against the delta, so the near-boundary rule has the window to work
+against, and the estimate is still marked uncertain.
+
 On execution, the same `O` is revalidated against what the request itself asks
 for in `max_tokens`, `max_completion_tokens` or `max_output_tokens`. Above the
 negotiated ceiling is `CONTEXT_BUDGET_EXCEEDED`, naming both numbers, and the

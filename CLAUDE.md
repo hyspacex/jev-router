@@ -216,6 +216,12 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - `session_requests` distinguishes accepted, completed, rejected, stream
   failure and unknown. A repeated id never calls the provider again, and a
   record whose outcome is unknown is never pruned.
+- An execution is held to the limits it negotiated. An output ask above the
+  ceiling is `CONTEXT_BUDGET_EXCEEDED` with the binding kept; the body is
+  never rewritten to fit. With `previous_response_id` the budget uses the
+  input+output counts the last reply reported for that session, stored as two
+  numbers and nothing else. Without one the size is unknown, never zero, and
+  the reserve is taken against the whole window rather than the delta.
 
 - The between-turn effort experiment is off unless three opt-ins agree: the
   mode, `adaptive_effort: true` on a strict alias, and the client's

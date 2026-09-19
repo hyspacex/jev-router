@@ -46,6 +46,7 @@ from .policy import (
     guard_candidate,
     next_model_that_fits,
     p_hard,
+    reserve_tokens,
     validate_entry,
 )
 from .policy import finalize as policy_finalize
@@ -250,6 +251,7 @@ class Router:
         started: float | None = None,
         on_finish: Callable[[str], None] | None = None,
         observer: P.Observer | None = None,
+        usage_sink: Callable[[Any], None] | None = None,
     ) -> AsyncIterator[bytes]:
         capture = (
             capture_row
@@ -293,11 +295,13 @@ class Router:
                     response_bytes=count,
                 )
                 if state == "completed" and buffer is not None:
-                    self._record_usage(
+                    usage = self._record_usage(
                         capture_row,
                         bytes(buffer),
                         upstream_response.headers.get("content-encoding", ""),
                     )
+                    if usage is not None and usage_sink is not None:
+                        usage_sink(usage)
             if observer is not None:
                 observer.finish()
             if on_finish is not None:
@@ -431,6 +435,7 @@ class Router:
         started: float | None = None,
         on_finish: Callable[[str], None] | None = None,
         observer: P.Observer | None = None,
+        usage_sink: Callable[[Any], None] | None = None,
     ) -> Response:
         if decision_row:
             self.store.update_decision(
@@ -459,6 +464,7 @@ class Router:
                 started=started,
                 on_finish=on_finish,
                 observer=observer,
+                usage_sink=usage_sink,
             ),
             status_code=upstream_response.status_code,
             background=BackgroundTask(upstream_response.aclose),
@@ -466,7 +472,8 @@ class Router:
         response.raw_headers = raw_headers
         return response
 
-    def _record_usage(self, row_id: int, body: bytes, encoding: str = "") -> None:
+    def _record_usage(self, row_id: int, body: bytes, encoding: str = "") -> Any:
+        """The reply's own `usage` block onto the decision row, if it has one."""
         try:
             for coding in reversed(
                 [e.strip().lower() for e in encoding.split(",") if e.strip()]
@@ -487,9 +494,11 @@ class Router:
                     return
             usage = json.loads(body).get("usage")
         except (ValueError, AttributeError, zlib.error):
-            return
+            return None
         if isinstance(usage, dict):
             self.store.update_decision(row_id, upstream_usage=usage)
+            return usage
+        return None
 
     # --- routing an alias ----------------------------------------------
 
@@ -1661,7 +1670,7 @@ class Router:
         return result
 
     def record_observation(self, row: dict[str, Any], observation: Any) -> None:
-        """Keep the lineage a chain request will be checked against."""
+        """Keep the lineage and the usage a chain request is checked against."""
         try:
             current = self.sessions.get(row["session_id"]) or row
             fields: dict[str, Any] = {}
@@ -1669,10 +1678,22 @@ class Router:
                 fields["last_response_id"] = observation.response_id
             if observation.parse_failed:
                 fields["effort_lineage"] = "unknown"
+            fields.update(_usage_tokens(observation.usage))
             if fields:
                 self.sessions.update(row["session_id"], current["version"], **fields)
         except Exception:  # noqa: BLE001 - telemetry may never fail a reply
             log.exception("could not record the response lineage")
+
+    def record_session_usage(self, row: dict[str, Any], usage: Any) -> None:
+        """The same two counts, from a non-streamed reply's `usage` block."""
+        try:
+            fields = _usage_tokens(usage)
+            if not fields:
+                return
+            current = self.sessions.get(row["session_id"]) or row
+            self.sessions.update(row["session_id"], current["version"], **fields)
+        except Exception:  # noqa: BLE001 - telemetry may never fail a reply
+            log.exception("could not record the reported usage")
 
     def revalidate_profile(self, row: dict[str, Any]) -> Any:
         """The same profile, still configured the way it was negotiated.
@@ -1937,10 +1958,51 @@ class Router:
             started=started,
             on_finish=on_finish,
             observer=observer,
+            # A non-streamed chat reply carries its own usage counts. They go
+            # on the session too, so a later `previous_response_id` request is
+            # budgeted against a figure somebody reported rather than a delta.
+            usage_sink=lambda usage: self.record_session_usage(row, usage),
         )
 
 
 # --- turn-plan helpers ---------------------------------------------------
+
+
+def _usage_tokens(usage: Any) -> dict[str, int]:
+    """The two counts a reported usage block can give us, and nothing else.
+
+    Numbers only. Whatever else a provider puts in `usage` stays where it is:
+    these two are what the next request's context is budgeted against when the
+    history lives on the provider's side.
+    """
+    if not isinstance(usage, dict):
+        return {}
+    out: dict[str, int] = {}
+    for name, column in (
+        ("input_tokens", "last_input_tokens"),
+        ("prompt_tokens", "last_input_tokens"),
+        ("output_tokens", "last_output_tokens"),
+        ("completion_tokens", "last_output_tokens"),
+    ):
+        value = usage.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if value >= 0:
+            out.setdefault(column, int(value))
+    return out
+
+
+def _accumulated_input(row: dict[str, Any]) -> int | None:
+    """What the provider is holding, as the last reply it sent reported it.
+
+    Input plus output: the next request's input is everything that reply was
+    given plus everything it produced. `None` means nobody measured it, which
+    is not the same as zero.
+    """
+    inputs = row.get("last_input_tokens")
+    if inputs is None:
+        return None
+    return max(0, int(inputs)) + max(0, int(row.get("last_output_tokens") or 0))
 
 
 def _rank_of(order: list[str], effort: str | None) -> int:
@@ -2276,9 +2338,22 @@ def _execution_budget(
                 "binding_revision": row["binding_revision"],
             },
         )
-    estimate = estimate_input(body)
+    window = row["context_window"]
+    chained = bool(body.get("previous_response_id"))
+    # With a `previous_response_id` the history is on the provider's side and
+    # the body carries only the delta. What the last reply reported it used is
+    # the figure spec 6.4 asks for; without one the size stays unknown.
+    accumulated = _accumulated_input(row) if chained else None
+    estimate = estimate_input(body, accumulated_input_tokens=accumulated)
+    reserve = 0
+    if chained and accumulated is None:
+        # Nobody has measured what the provider is holding, so the delta is
+        # no guide to how close this is to the boundary. Take the uncertainty
+        # reserve against the whole negotiated window instead, and let the
+        # existing near-boundary rule work against that.
+        reserve = reserve_tokens(window or 0)
     check = context_budget(
-        context_window=row["context_window"],
+        context_window=window,
         input_tokens=estimate.tokens,
         # The larger of the two honest figures. The negotiated ceiling is
         # reserved for this session whether or not this request uses all of
@@ -2287,6 +2362,7 @@ def _execution_budget(
         output_tokens=max(negotiated or 0, asked or 0)
         or features.max_tokens
         or DEFAULT_OUTPUT_TOKENS,
+        requested_reserve=reserve,
         estimate_method=estimate.method,
         unknown=estimate.unknown,
     )
