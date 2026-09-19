@@ -7,6 +7,7 @@ names, so C07 is findable by grepping for c07.
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from pathlib import Path
 
@@ -843,6 +844,124 @@ def test_c33_the_session_tables_are_added_without_touching_the_old_ones(tmp_path
             for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert {"pins", "decisions", "feedback", "sessions", "session_requests"} <= tables
+    finally:
+        sessions.close()
+        store.close()
+
+
+# --- the command line ----------------------------------------------------
+
+
+def written_session(tmp_path) -> tuple[str, str]:
+    """A router.yaml on disk and one active binding in its database."""
+    from conftest import write_config
+
+    from jev_router.config import load_config
+
+    path = write_config(tmp_path, H.session_raw())
+    config = load_config(path)
+    store = Store(config.settings.db_path)
+    sessions = Sessions(store, config.session_routing, guard=False)
+    sessions.create(
+        {
+            "session_id": "session-cli-0001",
+            "owner": owner_key(ADMIN),
+            "client": "coding-client",
+            "alias": "auto-session",
+            "model_key": "small",
+            "provider": "default",
+            "upstream_id": "vendor/small",
+            "wire_model": "vendor/small(none)",
+            "protocol": "openai-chat",
+            "context_window": 32000,
+            "max_output_tokens": 2048,
+            "supports_tools": True,
+            "supports_vision": False,
+            "binding_revision": "sha256:abc",
+            "base_effort": "none",
+            "effective_effort": "none",
+            "effort_mode": "fixed",
+            "decision_id": "dec1",
+            "decision_rule": "easy",
+            "decision_reason": "difficulty=0.10@0.90",
+            "decision_source": "jev",
+            "reserve_tokens": 4096,
+            "quota_status": json.dumps({"default": "unknown"}),
+        }
+    )
+    sessions.activate("session-cli-0001", 1)
+    sessions.close()
+    store.close()
+    return path, "session-cli-0001"
+
+
+def test_sessions_show_reports_identity_limits_effort_and_state(tmp_path, capsys):
+    from jev_router.cli import main
+
+    path, session_id = written_session(tmp_path)
+    assert main(["-c", path, "sessions", "show", session_id]) == 0
+    out = capsys.readouterr().out
+    assert "[active]" in out
+    assert "vendor/small(none)" in out
+    assert "32000 negotiated" in out
+    assert "base=none effective=none" in out
+    assert "adaptation=off" in out
+    assert "rule=easy" in out
+    assert "default=unknown" in out
+
+
+def test_sessions_list_and_close(tmp_path, capsys):
+    from jev_router.cli import main
+
+    path, session_id = written_session(tmp_path)
+    assert main(["-c", path, "sessions", "list"]) == 0
+    assert session_id in capsys.readouterr().out
+    assert main(["-c", path, "sessions", "close", session_id]) == 0
+    out = capsys.readouterr().out
+    assert f"closed {session_id}" in out and "[closed]" in out
+    assert main(["-c", path, "sessions", "close", session_id]) == 0
+    assert "already closed" in capsys.readouterr().out
+
+
+def test_sessions_show_reports_an_unknown_id(tmp_path, capsys):
+    from jev_router.cli import main
+
+    path, _ = written_session(tmp_path)
+    assert main(["-c", path, "sessions", "show", "session-nope"]) == 1
+    assert "unknown session" in capsys.readouterr().err
+
+
+def test_sessions_show_needs_an_id(tmp_path):
+    from jev_router.cli import main
+
+    path, _ = written_session(tmp_path)
+    with pytest.raises(SystemExit):
+        main(["-c", path, "sessions", "show"])
+
+
+def test_prune_leaves_a_session_tombstone(tmp_path, capsys):
+    from jev_router.cli import main
+    from jev_router.config import load_config
+
+    path, session_id = written_session(tmp_path)
+    config = load_config(path)
+    store = Store(config.settings.db_path)
+    store.conn.execute("UPDATE sessions SET created = 0, last_seen = 0")
+    store.conn.commit()
+    store.close()
+
+    assert main(["-c", path, "prune", "--older-than-days", "1"]) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert counts["sessions"] == 1
+    assert {"pins", "decisions", "feedback", "session_requests"} <= set(counts)
+
+    store = Store(config.settings.db_path)
+    sessions = Sessions(store, config.session_routing, guard=False)
+    try:
+        row = sessions.get(session_id)
+        # The id survives so it can never be mistaken for a new session.
+        assert row is not None and row["tombstone"] and row["state"] == "closed"
+        assert row["model_key"] is None and row["binding_revision"] is None
     finally:
         sessions.close()
         store.close()

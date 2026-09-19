@@ -390,17 +390,135 @@ def cmd_feedback(args: argparse.Namespace) -> int:
 
 def cmd_prune(args: argparse.Namespace) -> int:
     from .pins import Store
+    from .sessions import Sessions
 
     if args.older_than_days < 1:
         print("--older-than-days must be at least 1", file=sys.stderr)
         return 2
     config = _load(args.config)
     store = Store(config.settings.db_path)
+    sessions = Sessions(store, config.session_routing, guard=False)
     try:
-        print(json.dumps(store.prune(args.older_than_days * 86400)))
+        counts = store.prune(args.older_than_days * 86400)
+        # A pruned session keeps its id as a tombstone, so a client resuming a
+        # removed session is told it is closed rather than given a new one.
+        counts.update(sessions.prune(args.older_than_days * 86400))
+        print(json.dumps(counts))
     finally:
+        sessions.close()
         store.close()
     return 0
+
+
+def _session_store(config: RouterConfig):
+    from .pins import Store
+    from .sessions import Sessions
+
+    store = Store(config.settings.db_path, config.settings.log_state)
+    return store, Sessions(store, config.session_routing, guard=False)
+
+
+def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
+    created = datetime.fromtimestamp(row["created"] or 0).strftime("%m-%d %H:%M:%S")
+    seen = datetime.fromtimestamp(row["last_seen"] or row["created"] or 0).strftime(
+        "%m-%d %H:%M:%S"
+    )
+    print(f"{row['session_id']}  [{row['state']}{' tombstone' if row['tombstone'] else ''}]")
+    print(f"  alias:    {row['alias'] or '-'}  client={row['client'] or '-'}")
+    print(
+        f"  model:    {row['model_key'] or '-'} -> {row['wire_model'] or '-'} "
+        f"({row['provider'] or '-'}, {row['protocol'] or '-'})"
+    )
+    print(
+        f"  window:   {row['context_window'] or '-'} negotiated, "
+        f"max output {row['max_output_tokens'] or '-'}, "
+        f"reserve {row['reserve_tokens'] or '-'}"
+    )
+    print(
+        f"  effort:   base={row['base_effort'] or '-'} "
+        f"effective={row['effective_effort'] or '-'} "
+        f"mode={row['effort_mode'] or 'fixed'}  adaptation=off"
+    )
+    print(f"  binding:  {row['binding_revision'] or '-'}")
+    print(
+        f"  decision: {row['decision_id'] or '-'} rule={row['decision_rule'] or '-'} "
+        f"source={row['decision_source'] or '-'} lane={row['quality_lane'] or '-'}"
+    )
+    if row["decision_reason"]:
+        print(f"  reason:   {row['decision_reason']}")
+    if row["blocked_reason"]:
+        print(f"  blocked:  {row['blocked_reason']}")
+    admitted = row.get("quota_status")
+    if isinstance(admitted, dict) and admitted:
+        print(
+            "  quota:    at admission "
+            + ", ".join(f"{k}={v}" for k, v in sorted(admitted.items()))
+        )
+    if quota:
+        print("            now " + ", ".join(f"{k}={v}" for k, v in sorted(quota.items())))
+    print(f"  created:  {created}  last seen {seen}")
+
+
+def _quota_freshness(config: RouterConfig) -> dict[str, str]:
+    """What the last stored snapshot says, without polling anything."""
+    from .quota import QuotaMonitor
+
+    try:
+        monitor = QuotaMonitor(config)
+        report = monitor.report()
+    except Exception:  # noqa: BLE001 - diagnostics may never fail on quota
+        return {}
+    status = {}
+    for name, row in report["providers"].items():
+        if row.get("last_error"):
+            status[name] = "error"
+        elif not row.get("snapshot"):
+            status[name] = "unknown"
+        elif row.get("stale"):
+            status[name] = "stale"
+        else:
+            status[name] = "fresh"
+    return status
+
+
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """Inspect and close strict session bindings."""
+    config = _load(args.config)
+    store, sessions = _session_store(config)
+    quota = _quota_freshness(config)
+    try:
+        if args.action == "list":
+            rows = sessions.recent(args.limit)
+            if args.json:
+                print(json.dumps(rows, indent=2, default=str))
+                return 0
+            if not rows:
+                print("no sessions")
+                return 0
+            for row in rows:
+                _print_session(row, quota)
+                print()
+            return 0
+
+        row = sessions.get(args.session_id)
+        if row is None:
+            print(f"unknown session {args.session_id!r}", file=sys.stderr)
+            return 1
+        if args.action == "close":
+            if row["state"] == "closed":
+                print(f"{args.session_id} was already closed")
+                return 0
+            sessions.close_session(args.session_id, "closed from the command line")
+            row = sessions.get(args.session_id) or row
+            print(f"closed {args.session_id}")
+        if args.json:
+            print(json.dumps(row, indent=2, default=str))
+        else:
+            _print_session(row, quota)
+        return 0
+    finally:
+        sessions.close()
+        store.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -452,6 +570,13 @@ def main(argv: list[str] | None = None) -> int:
     p_quota.add_argument("--json", action="store_true")
     p_quota.set_defaults(func=cmd_quota)
 
+    p_sess = sub.add_parser("sessions", help="inspect or close strict session bindings")
+    p_sess.add_argument("action", choices=["list", "show", "close"])
+    p_sess.add_argument("session_id", nargs="?", help="a session id, for show and close")
+    p_sess.add_argument("-n", "--limit", type=int, default=20)
+    p_sess.add_argument("--json", action="store_true")
+    p_sess.set_defaults(func=cmd_sessions)
+
     p_dec = sub.add_parser("decisions", help="tail the decision log")
     p_dec.add_argument("-n", "--limit", type=int, default=20)
     p_dec.add_argument("--json", action="store_true")
@@ -467,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
     p_fb.set_defaults(func=cmd_feedback)
 
     args = parser.parse_args(argv)
+    if args.command == "sessions" and args.action != "list" and not args.session_id:
+        parser.error(f"sessions {args.action} needs a session id")
     return args.func(args)
 
 

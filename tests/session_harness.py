@@ -71,6 +71,18 @@ SESSION_CONFIG: dict[str, Any] = {
 }
 
 
+def session_raw() -> dict[str, Any]:
+    """The same config as a plain mapping, for writing a router.yaml."""
+    import copy
+
+    from conftest import BASE_CONFIG, _merge
+
+    raw = copy.deepcopy(BASE_CONFIG)
+    for key, value in SESSION_CONFIG.items():
+        raw[key] = _merge(raw[key], value) if isinstance(raw.get(key), dict) else value
+    return raw
+
+
 def session_config(**overrides: Any):
     raw = dict(SESSION_CONFIG)
     for key, value in overrides.items():
