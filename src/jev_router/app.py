@@ -1690,7 +1690,11 @@ class Router:
         ledger = self.sessions.applied_updates(
             session_id, epoch=int(row.get("compaction_epoch") or 0)
         )
-        if body.get("previous_response_id"):
+        if maintenance:
+            # Not a turn. The client built this request its own way, so the
+            # anchors a turn's replay is checked against do not describe it.
+            check = P.validate_maintenance(items, ledger)
+        elif body.get("previous_response_id"):
             lineage = {row.get("last_response_id") or ""} | {
                 plan.get("response_id") or "" for plan in self.sessions.plans(session_id)
             }

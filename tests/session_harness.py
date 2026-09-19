@@ -876,6 +876,11 @@ class ResponsesClient(Client):
         rebuild it: this stands in for that.
         """
         items = list(self.items)
+        if items and isinstance(items[0], dict) and items[0].get("type") == "tools":
+            # Measured on codex-cli 0.155.1: a compaction request declares a
+            # different tool set from a turn, so the first item of the history
+            # carries a different id and every prefix hash behind it changes.
+            items[0] = {**items[0], "id": "at_compaction"}
         if trigger:
             items.append(trigger_item())
         else:

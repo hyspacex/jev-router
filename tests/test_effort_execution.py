@@ -533,6 +533,47 @@ async def test_f17_a_client_compaction_is_forwarded_unchanged(service):
 
 
 @respx.mock
+async def test_f17_a_compaction_is_not_held_to_a_turns_anchors(service):
+    """Codex builds a compaction request its own way, and that is allowed.
+
+    Measured on codex-cli 0.155.1: a compaction declares a different tool set,
+    so the first item of the history carries a different id and every prefix
+    hash behind it changes. Holding the request to a turn's recorded anchors
+    refuses it on the strength of a difference that means nothing.
+    """
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    caller.items = [{"type": "tools", "id": "at_turn", "tools": []}]
+    await caller.turn("Investigate the escaped-quote failure.")
+    assert updates(seen[0])
+
+    response = await caller.compact()
+    assert response.status_code == 200, response.text
+    # It went out with the first item the client chose and the update still in
+    # the history, and the router did not move either.
+    assert seen[-1]["input"][0]["id"] == "at_compaction"
+    assert updates(seen[-1]) == [
+        {"type": "configuration_update", "reasoning": {"effort": "medium"}}
+    ]
+
+
+@respx.mock
+async def test_f17_a_compaction_still_may_not_carry_an_update_nobody_planned(service):
+    turn_jev(difficulty=1.9)
+    seen = H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    caller.items.append({"type": "configuration_update", "reasoning": {"effort": "high"}})
+
+    response = await caller.compact()
+    assert response.status_code == 409
+    assert code(response) == "EFFORT_HISTORY_MISMATCH"
+    assert "only owner" in response.json()["error"]["message"]
+    assert len(seen) == 1
+
+
+@respx.mock
 async def test_f17_a_compaction_opens_an_epoch_and_returns_to_the_base_effort(service):
     turn_jev(difficulty=1.9)
     H.responses_upstream()
@@ -596,6 +637,34 @@ async def test_f17_the_next_user_turn_may_ask_for_the_effort_again(service):
     row = service.sessions.get(caller.session_id)
     assert row["effective_effort"] == "high"
     assert row["compaction_epoch"] == 1
+
+
+@respx.mock
+async def test_f17_a_client_that_restarts_picks_the_session_up_in_its_new_epoch(service):
+    """Resume across a compaction: the epoch and the base effort come back."""
+    turn_jev(difficulty=1.9)
+    H.responses_upstream()
+    caller = await started(service)
+    await caller.turn("Investigate the escaped-quote failure.")
+    await caller.compact()
+
+    resumed = await caller.resolve(intent="resume", request_id="resume-0001")
+    assert resumed.status_code == 200, resumed.text
+    execution = resumed.json()["execution"]
+    assert execution["compaction_epoch"] == 1
+    assert execution["effective_effort"] == "low"
+    assert execution["base_effort"] == "low"
+
+    # And the report a restarting adapter reads its positions back from says
+    # which side of the compaction each plan is on.
+    report = await service.client.get(
+        f"/router/sessions/{caller.session_id}", headers=caller.control_headers()
+    )
+    assert report.status_code == 200
+    body = report.json()
+    assert body["compaction_epoch"] == 1
+    assert body["compaction_state"] == "known"
+    assert [p["compaction_epoch"] for p in body["turn_plans"]] == [0]
 
 
 @respx.mock
