@@ -259,8 +259,12 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - A shadow question is measured and never read. It rides in the same batched
   call, is validated on its own, and a malformed one is dropped and counted.
   It may not weaken the validation of the active answers, and it may not reach
-  `policy.evaluate`. Active and shadow sets stay disjoint, and an alias that
-  routes on a question may not also be measuring it.
+  `policy.evaluate` or `effort.Evidence`. Holding a change back is deciding
+  too. `failure_mode` is shadow by default; promoting it into
+  `experiments.adaptive_effort.questions` is what lets it count, and until
+  then what it would have done is recorded on the plan as
+  `facts.shadow_counterfactual`. Active and shadow sets stay disjoint, and an
+  alias that routes on a question may not also be measuring it.
 - `classify` returns answers and chooses nothing. Turn assessment must never
   be able to reselect a model.
 - A distribution condition (`p_hard_*`, `p_nontrivial_*`) lives in a named

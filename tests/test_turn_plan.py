@@ -524,8 +524,21 @@ async def test_the_shadow_failure_mode_is_only_asked_with_a_harness_observation(
     )
     asked = json.loads(jev.calls[-1].request.content)["questions"]
     assert "failure_mode" in asked
-    # And it did its job: an environment failure is not a reason to raise.
-    assert service.sessions.plans(caller.session_id)[-1]["action"] == "keep"
+    # And it did its job as an experiment. It is a shadow answer, so it is
+    # measured and never applied (C25): the plan raises on the active answers
+    # alone, and the counterfactual records that an environment failure would
+    # have held it.
+    plan = service.sessions.plans(caller.session_id)[-1]
+    assert plan["action"] == "change_effort"
+    assert plan["facts"]["shadow_counterfactual"] == {
+        "question": "failure_mode",
+        "answer": "environment_problem",
+        "action": "keep",
+        "to_effort": "medium",
+        "recommendation": "medium",
+        "reason": "keeping medium: the evidence asks for no change",
+        "changed": True,
+    }
 
 
 @respx.mock

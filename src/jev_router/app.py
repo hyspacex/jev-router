@@ -16,7 +16,7 @@ import os
 import time
 import zlib
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, NoReturn
 
 import httpx
@@ -87,6 +87,11 @@ DROP_RESPONSE_HEADERS = HOP_BY_HOP | {"content-length"}
 # What one reply may use when neither the deployment nor the client declares a
 # ceiling. An allowance for the budget check, not a limit sent upstream.
 DEFAULT_OUTPUT_TOKENS = 4096
+
+# Turn questions that need a grounded harness observation behind them. Without
+# one Jev would be asked to guess why work failed, so it is not asked at all,
+# whether a config lists the question as active or as shadow.
+GROUNDED_ONLY_QUESTIONS = ("failure_mode",)
 
 PEEK_LIMIT = 512 * 1024  # bodies larger than this are streamed without inspection
 
@@ -1036,18 +1041,24 @@ class Router:
         started = time.perf_counter()
         semantics = await self.classify_turn(req, row)
         pressure = self.pressures().get(row["provider"] or "", 0.0)
-        plan = E.plan_turn(
-            cfg=self.config.adaptive_effort(),
-            ladder=ladder,
-            current=current,
-            base=row["base_effort"],
-            floor=floor,
-            evidence=_turn_evidence(req, semantics),
-            recommendations=E.recommendation_history(
-                self.sessions.plans(req.session_id)
-            ),
-            pressure=pressure,
-        )
+        history = E.recommendation_history(self.sessions.plans(req.session_id))
+
+        def decide(evidence: E.Evidence) -> E.TurnPlan:
+            return E.plan_turn(
+                cfg=self.config.adaptive_effort(),
+                ladder=ladder,
+                current=current,
+                base=row["base_effort"],
+                floor=floor,
+                evidence=evidence,
+                recommendations=history,
+                pressure=pressure,
+            )
+
+        evidence = _turn_evidence(req, semantics)
+        plan = decide(evidence)
+        # What a shadow answer would have done, recorded and never applied.
+        counterfactual = _shadow_counterfactual(decide, plan, evidence, semantics)
         hole = E.reconciliation_hole(self.sessions.plans(req.session_id))
         if hole is not None and plan.action == E.CHANGE:
             # Somebody confirmed an earlier update by hand and nobody could
@@ -1089,6 +1100,7 @@ class Router:
                     **plan.to_facts(),
                     "strategy": strategy,
                     "protocol": row["protocol"],
+                    "shadow_counterfactual": counterfactual,
                 },
                 "jev_ms": semantics.jev_ms,
                 "plan_ms": (time.perf_counter() - started) * 1000,
@@ -1224,9 +1236,18 @@ class Router:
         scoped = alias_cfg.model_copy(update={"draft": None})
         state = turn_state_v1(req.state.model_dump())
         # `failure_mode` is only meaningful with a grounded observation behind
-        # it. Without one it would be asked to guess, so it is not asked.
+        # it. Without one it would be asked to guess, so it is not asked,
+        # whichever list a config has put it in.
         grounded = bool(state["facts"].get("failure_observations_available"))
-        shadow = [q for q in cfg.shadow_questions if grounded]
+
+        def askable(ids: list[str]) -> list[str]:
+            return [
+                qid
+                for qid in ids
+                if qid in self.config.questions
+                and (grounded or qid not in GROUNDED_ONLY_QUESTIONS)
+            ]
+
         features = extract_features(
             {"messages": [{"role": "user", "content": req.state.current_user_request}]},
             {"x-router-client": row["client"] or ""},
@@ -1240,8 +1261,8 @@ class Router:
                 features,
                 scoped,
                 state=state,
-                question_ids=[q for q in cfg.questions if q in self.config.questions],
-                shadow_ids=[q for q in shadow if q in self.config.questions],
+                question_ids=askable(cfg.questions),
+                shadow_ids=askable(cfg.shadow_questions),
             )
         except Exception as exc:  # noqa: BLE001 - a classifier failure keeps the effort
             log.warning("turn classification failed: %s", type(exc).__name__)
@@ -1913,7 +1934,14 @@ def _context_headroom(
 
 
 def _turn_evidence(req: S.TurnPlanRequest, semantics: SemanticResult) -> E.Evidence:
-    """Jev's answers about this turn, as numbers the pure policy compares."""
+    """Jev's active answers about this turn, as numbers the pure policy compares.
+
+    Active answers only (C25). A shadow answer is measured and never read: it
+    may not decide, and it may not decide by refusing either, which is what
+    suppressing an upgrade would be. A config that wants `failure_mode` to
+    count moves it from `experiments.adaptive_effort.shadow_questions` into
+    `questions`, and then it arrives here as an active answer like any other.
+    """
     if semantics.error:
         return E.Evidence(error=semantics.error)
     answers = semantics.answers
@@ -1925,19 +1953,50 @@ def _turn_evidence(req: S.TurnPlanRequest, semantics: SemanticResult) -> E.Evide
         number = answer.get(kind)
         return float(number) if isinstance(number, (int, float)) else None
 
-    shadow_failure = semantics.shadow.get("failure_mode") or {}
     return E.Evidence(
         difficulty=value("difficulty", "score"),
         p_hard=p_hard(answers.get("difficulty")),
         harm_if_wrong=value("harm_if_wrong", "noul"),
         corrective_followup=value("corrective_followup", "noul"),
-        failure_mode=(
-            shadow_failure.get("choice")
-            if shadow_failure.get("type") == "choice"
-            else None
-        ),
+        failure_mode=_choice(answers.get("failure_mode")),
         short_continuation=is_short_continuation(req.state.current_user_request),
     )
+
+
+def _choice(answer: Any) -> str | None:
+    """The label a Choice answer carried, or nothing at all."""
+    if not isinstance(answer, dict) or answer.get("type") != "choice":
+        return None
+    choice = answer.get("choice")
+    return choice if isinstance(choice, str) else None
+
+
+def _shadow_counterfactual(
+    decide: Callable[[E.Evidence], E.TurnPlan],
+    plan: E.TurnPlan,
+    evidence: E.Evidence,
+    semantics: SemanticResult,
+) -> dict[str, Any] | None:
+    """What the shadow `failure_mode` answer would have done, had it counted.
+
+    Measured on the plan row and never applied. This is how the experiment
+    earns its promotion: the same turn, the same active answers, and the
+    difference the shadow answer alone would have made.
+    """
+    choice = _choice(semantics.shadow.get("failure_mode"))
+    if choice is None:
+        return None
+    hypothetical = decide(replace(evidence, failure_mode=choice))
+    return {
+        "question": "failure_mode",
+        "answer": choice,
+        "action": hypothetical.action,
+        "to_effort": hypothetical.to_effort,
+        "recommendation": hypothetical.recommendation,
+        "reason": hypothetical.reason[:500],
+        "changed": (hypothetical.action, hypothetical.to_effort)
+        != (plan.action, plan.to_effort),
+    }
 
 
 def _plan_response(

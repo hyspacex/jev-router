@@ -77,6 +77,12 @@ experiments:
     shadow_questions: [failure_mode]
 ```
 
+`questions` are the turn answers the policy reads. `shadow_questions` are
+asked in the same call, recorded, and never read by it. The two sets may not
+overlap. `failure_mode` is only asked at all when the turn carries a grounded
+harness observation, in either list: without one Jev would be guessing why
+work failed.
+
 `uv run jev-router check-config` refuses `mode: active` unless every profile
 in `qualified_profiles`:
 
@@ -105,9 +111,14 @@ The mechanics, all configurable and all recorded on the plan:
   same turn and never gets a decision of its own.
 - **A short "continue"** is not evidence for a downgrade. "yes, go on" says
   nothing about how hard the next step is.
-- **A corrective follow-up can raise**, unless the optional shadow
-  `failure_mode` answer says the obstacle is a missing credential or a missing
-  fact. More reasoning is not the remedy for either.
+- **A corrective follow-up can raise**, unless `failure_mode` says the
+  obstacle is a missing credential or a missing fact. More reasoning is not
+  the remedy for either. `failure_mode` ships as a **shadow** question, and a
+  shadow answer never reaches this policy (C25): holding an upgrade back is a
+  decision like any other. What it would have done is recorded on the plan as
+  `facts.shadow_counterfactual`, with the action, the rung and whether it
+  differed, which is how the experiment earns a promotion. Move it from
+  `shadow_questions` into `questions` to let it decide.
 - **Floors hold.** An explicit client minimum and the floor a protected
   admission rule implies are never crossed, and neither is the quality lane
   the admission rule named.
