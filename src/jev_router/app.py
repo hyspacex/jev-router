@@ -148,15 +148,7 @@ class Router:
         status = {name: "unknown" for name in self.config.provider_names()}
         try:
             for name, row in self.quota.report()["providers"].items():
-                snapshot = row.get("snapshot") or {}
-                if row.get("last_error") or snapshot.get("error"):
-                    status[name] = "error"
-                elif not row.get("snapshot"):
-                    status[name] = "unknown"
-                elif row.get("stale"):
-                    status[name] = "stale"
-                else:
-                    status[name] = "fresh"
+                status[name] = row.get("status") or "unknown"
         except Exception:  # noqa: BLE001 - quota may never fail a request
             log.exception("could not read quota status")
         return status

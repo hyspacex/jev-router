@@ -175,9 +175,26 @@ def cmd_quota(args: argparse.Namespace) -> int:
         )
         print(f"    pressure:  {row['pressure']:.2f}  ({row['reason']})")
         print(
+            f"    status:    {row.get('status', 'unknown')}"
+            + (
+                "   (nobody measured this; it is not spare capacity)"
+                if row.get("status") in ("unknown", "stale", "error")
+                else ""
+            )
+        )
+        print(
             f"    used:      {'-' if used is None else f'{used:.1f}%'}"
             f"   expected: {'-' if expected is None else f'{expected:.1f}%'}"
         )
+        for window in row.get("windows") or []:
+            pcnt = window.get("used_percent")
+            resets = window.get("resets_at")
+            print(
+                f"    window {window.get('name') or '-'}: "
+                f"used {'-' if pcnt is None else f'{pcnt:.1f}%'}"
+                f"  limit={window.get('limit') or '-'}"
+                f"  resets_at={'-' if resets is None else f'{resets:.0f}'}"
+            )
         age = row["age_seconds"]
         print(
             f"    age:       {'-' if age is None else f'{age:.0f}s'}"
@@ -485,17 +502,10 @@ def _quota_freshness(config: RouterConfig) -> dict[str, str]:
         report = monitor.report()
     except Exception:  # noqa: BLE001 - diagnostics may never fail on quota
         return {}
-    status = {}
-    for name, row in report["providers"].items():
-        if row.get("last_error"):
-            status[name] = "error"
-        elif not row.get("snapshot"):
-            status[name] = "unknown"
-        elif row.get("stale"):
-            status[name] = "stale"
-        else:
-            status[name] = "fresh"
-    return status
+    return {
+        name: row.get("status") or "unknown"
+        for name, row in report["providers"].items()
+    }
 
 
 def cmd_sessions(args: argparse.Namespace) -> int:

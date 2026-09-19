@@ -49,19 +49,25 @@ providers:
       config:
         argv: [codexbar, usage, --provider, codex, --json-only]
         timeout_ms: 5000
-        # Lists, because a provider fills in either window. First non-null wins.
-        used_percent:
-          - "0.usage.secondary.usedPercent"
-          - "0.usage.primary.usedPercent"
-        expected_used_percent:
-          - "0.pace.secondary.expectedUsedPercent"
-          - "0.pace.primary.expectedUsedPercent"
-        window_minutes:
-          - "0.usage.secondary.windowMinutes"
-          - "0.usage.primary.windowMinutes"
-        resets_at:
-          - "0.usage.secondary.resetsAt"
-          - "0.usage.primary.resetsAt"
+        # This subscription publishes two overlapping limits. Each stays a
+        # record of its own, with its own usage, length and reset, and
+        # pressure is the highest of them. One window's usage is never read
+        # against another window's reset time.
+        #
+        # A source that reports one limit writes `used_percent`,
+        # `expected_used_percent`, `window_minutes` and `resets_at` at this
+        # level instead, and is read exactly as it always was.
+        windows:
+          - name: five_hour
+            used_percent: "0.usage.primary.usedPercent"
+            expected_used_percent: "0.pace.primary.expectedUsedPercent"
+            window_minutes: "0.usage.primary.windowMinutes"
+            resets_at: "0.usage.primary.resetsAt"
+          - name: weekly
+            used_percent: "0.usage.secondary.usedPercent"
+            expected_used_percent: "0.pace.secondary.expectedUsedPercent"
+            window_minutes: "0.usage.secondary.windowMinutes"
+            resets_at: "0.usage.secondary.resetsAt"
 
   ollama:
     description: Open-weight models on a cloud subscription. It reports no usage numbers, so pressure comes from the circuit breaker alone.

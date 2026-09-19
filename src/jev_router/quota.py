@@ -37,6 +37,52 @@ log = logging.getLogger("jev_router.quota")
 
 
 @dataclass(frozen=True)
+class QuotaWindow:
+    """One limit a provider exposes, with its own usage and its own reset.
+
+    Providers publish several overlapping windows: a five-hour one and a
+    weekly one, say. Each is a coherent record, and the fields stay together:
+    one window's usage is never read against another window's reset time.
+    """
+
+    name: str = ""
+    used_percent: float | None = None
+    used: float | None = None
+    limit: float | None = None
+    expected_used_percent: float | None = None
+    window_minutes: float | None = None
+    resets_at: float | None = None  # epoch seconds
+
+    @property
+    def percent(self) -> float | None:
+        """The window's usage as a percentage, computed only from itself."""
+        if self.used_percent is not None:
+            return self.used_percent
+        if self.used is not None and self.limit:
+            return 100.0 * self.used / self.limit
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "used_percent": self.percent,
+            "used": self.used,
+            "limit": self.limit,
+            "expected_used_percent": self.expected_used_percent,
+            "window_minutes": self.window_minutes,
+            "resets_at": self.resets_at,
+        }
+
+
+# What a snapshot is worth, in one word. `unknown` is not zero: it says nobody
+# measured, and it is reported that way everywhere it is shown.
+FRESH = "fresh"
+STALE = "stale"
+UNKNOWN = "unknown"
+ERROR = "error"
+
+
+@dataclass(frozen=True)
 class QuotaSnapshot:
     """What one poll of one provider found. Numbers only, never a payload."""
 
@@ -47,13 +93,20 @@ class QuotaSnapshot:
     window_minutes: float | None = None
     resets_at: float | None = None  # epoch seconds
     error: str = ""
+    # Present when the source reports several limits. A source that reports
+    # one keeps using the fields above and behaves exactly as it did.
+    windows: tuple[QuotaWindow, ...] = ()
 
     @property
     def ok(self) -> bool:
-        return not self.error and self.used_percent is not None
+        if self.error:
+            return False
+        if self.used_percent is not None:
+            return True
+        return any(w.percent is not None for w in self.windows)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "provider": self.provider,
             "fetched_at": self.fetched_at,
             "used_percent": self.used_percent,
@@ -62,6 +115,34 @@ class QuotaSnapshot:
             "resets_at": self.resets_at,
             "error": self.error,
         }
+        if self.windows:
+            out["windows"] = [w.to_dict() for w in self.windows]
+        return out
+
+
+def snapshot_status(
+    snapshot: QuotaSnapshot | None,
+    now: float,
+    stale_after_seconds: float | None = None,
+) -> str:
+    """One word for how much this reading is worth. Pure.
+
+    A stale or unknown reading contributes nothing to pressure, which is the
+    neutral behaviour the router had before quota existed. It is never
+    reported as unused capacity.
+    """
+    if snapshot is None:
+        return UNKNOWN
+    if snapshot.error:
+        return ERROR
+    if not snapshot.ok:
+        return UNKNOWN
+    if (
+        stale_after_seconds is not None
+        and now - snapshot.fetched_at > stale_after_seconds
+    ):
+        return STALE
+    return FRESH
 
 
 # --- the source registry ------------------------------------------------
@@ -169,10 +250,73 @@ def parse_timestamp(value: Any) -> float | None:
     return stamp.timestamp()
 
 
+def windows_from_payload(data: Any, specs: Any) -> tuple[QuotaWindow, ...]:
+    """Build one record per configured window, each read only from itself."""
+    if not isinstance(specs, list):
+        return ()
+    out: list[QuotaWindow] = []
+    for i, spec in enumerate(specs):
+        if not isinstance(spec, dict):
+            continue
+        window = QuotaWindow(
+            name=str(spec.get("name") or f"window{i + 1}"),
+            used_percent=_number(first_non_null(data, spec.get("used_percent"))),
+            used=_number(first_non_null(data, spec.get("used"))),
+            limit=_number(first_non_null(data, spec.get("limit"))),
+            expected_used_percent=_number(
+                first_non_null(data, spec.get("expected_used_percent"))
+            ),
+            window_minutes=_number(first_non_null(data, spec.get("window_minutes"))),
+            resets_at=parse_timestamp(first_non_null(data, spec.get("resets_at"))),
+        )
+        out.append(window)
+    return tuple(out)
+
+
+def literal_window(spec: dict[str, Any], index: int = 0) -> QuotaWindow:
+    """A window whose numbers are written out rather than looked up by path."""
+    return QuotaWindow(
+        name=str(spec.get("name") or f"window{index + 1}"),
+        used_percent=_number(spec.get("used_percent")),
+        used=_number(spec.get("used")),
+        limit=_number(spec.get("limit")),
+        expected_used_percent=_number(spec.get("expected_used_percent")),
+        window_minutes=_number(spec.get("window_minutes")),
+        resets_at=parse_timestamp(spec.get("resets_at")),
+    )
+
+
+def snapshot_from_windows(
+    provider: str, windows: tuple[QuotaWindow, ...], now: float
+) -> QuotaSnapshot:
+    if not any(w.percent is not None for w in windows):
+        return QuotaSnapshot(
+            provider=provider,
+            fetched_at=now,
+            error="no window reported a usage figure",
+        )
+    # A summary for display only. Pressure comes from the windows, so no
+    # window's usage is ever read against another window's reset.
+    percents = [w.percent for w in windows if w.percent is not None]
+    return QuotaSnapshot(
+        provider=provider,
+        fetched_at=now,
+        used_percent=max(percents),
+        windows=windows,
+    )
+
+
 def snapshot_from_payload(
     provider: str, data: Any, cfg: dict[str, Any], now: float
 ) -> QuotaSnapshot:
-    """Pull the four numbers out of a parsed payload using the configured paths."""
+    """Pull the numbers out of a parsed payload using the configured paths.
+
+    A config with a `windows:` list gets one record per window. A config
+    without one is read exactly as it always was.
+    """
+    windows = windows_from_payload(data, cfg.get("windows"))
+    if windows:
+        return snapshot_from_windows(provider, windows, now)
     used = _number(first_non_null(data, cfg.get("used_percent")))
     if used is None:
         return QuotaSnapshot(
@@ -221,6 +365,14 @@ class StaticSource:
 
     async def fetch(self) -> QuotaSnapshot:
         now = time.time()
+        if isinstance(self.cfg.get("windows"), list):
+            # Written straight into the config, so the values are the values.
+            windows = tuple(
+                literal_window(spec, i)
+                for i, spec in enumerate(self.cfg["windows"])
+                if isinstance(spec, dict)
+            )
+            return snapshot_from_windows(self.provider, windows, now)
         used = _number(self.cfg.get("used_percent"))
         if used is None:
             return QuotaSnapshot(
@@ -351,6 +503,41 @@ def _ramp(value: float, starts_at: float, full_at: float) -> float:
     return max(0.0, min(1.0, (value - starts_at) / (full_at - starts_at)))
 
 
+def window_expected_percent(window: QuotaWindow, now: float) -> float | None:
+    """Where this one window should be, from its own length and its own reset."""
+    if window.expected_used_percent is not None:
+        return max(0.0, min(100.0, window.expected_used_percent))
+    if window.window_minutes and window.resets_at:
+        window_s = window.window_minutes * 60.0
+        if window_s <= 0:
+            return None
+        elapsed = window_s - (window.resets_at - now)
+        return max(0.0, min(100.0, 100.0 * elapsed / window_s))
+    return None
+
+
+def window_pressure(
+    window: QuotaWindow, knobs: QuotaPolicyCfg, now: float
+) -> tuple[float, str]:
+    """Pressure from one window, using nothing but that window's own fields."""
+    used = window.percent
+    if used is None:
+        return 0.0, "no usage numbers"
+    label = window.name or "window"
+    if used >= knobs.full_used_percent:
+        return 1.0, f"{label} is at or above the full mark"
+    expected = window_expected_percent(window, now)
+    if expected is None:
+        return (
+            _ramp(used, knobs.raw_starts_at, knobs.raw_full_at),
+            f"{label} raw percent, no pace",
+        )
+    return (
+        _ramp(used - expected, knobs.pressure_starts_at, knobs.pressure_full_at),
+        f"{label} pace",
+    )
+
+
 def raw_pressure(
     snapshot: QuotaSnapshot | None, knobs: QuotaPolicyCfg, now: float
 ) -> tuple[float, str]:
@@ -359,6 +546,15 @@ def raw_pressure(
         return 0.0, "no snapshot"
     if not snapshot.ok:
         return 0.0, snapshot.error or "no usage numbers"
+    if snapshot.windows:
+        # One pressure per window, and the highest wins. Nothing is averaged
+        # and nothing is crossed over: the window nearest its limit is the one
+        # that constrains the provider.
+        scored = [window_pressure(w, knobs, now) for w in snapshot.windows]
+        usable = [(value, why) for value, why in scored if why != "no usage numbers"]
+        if not usable:
+            return 0.0, "no usage numbers"
+        return max(usable, key=lambda pair: pair[0])
     used = float(snapshot.used_percent or 0.0)
     if used >= knobs.full_used_percent:
         return 1.0, "used is at or above the full mark"
@@ -463,17 +659,20 @@ class QuotaMonitor:
             stale_after = cfg.stale_after_seconds if cfg else None
             snap = state.snapshot
             age = None if snap is None else round(now - snap.fetched_at, 1)
+            status = snapshot_status(snap, now, stale_after)
             providers[name] = {
                 "enabled": state.enabled,
                 "source": state.source_name,
                 "pressure": round(state.pressure, 4),
                 "reason": state.reason,
                 "snapshot": snap.to_dict() if snap else None,
+                # `fresh`, `stale`, `unknown` or `error`. Anything but fresh
+                # contributes nothing to pressure and is never reported as
+                # unused capacity.
+                "status": status,
+                "windows": [w.to_dict() for w in snap.windows] if snap else [],
                 "age_seconds": age,
-                "stale": bool(
-                    snap is not None and stale_after is not None and age is not None
-                    and age > stale_after
-                ),
+                "stale": status == STALE,
                 "polls": state.polls,
                 "errors": state.errors,
                 "last_error": state.last_error,
