@@ -123,6 +123,13 @@ class TurnPlan:
     # downgrade's confirmations.
     recommendation: str | None = None
     direction: str = "hold"  # up | down | hold
+    # The rung this turn's evidence asked for, before the floor and the
+    # ladder's ends had their say. Recorded so a replay can see how far the
+    # policy wanted to move and how far it was allowed to.
+    target: str | None = None
+    target_reason: str = ""
+    upward: str = "jump"
+    downward: str = "step"
     reason: str = ""
     confirmations: int = 0
     needed_confirmations: int = 0
@@ -144,6 +151,10 @@ class TurnPlan:
             "base_effort": self.base_effort,
             "recommendation": self.recommendation,
             "direction": self.direction,
+            "target": self.target,
+            "target_reason": self.target_reason,
+            "upward": self.upward,
+            "downward": self.downward,
             "reason": self.reason,
             "confirmations": self.confirmations,
             "needed_confirmations": self.needed_confirmations,
@@ -167,6 +178,19 @@ def _index(ladder: Sequence[str], effort: str | None) -> int | None:
         return None
 
 
+def _corrective(evidence: Evidence, t: Any) -> bool:
+    """This turn names a defect in the earlier result, and more thinking may fix it.
+
+    A follow-up whose obstacle is a missing credential or a missing fact does
+    not count: more reasoning is not the remedy for either (spec 10.5).
+    """
+    if evidence.corrective_followup is None:
+        return False
+    if evidence.corrective_followup < t.corrective_followup:
+        return False
+    return evidence.failure_mode not in NOT_A_REASONING_PROBLEM
+
+
 def _wants_more(evidence: Evidence, t: Any) -> str:
     """Why this turn argues for more effort, or an empty string."""
     if evidence.difficulty is not None and evidence.difficulty >= t.upgrade_difficulty:
@@ -178,20 +202,80 @@ def _wants_more(evidence: Evidence, t: Any) -> str:
         )
     if evidence.harm_if_wrong is not None and evidence.harm_if_wrong >= t.upgrade_harm:
         return f"harm_if_wrong {evidence.harm_if_wrong:.2f} is at or above {t.upgrade_harm:g}"
-    if (
-        evidence.corrective_followup is not None
-        and evidence.corrective_followup >= t.corrective_followup
-    ):
-        if evidence.failure_mode in NOT_A_REASONING_PROBLEM:
-            # The follow-up is real, but the evidence says the obstacle is a
-            # missing credential or a missing fact. More reasoning is not the
-            # remedy, so this alone does not raise.
-            return ""
+    if _corrective(evidence, t):
         return (
             f"the follow-up names a defect in the earlier result "
             f"({evidence.corrective_followup:.2f})"
         )
     return ""
+
+
+def _named_rung(rungs: Sequence[str], name: str) -> int | None:
+    """The index a target name points at, or nothing.
+
+    `"top"` is the strongest rung this session is allowed. Any other name is
+    a rung, and a name this ladder does not offer is ignored: one mapping is
+    shared by every profile and a profile may offer only two rungs.
+    """
+    if name == "top":
+        return len(rungs) - 1
+    return _index(rungs, name)
+
+
+def _target_index(
+    evidence: Evidence, cfg: Any, rungs: Sequence[str], at: int, protected: bool
+) -> tuple[int, str]:
+    """How far up this turn's evidence reaches, and why that far.
+
+    Owner decision, 2026-09-19: an upward change goes straight to the rung the
+    evidence asks for, so a clearly hard turn on `low` lands on `high` in one
+    move rather than climbing through `medium` over two turns. `upward: step`
+    restores the old single rung.
+
+    Everything here only ever raises the answer above "one more rung", never
+    lowers it, and the caller still applies the floor and the ends of the
+    ladder afterwards.
+    """
+    top = len(rungs) - 1
+    one_more = min(at + 1, top)
+    if cfg.upward == "step":
+        return one_more, ""
+
+    targets = cfg.targets
+    want, note = one_more, ""
+
+    def reach(index: int | None, why: str) -> None:
+        nonlocal want, note
+        if index is not None and index > want:
+            want, note = index, why
+
+    if evidence.difficulty is not None:
+        for rung, entry in targets.difficulty.items():
+            if evidence.difficulty >= entry:
+                reach(
+                    _index(rungs, rung),
+                    f"difficulty {evidence.difficulty:.2f} is at or above the "
+                    f"{entry:g} this ladder asks for {rung}",
+                )
+    if evidence.p_hard is not None and evidence.p_hard >= targets.p_hard_top:
+        reach(
+            top,
+            f"{evidence.p_hard:.2f} of the difficulty mass is on the top level, "
+            f"at or above {targets.p_hard_top:g}, which asks for the top rung",
+        )
+    if _corrective(evidence, cfg.thresholds):
+        reach(
+            _named_rung(rungs, targets.corrective_rung),
+            "a follow-up naming a defect in the earlier result asks for "
+            f"{targets.corrective_rung}",
+        )
+    if protected:
+        reach(
+            _named_rung(rungs, targets.protected_rung),
+            "this session was admitted by a protected rule, which asks for "
+            f"{targets.protected_rung} whenever a turn asks for more at all",
+        )
+    return min(want, top), note
 
 
 def _wants_less(evidence: Evidence, t: Any) -> str:
@@ -239,6 +323,7 @@ def plan_turn(
     evidence: Evidence,
     recommendations: Sequence[str | None] = (),
     pressure: float = 0.0,
+    protected: bool = False,
 ) -> TurnPlan:
     """Decide what this turn's effort should be. Pure.
 
@@ -249,10 +334,15 @@ def plan_turn(
     prior eligible turn, oldest first, used only for counting a downgrade's
     confirmations.
 
+    `protected` says a protected admission rule bound this session, which is
+    a reason to reach the top rung rather than the next one.
+
     The mechanics of spec 10.5, all configurable and all recorded:
 
-    - Upward may act at the next eligible boundary.
-    - Downward needs low-risk evidence and N consecutive recommendations.
+    - Upward may act at the next eligible boundary, and goes straight to the
+      rung the evidence asks for (owner decision, 2026-09-19).
+    - Downward needs low-risk evidence and N consecutive recommendations, and
+      moves one rung at a time.
     - A short "continue" is not downgrade evidence.
     - A corrective follow-up can raise, unless the failure looks like a
       missing credential or a missing fact.
@@ -272,6 +362,8 @@ def plan_turn(
         floor=floor,
         ladder=rungs,
         needed_confirmations=cfg.downgrade_confirmations if cfg.hysteresis else 1,
+        upward=cfg.upward,
+        downward=cfg.downward,
         thresholds=t.model_dump(),
         evidence=evidence.to_facts(),
         quota_pressure=max(0.0, min(1.0, pressure)),
@@ -299,9 +391,16 @@ def plan_turn(
 
     up, down = _wants_more(evidence, t), _wants_less(evidence, t)
     if up:
-        want, direction, why = min(at + 1, len(rungs) - 1), "up", up
+        want, note = _target_index(evidence, cfg, rungs, at, protected)
+        direction, why = "up", up
+        plan.target, plan.target_reason = rungs[want], note
     elif down:
-        want, direction, why = max(at - 1, bottom), "down", down
+        # One rung, unless this deployment asked for the whole way down. The
+        # step is the conservative choice: a downgrade is the change that can
+        # cost quality, so each further rung is argued and confirmed again.
+        step = at - 1 if cfg.downward == "step" else bottom
+        want, direction, why = max(step, bottom), "down", down
+        plan.target = rungs[want]
     elif plan.quota_pressure >= t.quota_pressure_at and not up:
         # Nothing about the turn argues either way, and the provider is
         # scarce. Pressure resolves the hold downward and no further: it
@@ -341,6 +440,10 @@ def plan_turn(
     plan.action = CHANGE
     plan.to_effort = rungs[want]
     plan.reason = f"{current} -> {rungs[want]}: {why}"
+    if direction == "up" and want > at + 1 and plan.target_reason:
+        # The move skipped a rung. Say which rule reached that far, so a plan
+        # that jumps two rungs never has to be reverse-engineered.
+        plan.reason += f"; {plan.target_reason}"
     return plan
 
 

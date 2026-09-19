@@ -169,8 +169,16 @@ def overlay(report: str) -> dict[str, Any]:
                 "downgrade_confirmations": 2,
                 "on_unknown": "keep",
                 "hysteresis": True,
+                "upward": "jump",
+                "downward": "step",
                 "ladder": ["low", "medium", "high"],
                 "ladders": {PROFILE: ["low", "medium", "high"]},
+                "targets": {
+                    "difficulty": {"medium": 1.8, "high": 2.6},
+                    "p_hard_top": 0.6,
+                    "corrective_rung": "top",
+                    "protected_rung": "top",
+                },
                 "thresholds": {
                     "upgrade_difficulty": 1.8,
                     "upgrade_harm": 0.6,

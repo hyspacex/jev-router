@@ -140,6 +140,20 @@ sessions:
       - {id: t7, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
       - {id: t8, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
 
+  - id: cold-start-hard
+    description: >
+      An easy opening and then, with no warning, one clearly hard turn of the
+      kind the live run of 2026-09-19 measured at 2.95. This is the session
+      the upward jump exists for: a climb of one rung a turn serves it at
+      medium and only reaches high after the next boundary.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t2, difficulty: 2.95, harm_if_wrong: 0.40, wants: high}
+      - {id: t3, difficulty: 2.80, harm_if_wrong: 0.40, wants: high}
+      - {id: t4, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+
   - id: consequence-spike
     description: One turn where a mistake would be expensive, then calm again.
     provenance: synthetic

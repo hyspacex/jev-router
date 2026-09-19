@@ -502,7 +502,7 @@ async def test_a_plan_is_logged_as_its_own_decision_event(service):
 
 @respx.mock
 async def test_the_shadow_failure_mode_is_only_asked_with_a_harness_observation(service):
-    jev = turn_jev(difficulty=1.0, corrective=0.9, failure_mode="environment_problem")
+    jev = turn_jev(difficulty=1.0, failure_mode="environment_problem")
     upstream()
     caller = await adaptive(service)
 
@@ -511,6 +511,7 @@ async def test_the_shadow_failure_mode_is_only_asked_with_a_harness_observation(
     assert "failure_mode" not in asked
     settle(service, caller)
 
+    jev = turn_jev(difficulty=1.0, corrective=0.9, failure_mode="environment_problem")
     await caller.turn_plan(
         "turn-0003",
         observations=[
@@ -534,9 +535,9 @@ async def test_the_shadow_failure_mode_is_only_asked_with_a_harness_observation(
         "question": "failure_mode",
         "answer": "environment_problem",
         "action": "keep",
-        "to_effort": "medium",
-        "recommendation": "medium",
-        "reason": "keeping medium: the evidence asks for no change",
+        "to_effort": "low",
+        "recommendation": "low",
+        "reason": "keeping low: the evidence asks for no change",
         "changed": True,
     }
 

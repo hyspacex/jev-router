@@ -26,9 +26,22 @@ experiments:
     downgrade_confirmations: 2
     on_unknown: keep
     hysteresis: true
+    # How far one change may move. `jump` sends an upward change straight to
+    # the rung the evidence asks for; `step` is the older single rung. A
+    # downgrade steps, because a drop that is too deep is only noticed after
+    # the weak answer has been given.
+    upward: jump
+    downward: step
     ladder: [low, medium, high]
     ladders:
       gpt-6-astra: [low, medium, high]
+    # Which rung a turn asks for. `thresholds` below decide whether a turn
+    # wants more at all; these decide how far up it reaches.
+    targets:
+      difficulty: {medium: 1.8, high: 2.6}
+      p_hard_top: 0.6
+      corrective_rung: top
+      protected_rung: top
     thresholds:
       upgrade_difficulty: 1.8
       upgrade_harm: 0.6

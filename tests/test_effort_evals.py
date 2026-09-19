@@ -118,9 +118,22 @@ def test_hysteresis_changes_effort_less_often_than_no_hysteresis():
     assert with_h.changes < without.changes
 
 
+def test_the_two_upward_modes_are_different_arms():
+    """The jump reaches a clearly hard turn on the turn it arrives.
+
+    Owner decision, 2026-09-19. The step arm is kept so the two mechanics can
+    be measured against each other rather than asserted about.
+    """
+    session = next(s for s in sessions() if s.id == "cold-start-hard")
+    jump = effort_replay.run_arm("jev_hysteresis", session)
+    step = effort_replay.run_arm("jev_upward_step", session)
+    assert jump[1]["sent"] == "high" and step[1]["sent"] == "medium"
+    assert jump[1]["adequate"] and not step[1]["adequate"]
+
+
 def test_a_floor_is_never_crossed_by_any_jev_arm():
     session = next(s for s in sessions() if s.id == "high-consequence-floor")
-    for arm in ("jev_hysteresis", "jev_no_hysteresis"):
+    for arm in ("jev_hysteresis", "jev_no_hysteresis", "jev_upward_step"):
         sent = {row["sent"] for row in effort_replay.run_arm(arm, session)}
         assert "low" not in sent, arm
 
