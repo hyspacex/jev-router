@@ -26,6 +26,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from . import effort as E
+from . import protocols as P
 from . import sessions as S
 from .config import AliasCfg, RouterConfig
 from .deciders import build_decider
@@ -43,6 +45,7 @@ from .policy import (
     eligible_models,
     guard_candidate,
     next_model_that_fits,
+    p_hard,
     validate_entry,
 )
 from .policy import finalize as policy_finalize
@@ -51,6 +54,7 @@ from .quota import QuotaMonitor
 from .semantic import SemanticResult
 from .security import Ingress
 from .sessions import ResolveRequest, SessionError, Sessions
+from .state import is_short_continuation, turn_state_v1
 
 log = logging.getLogger("jev_router")
 
@@ -793,6 +797,15 @@ class Router:
                 S.CONTEXT_BUDGET_EXCEEDED, check.reason, detail={"budget": check.to_facts()}
             )
 
+        adaptation = config.adaptation_mode(
+            alias_cfg, req.client_contract.turn_boundary_reporting
+        )
+        if adaptation != "off" and model not in config.adaptive_effort().qualified_profiles:
+            # The experiment is on for this alias and this client, and the
+            # model admission chose is not one anybody qualified. The session
+            # is resolved with adaptation off rather than with a promise the
+            # deployment cannot keep.
+            adaptation = "off"
         wire_model, _extra = apply_effort(config, model, effort)
         decision_id = new_decision_id()
         binding: dict[str, Any] = {
@@ -817,6 +830,12 @@ class Router:
                 "base_effort": effort,
                 "effective_effort": effort,
                 "effort_mode": "fixed",
+                # Agreed once, here, and stored. A session resolved before the
+                # experiment was switched on never gains it, and one resolved
+                # under it keeps its own ledger after it is switched off.
+                "adaptation_mode": adaptation,
+                "expected_effort": effort,
+                "confirmed_effort": effort,
                 "envelope_model": envelope["model_name"] if envelope else None,
                 "decision_id": decision_id,
                 "decision_rule": rule,
@@ -940,6 +959,329 @@ class Router:
                 f"the configured admission_fallback cannot serve this request: {exc}",
             ) from None
         return result.model, result.effort
+
+    # --- the between-turn effort experiment (spec 10) ---------------------
+
+    async def turn_plan(self, request: Request, payload: Any) -> dict[str, Any]:
+        """Prepare an effort-only decision for one new user turn.
+
+        Nothing here executes anything. It decides among the efforts of the
+        profile the session is already bound to, writes the decision down, and
+        hands back either nothing to do or the exact protocol item the client
+        must record. The model, the provider, the negotiated limits and the
+        request-level base effort are not this endpoint's to change.
+        """
+        owner = self.session_owner(request)
+        req = S.parse_turn_plan(payload)
+        row = self.live_session(req.session_id, owner)
+        if row["state"] == "blocked":
+            raise SessionError(
+                S.PROFILE_CHANGED,
+                row["blocked_reason"] or "this binding is blocked",
+                detail={"session_id": req.session_id, "state": "blocked"},
+            )
+        if not hmac.compare_digest(req.binding_revision, row["binding_revision"] or ""):
+            raise SessionError(
+                S.SESSION_CONFLICT,
+                "the acknowledged binding is not the one this session holds",
+                detail={"binding_revision": row["binding_revision"]},
+            )
+
+        mode = row.get("adaptation_mode") or "off"
+        current = row["effective_effort"] or row["base_effort"]
+        evidence_fingerprint = req.evidence_fingerprint()
+
+        stored = self.sessions.get_plan(req.session_id, turn_id=req.turn_id)
+        if stored is not None:
+            # Repeating a plan request returns the decision that was already
+            # made, with no second classifier call. The same turn id carrying
+            # different evidence is a conflict, not a second plan: one change
+            # per user turn.
+            if stored["request_fingerprint"] != evidence_fingerprint:
+                raise SessionError(
+                    S.SESSION_CONFLICT,
+                    "this turn id was already planned with different evidence",
+                    detail={"turn_id": req.turn_id, "plan_id": stored["plan_id"]},
+                )
+            return _plan_response(stored, row, mode)
+
+        if mode == "off":
+            # No per-turn classifier call at all. This is what a client that
+            # asks anyway gets, and it is the same answer the router would
+            # have given before the experiment existed.
+            return _keep_response(
+                req, row, mode, "the between-turn effort experiment is off for this session"
+            )
+
+        self._require_settled_turn(req)
+        blocked_because = self._adaptation_blocked(req, row)
+        if blocked_because:
+            return _keep_response(req, row, mode, blocked_because, action="blocked")
+
+        ladder, floor = self.turn_ladder(row)
+        mcfg = self.config.models[row["model_key"]]
+        strategy = mcfg.effort_control.between_turn
+        started = time.perf_counter()
+        semantics = await self.classify_turn(req, row)
+        pressure = self.pressures().get(row["provider"] or "", 0.0)
+        plan = E.plan_turn(
+            cfg=self.config.adaptive_effort(),
+            ladder=ladder,
+            current=current,
+            base=row["base_effort"],
+            floor=floor,
+            evidence=_turn_evidence(req, semantics),
+            recommendations=E.recommendation_history(
+                self.sessions.plans(req.session_id)
+            ),
+            pressure=pressure,
+        )
+        if mode == "shadow" and plan.action == E.CHANGE:
+            # Shadow keeps the recommendation and sends nothing different.
+            plan.action = E.KEEP
+            plan.to_effort = plan.from_effort
+
+        stored = self.sessions.record_plan(
+            req.session_id,
+            {
+                "plan_id": new_decision_id(),
+                "turn_id": req.turn_id,
+                "sequence": self.sessions.next_sequence(req.session_id),
+                "mode": mode,
+                "action": plan.action,
+                "status": E.PLANNED,
+                "from_effort": plan.from_effort,
+                "to_effort": plan.to_effort,
+                "base_effort": row["base_effort"],
+                "recommendation": plan.recommendation,
+                "expected_effort": plan.to_effort,
+                "history_mode": req.context.history_mode,
+                "request_fingerprint": evidence_fingerprint,
+                "request_id": req.request_id,
+                "reason": plan.reason[:500],
+                "facts": {
+                    **plan.to_facts(),
+                    "strategy": strategy,
+                    "protocol": row["protocol"],
+                },
+                "jev_ms": semantics.jev_ms,
+                "plan_ms": (time.perf_counter() - started) * 1000,
+            },
+        )
+        self._log_effort_plan(row, req, stored, plan, semantics)
+        if plan.action == E.CHANGE:
+            self.sessions.update(
+                row["session_id"], row["version"], expected_effort=plan.to_effort
+            )
+        log.info(
+            "turn plan session=%s turn=%s mode=%s action=%s %s -> %s reason=%s",
+            req.session_id,
+            req.turn_id,
+            mode,
+            plan.action,
+            plan.from_effort,
+            plan.to_effort,
+            plan.reason,
+        )
+        return _plan_response(stored, row, mode)
+
+    def _require_settled_turn(self, req: S.TurnPlanRequest) -> None:
+        """No plan while anything about the last turn is still moving."""
+        previous = req.previous_turn
+        if self.sessions.inflight(req.session_id):
+            raise SessionError(
+                S.TURN_NOT_SETTLED,
+                "an execution for this session is in flight; a turn boundary is "
+                "not a boundary until the turn has finished",
+            )
+        if not previous.id:
+            return  # the first turn of a session has no previous one
+        if not previous.settled:
+            raise SessionError(
+                S.TURN_NOT_SETTLED,
+                f"the client reports turn {previous.id!r} is not settled",
+            )
+        if previous.pending_tool_calls or previous.active_requests:
+            raise SessionError(
+                S.TURN_NOT_SETTLED,
+                f"turn {previous.id!r} still has "
+                f"{previous.pending_tool_calls} pending tool call(s) and "
+                f"{previous.active_requests} active request(s)",
+            )
+
+    def _adaptation_blocked(
+        self, req: S.TurnPlanRequest, row: dict[str, Any]
+    ) -> str:
+        """Why this turn may not adapt, or an empty string.
+
+        Blocked means the model, the limits and the effective effort stay
+        exactly where they are and the ledger keeps every update already
+        applied. It is not an error and it is not a reset.
+        """
+        if row.get("effort_lineage") == "unknown":
+            return (
+                "the lineage or usage of an earlier response could not be read; "
+                "reconcile the open plan before adapting again"
+            )
+        open_row = E.open_change(self.sessions.plans(req.session_id))
+        if open_row is not None:
+            if open_row["status"] == E.OUTCOME_UNKNOWN:
+                raise SessionError(
+                    S.EXECUTION_OUTCOME_UNKNOWN,
+                    f"plan {open_row['plan_id']} was submitted and its outcome is "
+                    "unknown; reconcile it before planning another change",
+                    detail={"plan_id": open_row["plan_id"]},
+                )
+            return (
+                f"plan {open_row['plan_id']} for turn {open_row['turn_id']} is "
+                f"still {open_row['status']}; one change at a time"
+            )
+        mcfg = self.config.models.get(row["model_key"] or "")
+        if mcfg is None:
+            return f"model {row['model_key']!r} is no longer configured"
+        if row["model_key"] not in self.config.adaptive_effort().qualified_profiles:
+            return f"{row['model_key']} is not a qualified profile for this experiment"
+        if mcfg.effort_control.between_turn == "fixed":
+            return f"{row['model_key']} declares no between-turn effort strategy"
+        budget = _context_headroom(req, row, self.config.adaptive_effort())
+        if budget:
+            return budget
+        return ""
+
+    def turn_ladder(self, row: dict[str, Any]) -> tuple[list[str], str | None]:
+        """The rungs this session may move between, and the floor under them.
+
+        The ladder is the profile's configured rungs, kept inside the alias
+        cap, the client minimum and the quality lane the admission rule named.
+        Capability and adequacy are different filters and both apply.
+        """
+        model = row["model_key"] or ""
+        rungs = self.config.effort_ladder(model)
+        alias_cfg = self.config.aliases.get(row["alias"] or "")
+        client_cfg = self.config.clients.get(row["client"] or "")
+        order = self.config.settings.effort_order
+        floor = client_cfg.min_effort if client_cfg else None
+        cap = alias_cfg.max_effort if alias_cfg else None
+
+        if alias_cfg is not None:
+            ruleset = self.config.ruleset_for(alias_cfg)
+            for rule in ruleset.rules:
+                if rule.name == row["decision_rule"] and rule.protected:
+                    # A protected rule exists because the request needs it.
+                    # Whatever it admitted is a floor, not a starting point.
+                    floor = _stronger(order, floor, row["base_effort"])
+            if row["decision_rule"] == "low_confidence":
+                floor = _stronger(order, floor, row["base_effort"])
+
+        lane = self.config.quality_lanes.get(row["quality_lane"] or "")
+        keep = []
+        for effort in rungs:
+            if floor and _rank_of(order, effort) < _rank_of(order, floor):
+                continue
+            if cap and _rank_of(order, effort) > _rank_of(order, cap):
+                continue
+            if lane is not None and not lane.allows(model, effort):
+                continue
+            keep.append(effort)
+        return keep, (floor if floor in keep else (keep[0] if keep else None))
+
+    async def classify_turn(
+        self, req: S.TurnPlanRequest, row: dict[str, Any]
+    ) -> SemanticResult:
+        """One Jev call about one turn. It chooses nothing.
+
+        `classify`, never `decide`: the cross-model policy is not run here, so
+        there is no selected model for a turn assessment to replace.
+        """
+        cfg = self.config.adaptive_effort()
+        alias_cfg = self.config.aliases.get(row["alias"] or "") or AliasCfg()
+        scoped = alias_cfg.model_copy(update={"draft": None})
+        state = turn_state_v1(req.state.model_dump())
+        # `failure_mode` is only meaningful with a grounded observation behind
+        # it. Without one it would be asked to guess, so it is not asked.
+        grounded = bool(state["facts"].get("failure_observations_available"))
+        shadow = [q for q in cfg.shadow_questions if grounded]
+        features = extract_features(
+            {"messages": [{"role": "user", "content": req.state.current_user_request}]},
+            {"x-router-client": row["client"] or ""},
+        )
+        decider = self.decider_for(row["alias"] or "")
+        classify = getattr(decider, "classify", None)
+        if classify is None:
+            return SemanticResult(error="this decider cannot classify a turn")
+        try:
+            return await classify(
+                features,
+                scoped,
+                state=state,
+                question_ids=[q for q in cfg.questions if q in self.config.questions],
+                shadow_ids=[q for q in shadow if q in self.config.questions],
+            )
+        except Exception as exc:  # noqa: BLE001 - a classifier failure keeps the effort
+            log.warning("turn classification failed: %s", type(exc).__name__)
+            return SemanticResult(error=f"classifier error: {type(exc).__name__}")
+
+    def _log_effort_plan(
+        self,
+        row: dict[str, Any],
+        req: S.TurnPlanRequest,
+        stored: dict[str, Any],
+        plan: Any,
+        semantics: SemanticResult,
+    ) -> None:
+        """One `effort_plan` row in the same decision log as everything else."""
+        try:
+            row_id = self.store.log_decision(
+                decision_id=stored["plan_id"],
+                alias=row["alias"] or "",
+                client=row["client"] or "",
+                conversation_key="",
+                state_builder="turn_state_v1",
+                answers=semantics.answers,
+                features={
+                    "alias": row["alias"],
+                    "session_mode": "strict",
+                    "event": "new_user_turn",
+                    "history_mode": req.context.history_mode,
+                    **plan.to_facts(),
+                },
+                config_hash=self.config.config_hash,
+                model=row["model_key"] or "",
+                effort=stored["to_effort"],
+                rule=f"effort_{stored['action']}",
+                mode=self.config.settings.mode,
+                fallback=bool(semantics.error),
+                pinned=False,
+                jev_ms=semantics.jev_ms,
+                jev_tokens=semantics.jev_input_tokens,
+                est_tokens=0,
+                message_count=0,
+                state=semantics.state,
+            )
+            self.store.update_decision(
+                row_id,
+                intended_model=row["model_key"] or "",
+                intended_effort=stored["recommendation"] or "",
+                response_ms=stored.get("plan_ms"),
+            )
+            self.sessions.annotate_decision(
+                row_id,
+                event_type=S.EVENT_EFFORT_PLAN,
+                session_id=req.session_id,
+                turn_id=req.turn_id,
+                request_id=req.request_id,
+                quality_lane=row["quality_lane"],
+            )
+            self.sessions.annotate_semantics(
+                row_id,
+                packet_version=semantics.packet_version,
+                shadow_packet_version=semantics.shadow_packet_version,
+                shadow_answers=SemanticResult(shadow=semantics.shadow).shadow_values(),
+                action=f"effort_{stored['action']}",
+            )
+            self.sessions.update_plan(stored["plan_id"], decision_id=stored["plan_id"])
+        except Exception:  # noqa: BLE001 - diagnostics may never fail a request
+            log.exception("could not log the effort plan")
 
     # --- managed execution -----------------------------------------------
 
@@ -1245,6 +1587,149 @@ class Router:
             started=started,
             on_finish=on_finish,
         )
+
+
+# --- turn-plan helpers ---------------------------------------------------
+
+
+def _rank_of(order: list[str], effort: str | None) -> int:
+    try:
+        return order.index(effort or "")
+    except ValueError:
+        return -1
+
+
+def _stronger(order: list[str], left: str | None, right: str | None) -> str | None:
+    """The higher of two floors, either of which may be absent."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return left if _rank_of(order, left) >= _rank_of(order, right) else right
+
+
+def _context_headroom(
+    req: S.TurnPlanRequest, row: dict[str, Any], cfg: Any
+) -> str:
+    """Stop adapting before the agreed context safety limit (F18).
+
+    The session keeps running on the same model at the same effort. Only the
+    experiment stops, and the ledger is untouched.
+    """
+    total = req.context.estimated_total_tokens
+    window = row["context_window"] or 0
+    if not total or not window:
+        return ""
+    limit = int(window * cfg.thresholds.context_safety_fraction)
+    if total < limit:
+        return ""
+    return (
+        f"{total} tokens of an agreed {window} token window is at or past the "
+        f"{cfg.thresholds.context_safety_fraction:.0%} safety limit; the "
+        "experiment stops here and the binding is unchanged"
+    )
+
+
+def _turn_evidence(req: S.TurnPlanRequest, semantics: SemanticResult) -> E.Evidence:
+    """Jev's answers about this turn, as numbers the pure policy compares."""
+    if semantics.error:
+        return E.Evidence(error=semantics.error)
+    answers = semantics.answers
+
+    def value(qid: str, kind: str) -> float | None:
+        answer = answers.get(qid)
+        if not isinstance(answer, dict) or answer.get("type") != kind:
+            return None
+        number = answer.get(kind)
+        return float(number) if isinstance(number, (int, float)) else None
+
+    shadow_failure = semantics.shadow.get("failure_mode") or {}
+    return E.Evidence(
+        difficulty=value("difficulty", "score"),
+        p_hard=p_hard(answers.get("difficulty")),
+        harm_if_wrong=value("harm_if_wrong", "noul"),
+        corrective_followup=value("corrective_followup", "noul"),
+        failure_mode=(
+            shadow_failure.get("choice")
+            if shadow_failure.get("type") == "choice"
+            else None
+        ),
+        short_continuation=is_short_continuation(req.state.current_user_request),
+    )
+
+
+def _plan_response(
+    stored: dict[str, Any], row: dict[str, Any], mode: str
+) -> dict[str, Any]:
+    """What the client is told. An executable item only for a real change."""
+    facts = stored.get("facts") or {}
+    out: dict[str, Any] = {
+        "schema_version": "1",
+        "session_id": stored["session_id"],
+        "turn_id": stored["turn_id"],
+        "plan_id": stored["plan_id"],
+        "action": stored["action"],
+        "adaptation": mode,
+        "model_key": row["model_key"],
+        "base_effort": stored["base_effort"],
+        "previous_effective_effort": stored["from_effort"],
+        "next_effective_effort": stored["to_effort"],
+        "reason": stored["reason"],
+        "status": stored["status"],
+    }
+    if mode == "shadow":
+        # What it would have done. There is nothing to execute, and the
+        # request the client sends next is the fixed-effort one it was
+        # already going to send.
+        out["hypothetical_effort"] = stored["recommendation"]
+    if stored["action"] != E.CHANGE:
+        return out
+    strategy = facts.get("strategy") or ""
+    if strategy == "request_parameter":
+        out["update"] = {
+            "parameter": "reasoning.effort",
+            "value": stored["to_effort"],
+            "rule": "set the request parameter on the next request of this turn",
+        }
+        return out
+    out["update"] = {
+        "item": P.configuration_update(stored["to_effort"] or ""),
+        "rule": (
+            "insert this item immediately before the designated new user "
+            "message, keep every earlier update where it is, and leave the "
+            "request-level reasoning.effort at the base effort"
+        ),
+    }
+    out["headers"] = {
+        "X-Router-Turn": stored["turn_id"],
+        "X-Router-Turn-Plan": stored["plan_id"],
+    }
+    return out
+
+
+def _keep_response(
+    req: S.TurnPlanRequest,
+    row: dict[str, Any],
+    mode: str,
+    reason: str,
+    action: str = E.KEEP,
+) -> dict[str, Any]:
+    """An answer with no plan behind it: nothing was decided, nothing stored."""
+    current = row["effective_effort"] or row["base_effort"]
+    return {
+        "schema_version": "1",
+        "session_id": req.session_id,
+        "turn_id": req.turn_id,
+        "plan_id": "",
+        "action": action,
+        "adaptation": mode,
+        "model_key": row["model_key"],
+        "base_effort": row["base_effort"],
+        "previous_effective_effort": current,
+        "next_effective_effort": current,
+        "reason": reason,
+        "status": "",
+    }
 
 
 # --- session helpers ----------------------------------------------------
@@ -1698,6 +2183,16 @@ async def resolve_session(request: Request) -> Response:
     return JSONResponse(await router.resolve(request, payload))
 
 
+async def turn_plan(request: Request) -> Response:
+    """Prepare an effort-only decision for a new user turn (experimental)."""
+    router: Router = request.app.state.router
+    try:
+        payload = json.loads(await request.body())
+    except ValueError:
+        raise SessionError(S.INVALID_ROUTER_INPUT, "body must be JSON") from None
+    return JSONResponse(await router.turn_plan(request, payload))
+
+
 async def close_session(request: Request) -> Response:
     """End a session deliberately. The row stays as a tombstone."""
     router: Router = request.app.state.router
@@ -1759,7 +2254,14 @@ def session_report(router: Router, row: dict[str, Any]) -> dict[str, Any]:
         "base_effort": row["base_effort"],
         "effective_effort": row["effective_effort"],
         "effort_mode": row["effort_mode"] or "fixed",
-        "adaptation": "off",
+        # Expected is what the newest plan asked for; confirmed is what a
+        # provider completion carried. They are reported apart because they
+        # are apart.
+        "expected_effort": row.get("expected_effort") or row["base_effort"],
+        "confirmed_effort": row.get("confirmed_effort") or row["base_effort"],
+        "adaptation": row.get("adaptation_mode") or "off",
+        "effort_lineage": row.get("effort_lineage") or "known",
+        "turn_plans": router.sessions.plans(row["session_id"], limit=10),
         "decision_id": row["decision_id"],
         "decision_rule": row["decision_rule"],
         "decision_reason": row["decision_reason"],
@@ -1852,6 +2354,7 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/router/feedback", post_feedback, methods=["POST"]),
         Route("/router/feedback", list_feedback, methods=["GET"]),
         Route("/router/resolve", resolve_session, methods=["POST"]),
+        Route("/router/turn-plan", turn_plan, methods=["POST"]),
         Route("/router/sessions", list_sessions, methods=["GET"]),
         Route("/router/sessions/{session_id}", show_session, methods=["GET"]),
         Route("/router/sessions/{session_id}/close", close_session, methods=["POST"]),

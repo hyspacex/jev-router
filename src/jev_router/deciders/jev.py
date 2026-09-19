@@ -102,7 +102,13 @@ class JevDecider:
             return ""
 
     async def classify(
-        self, features: Features, alias_cfg: AliasCfg
+        self,
+        features: Features,
+        alias_cfg: AliasCfg,
+        *,
+        state: Any = None,
+        question_ids: list[str] | None = None,
+        shadow_ids: list[str] | None = None,
     ) -> SemanticResult:
         """Ask Jev what this turn is. No model is chosen here.
 
@@ -111,12 +117,25 @@ class JevDecider:
         active answers exactly as it always has, and validates the shadow
         answers separately. A malformed shadow answer is dropped and counted;
         it can neither weaken the active validation nor reach the policy.
+
+        A caller with its own packet passes `state` and names the questions
+        itself. That is how a turn boundary asks its own short set of
+        questions about a state it assembled, without borrowing the alias's
+        admission questions or its draft step.
         """
         settings = self.config.settings
-        state: Any = None
         started = time.perf_counter()
-        active_ids = active_questions(self.config, alias_cfg)
-        shadow_ids = shadow_questions(self.config, alias_cfg)
+        prepared = state
+        active_ids = (
+            list(question_ids)
+            if question_ids is not None
+            else active_questions(self.config, alias_cfg)
+        )
+        shadow_ids = (
+            list(shadow_ids)
+            if shadow_ids is not None
+            else shadow_questions(self.config, alias_cfg)
+        )
 
         def versions(builder: str) -> tuple[str, str]:
             return (
@@ -126,7 +145,11 @@ class JevDecider:
 
         active_version, shadow_version = versions(alias_cfg.state_builder)
         try:
-            state = build_state(alias_cfg.state_builder, features, self.config)
+            state = (
+                prepared
+                if prepared is not None
+                else build_state(alias_cfg.state_builder, features, self.config)
+            )
             draft = await self.draft(features, alias_cfg)
             if draft and isinstance(state, dict) and alias_cfg.draft is not None:
                 state[alias_cfg.draft.state_field] = draft

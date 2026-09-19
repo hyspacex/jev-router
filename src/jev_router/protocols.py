@@ -1,0 +1,475 @@
+"""The Responses wire contract for the effort experiment.
+
+Not a universal converter. This validates one experimental path and observes
+its replies; nothing here rewrites a request into another format, and nothing
+here touches a streamed byte.
+
+Two jobs:
+
+- **Validation.** For a session running the native strategy, check before
+  forwarding that the request-level base effort is untouched, that every
+  update the ledger says is in the history is still at its original position,
+  that the new one sits immediately before the designated user message, and
+  that the client has not written an update of its own. The router never
+  inserts the item; the client owns the transcript and the router owns the
+  plan.
+- **Observation.** A bounded read-only tap on the reply that reads the
+  response id, the terminal status and the usage. It yields every chunk
+  unchanged, never assembles output or reasoning text, and a parse failure
+  marks lineage unknown rather than retrying or altering anything.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+RESPONSES = "openai-responses"
+CHAT = "openai-chat"
+
+UPDATE_TYPE = "configuration_update"
+
+# Settings that would let the provider rewrite the history behind our back.
+# The initial native experiment refuses them outright rather than trying to
+# reapply updates after a compaction it did not perform (spec 10.3).
+COMPACTION_FIELDS = (
+    "context_management",
+    "compaction",
+    "auto_compaction",
+    "compaction_trigger",
+    "auto_truncation",
+)
+
+# The most of a reply the observer will hold while looking for one event
+# boundary. Past this the partial is dropped and lineage is unknown.
+OBSERVER_BUFFER_BYTES = 256 * 1024
+
+
+def configuration_update(effort: str) -> dict[str, Any]:
+    """The provider's own item. Not a prompt, not an instruction."""
+    return {"type": UPDATE_TYPE, "reasoning": {"effort": effort}}
+
+
+def is_update(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("type") == UPDATE_TYPE
+
+
+def update_effort(item: Any) -> str | None:
+    if not is_update(item):
+        return None
+    reasoning = item.get("reasoning")
+    if not isinstance(reasoning, dict):
+        return None
+    effort = reasoning.get("effort")
+    return effort if isinstance(effort, str) else None
+
+
+def is_user_message(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if item.get("role") == "user":
+        return True
+    return item.get("type") == "message" and item.get("role") == "user"
+
+
+def canonical(payload: Any) -> bytes:
+    return json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str
+    ).encode()
+
+
+def prefix_hash(items: list[Any], upto: int) -> str:
+    """A hash of everything before a position.
+
+    Repeated identical user text is not a unique anchor, so an update's place
+    in the history is identified by the whole prefix that leads to it, not by
+    the message that follows it.
+    """
+    return hashlib.sha256(canonical(items[:upto])).hexdigest()
+
+
+def input_items(body: dict[str, Any]) -> list[Any]:
+    """The Responses `input` as a list. A bare string is one user message."""
+    value = body.get("input")
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, str):
+        return [{"type": "message", "role": "user", "content": value}]
+    return []
+
+
+def update_positions(items: list[Any]) -> list[int]:
+    return [i for i, item in enumerate(items) if is_update(item)]
+
+
+def last_user_position(items: list[Any]) -> int:
+    for i in range(len(items) - 1, -1, -1):
+        if is_user_message(items[i]):
+            return i
+    return -1
+
+
+# --- validation ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HistoryCheck:
+    """What a request's history says about the effort updates in it."""
+
+    ok: bool
+    reason: str = ""
+    # Where the new update sits, and the hash of everything before it. Both
+    # go on the ledger row so a later full replay can be checked against them.
+    position: int | None = None
+    prefix: str = ""
+    matched: tuple[str, ...] = ()
+
+    @classmethod
+    def refused(cls, reason: str) -> HistoryCheck:
+        return cls(ok=False, reason=reason)
+
+
+def check_base_effort(body: dict[str, Any], base: str | None) -> str:
+    """The request-level effort is the base effort and stays there.
+
+    An update item moves the effective effort. Moving the request field as
+    well would be a second owner for the same setting, and the reply reports
+    that field back, so the two would become impossible to tell apart.
+    """
+    reasoning = body.get("reasoning")
+    sent = reasoning.get("effort") if isinstance(reasoning, dict) else None
+    if sent is None:
+        return "" if base is None else (
+            f"the request must carry reasoning.effort {base!r}, the base effort "
+            "this session was bound at"
+        )
+    if base is not None and sent != base:
+        return (
+            f"reasoning.effort is {sent!r} and the base effort is {base!r}; the "
+            "base setting does not move, the update item does"
+        )
+    return ""
+
+
+def check_compaction(body: dict[str, Any]) -> str:
+    """Automatic compaction and truncation are refused for these sessions."""
+    if str(body.get("truncation") or "") == "auto":
+        return (
+            "truncation 'auto' lets the provider drop history the effort ledger "
+            "has to be able to find again; it is not supported while the "
+            "between-turn experiment is active on this session"
+        )
+    present = [name for name in COMPACTION_FIELDS if body.get(name) is not None]
+    if present:
+        return (
+            f"{', '.join(present)} rewrites the history behind the ledger and is "
+            "not supported while the between-turn experiment is active on this "
+            "session"
+        )
+    return ""
+
+
+def validate_full_history(
+    items: list[Any],
+    ledger: list[dict[str, Any]],
+    *,
+    expected: str | None,
+) -> HistoryCheck:
+    """Every earlier update where it was, and at most one new one (F08, F09).
+
+    `ledger` is the applied updates, oldest first, each carrying the position
+    and prefix hash it was accepted at. `expected` is the effort this turn's
+    plan asks for, or None when the plan changes nothing.
+    """
+    found = update_positions(items)
+    for row in ledger:
+        at = row.get("anchor_position")
+        if at is None:
+            return HistoryCheck.refused(
+                f"the update for turn {row.get('turn_id')!r} has no recorded "
+                "position, so a full replay cannot be checked against it"
+            )
+        if at >= len(items) or not is_update(items[at]):
+            return HistoryCheck.refused(
+                f"the update for turn {row.get('turn_id')!r} is missing from "
+                f"position {at} of the replayed history"
+            )
+        if update_effort(items[at]) != row.get("to_effort"):
+            return HistoryCheck.refused(
+                f"the update at position {at} asks for "
+                f"{update_effort(items[at])!r} and the ledger recorded "
+                f"{row.get('to_effort')!r}"
+            )
+        if prefix_hash(items, at) != row.get("anchor_prefix_hash"):
+            return HistoryCheck.refused(
+                f"the history before position {at} is not the history the "
+                f"update for turn {row.get('turn_id')!r} was accepted against"
+            )
+
+    known = {row.get("anchor_position") for row in ledger}
+    fresh = [at for at in found if at not in known]
+    matched = tuple(str(row.get("plan_id")) for row in ledger)
+
+    if expected is None:
+        if fresh:
+            return HistoryCheck.refused(
+                f"the request carries an effort update at position {fresh[0]} "
+                "that no plan asked for; while the router manages adaptation it "
+                "is the only owner of these items"
+            )
+        return HistoryCheck(ok=True, matched=matched)
+
+    if len(fresh) != 1:
+        return HistoryCheck.refused(
+            f"this turn's plan expects exactly one new effort update and the "
+            f"request carries {len(fresh)}"
+        )
+    at = fresh[0]
+    if update_effort(items[at]) != expected:
+        return HistoryCheck.refused(
+            f"the new update asks for {update_effort(items[at])!r} and the plan "
+            f"asks for {expected!r}"
+        )
+    problem = _placement(items, at)
+    if problem:
+        return HistoryCheck.refused(problem)
+    return HistoryCheck(
+        ok=True, position=at, prefix=prefix_hash(items, at), matched=matched
+    )
+
+
+def _placement(items: list[Any], at: int) -> str:
+    """Immediately before the designated new user message, and not adjacent."""
+    if at + 1 >= len(items) or not is_user_message(items[at + 1]):
+        return (
+            f"the new effort update at position {at} is not immediately before a "
+            "user message"
+        )
+    if at + 1 != last_user_position(items):
+        return (
+            "the new effort update is before an earlier user message, not before "
+            "the new one this turn is about"
+        )
+    if at and is_update(items[at - 1]):
+        return f"two effort updates are adjacent at positions {at - 1} and {at}"
+    if at + 1 < len(items) and is_update(items[at + 1]):
+        return f"two effort updates are adjacent at positions {at} and {at + 1}"
+    return ""
+
+
+def validate_chain(
+    items: list[Any],
+    ledger: list[dict[str, Any]],
+    *,
+    previous_response_id: str,
+    expected: str | None,
+    lineage: set[str],
+) -> HistoryCheck:
+    """A `previous_response_id` delta (F10).
+
+    The parent has to be a response this session is known to have accepted,
+    an update the provider already holds must not be sent again, and the new
+    one appears exactly once.
+    """
+    if lineage and previous_response_id not in lineage:
+        return HistoryCheck.refused(
+            f"previous_response_id {previous_response_id!r} is not a response "
+            "this session is known to have accepted; the parent lineage has to "
+            "be one the ledger can see"
+        )
+    found = update_positions(items)
+    # An update the provider already has is on its side of the chain. The
+    # delta carries what is new, so anything in it that the provider is
+    # already holding is a duplicate.
+    persisted = [row for row in ledger if row.get("response_id")]
+
+    if expected is None:
+        if found:
+            return HistoryCheck.refused(
+                "the delta carries an effort update that no plan asked for; "
+                "while the router manages adaptation it is the only owner of "
+                "these items"
+            )
+        return HistoryCheck(ok=True)
+    if len(found) > 1:
+        return HistoryCheck.refused(
+            f"the delta carries {len(found)} effort updates and the plan asks "
+            "for one"
+        )
+    if not found:
+        return HistoryCheck.refused(
+            "this turn's plan asks for an effort update and the delta carries none"
+        )
+    at = found[0]
+    sent = update_effort(items[at])
+    if sent != expected:
+        return HistoryCheck.refused(
+            f"the new update asks for {sent!r} and the plan asks for {expected!r}"
+        )
+    if persisted and persisted[-1].get("to_effort") == sent:
+        return HistoryCheck.refused(
+            f"the provider already holds an update setting {sent!r}; a chain "
+            "delta must not resend it"
+        )
+    problem = _placement(items, at)
+    if problem:
+        return HistoryCheck.refused(problem)
+    return HistoryCheck(ok=True, position=at, prefix=prefix_hash(items, at))
+
+
+# --- the bounded read-only observer (spec 10.7) --------------------------
+
+
+@dataclass
+class Observation:
+    """What the tap could read. Unknown is unknown, never a default."""
+
+    response_id: str = ""
+    status: str = ""
+    usage: dict[str, Any] = field(default_factory=dict)
+    parse_failed: bool = False
+    events: int = 0
+
+    @property
+    def completed(self) -> bool:
+        return self.status == "completed"
+
+    @property
+    def known(self) -> bool:
+        return bool(self.response_id) and bool(self.status) and not self.parse_failed
+
+    def to_facts(self) -> dict[str, Any]:
+        return {
+            "response_id": self.response_id,
+            "status": self.status,
+            "usage": dict(self.usage),
+            "parse_failed": self.parse_failed,
+            "events": self.events,
+        }
+
+
+# The events worth parsing. Everything else is passed over without being read.
+TERMINAL_EVENTS = (
+    "response.completed",
+    "response.failed",
+    "response.incomplete",
+    "response.cancelled",
+)
+
+
+class Observer:
+    """A read-only tap on a Responses reply.
+
+    It never returns bytes and never holds output or reasoning text. The
+    caller yields the chunk it was given, unchanged, whatever this does with
+    it. A parse failure sets `parse_failed` and stops the tap; it never
+    raises, never retries and never alters the reply.
+    """
+
+    def __init__(self, limit: int = OBSERVER_BUFFER_BYTES) -> None:
+        self.observation = Observation()
+        self.limit = limit
+        self._buffer = bytearray()
+        self._stopped = False
+
+    def feed(self, chunk: bytes) -> None:
+        if self._stopped or not chunk:
+            return
+        try:
+            self._buffer.extend(chunk)
+            while True:
+                at = self._buffer.find(b"\n\n")
+                if at < 0:
+                    break
+                block = bytes(self._buffer[:at])
+                del self._buffer[: at + 2]
+                self._read_event(block)
+            if len(self._buffer) > self.limit:
+                # One event larger than the whole buffer. Drop the partial
+                # rather than grow: the reply is untouched and lineage for
+                # this request is simply unknown.
+                self._buffer.clear()
+                self.observation.parse_failed = True
+                self._stopped = True
+        except Exception:  # noqa: BLE001 - observation may never break a reply
+            self.observation.parse_failed = True
+            self._stopped = True
+
+    def feed_json(self, body: bytes) -> None:
+        """A non-streamed reply, read the same way."""
+        if self._stopped:
+            return
+        try:
+            payload = json.loads(body)
+        except (TypeError, ValueError):
+            self.observation.parse_failed = True
+            self._stopped = True
+            return
+        if isinstance(payload, dict):
+            self.observation.events += 1
+            self._take(payload)
+
+    def finish(self) -> Observation:
+        if self._buffer and not self.observation.status:
+            # A reply that ended mid-event never told us how it ended.
+            self.observation.parse_failed = True
+        self._buffer.clear()
+        self._stopped = True
+        return self.observation
+
+    # --- parsing ------------------------------------------------------
+
+    def _read_event(self, block: bytes) -> None:
+        payload: dict[str, Any] | None = None
+        kind = ""
+        for line in block.split(b"\n"):
+            if line.startswith(b"event:"):
+                kind = line[6:].strip().decode("utf-8", "replace")
+            elif line.startswith(b"data:"):
+                raw = line[5:].strip()
+                if raw in (b"", b"[DONE]"):
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except (TypeError, ValueError):
+                    self.observation.parse_failed = True
+                    self._stopped = True
+                    return
+                if isinstance(parsed, dict):
+                    payload = parsed
+        if payload is None:
+            return
+        self.observation.events += 1
+        kind = str(payload.get("type") or kind)
+        if kind and kind not in TERMINAL_EVENTS and not kind.startswith("response.created"):
+            return
+        self._take(payload.get("response") if isinstance(payload.get("response"), dict) else payload)
+
+    def _take(self, response: Any) -> None:
+        """Four fields, by name. Nothing else is read out of the reply."""
+        if not isinstance(response, dict):
+            return
+        if isinstance(response.get("id"), str):
+            self.observation.response_id = response["id"]
+        if isinstance(response.get("status"), str):
+            self.observation.status = response["status"]
+        usage = response.get("usage")
+        if isinstance(usage, dict):
+            self.observation.usage = _usage(usage)
+
+
+def _usage(usage: dict[str, Any]) -> dict[str, Any]:
+    """Counts only, including the cached input tokens the cache work needs."""
+    out: dict[str, Any] = {}
+    for name in ("input_tokens", "output_tokens", "total_tokens"):
+        if isinstance(usage.get(name), (int, float)):
+            out[name] = usage[name]
+    details = usage.get("input_tokens_details")
+    if isinstance(details, dict) and isinstance(details.get("cached_tokens"), (int, float)):
+        out["cached_input_tokens"] = details["cached_tokens"]
+    details = usage.get("output_tokens_details")
+    if isinstance(details, dict) and isinstance(details.get("reasoning_tokens"), (int, float)):
+        out["reasoning_tokens"] = details["reasoning_tokens"]
+    return out
