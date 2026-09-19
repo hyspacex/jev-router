@@ -40,7 +40,7 @@ session_routing:
   enabled: true
   prepared_ttl_seconds: 600     # a resolved but unused contract expires
   max_inflight_per_session: 1   # a second concurrent request is a conflict
-  require_control_token: true
+  require_control_token: true   # the only value there is; false is an error
   max_request_history: 200      # finished request ids kept per session
 
 aliases:
@@ -341,6 +341,12 @@ so rather than pretending:
 Strict control and execution requests require the router credential even on
 loopback, where the read-only router endpoints do not. Set
 `JEV_ROUTER_ADMIN_TOKEN` before using any of this.
+
+There is no setting that turns that off. `require_control_token` stays in the
+file so a config that already says `true` keeps loading, and `false` is a
+config error with a message saying so: a strict session is scoped to the owner
+of that credential, so there has to be one to scope it to. A deployment that
+does not want strict sessions sets `session_routing.enabled: false`.
 
 Nothing recoverable is stored. Request fingerprints are sha256 hashes, the
 owner is a sha256 hash, and no message text, prompt or key is written.

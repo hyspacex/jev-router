@@ -476,9 +476,26 @@ class SessionRoutingCfg(Base):
     # One execution per session at a time. A second concurrent one is a
     # conflict, not a queue.
     max_inflight_per_session: int = Field(default=1, ge=1)
-    # Strict control and execution requests need the router credential even on
-    # loopback, where the read-only endpoints do not.
+    # Strict control and execution requests need the router credential, always
+    # (spec 9.1), where the read-only endpoints accept a loopback peer. The
+    # field stays so a config that already says `true` keeps loading, and
+    # `false` is refused rather than quietly turning the check off: a strict
+    # session is scoped to the owner of that credential, so there has to be
+    # one to scope it to.
     require_control_token: bool = True
+
+    @field_validator("require_control_token")
+    @classmethod
+    def _always_required(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError(
+                "strict control and execution requests always need the router "
+                "control credential, even on loopback: a strict session is "
+                "scoped to its owner. Remove 'require_control_token: false', or "
+                "set session_routing.enabled: false if this deployment does not "
+                "want strict sessions at all"
+            )
+        return value
     # How many finished request-ID records one session keeps. Records whose
     # outcome is unknown are never dropped, so a forgotten ID is never read as
     # proof that it did not execute.

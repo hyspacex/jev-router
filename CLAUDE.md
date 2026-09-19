@@ -207,6 +207,9 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   a machine code and keep the binding; only the caller replaces it. An
   omitted `session_mode` means legacy, and legacy behaviour stays byte for
   byte what it was.
+- Strict control and execution requests always need the router control
+  credential, even on loopback: a session is scoped to its owner.
+  `require_control_token: false` is a config error, not a way off.
 - Admission runs the decider exactly once and never executes anything. Jev
   failure uses the alias's explicit `admission_fallback` or returns
   `NO_SAFE_ADMISSION`, its answers are stored as absent, and recovery does not

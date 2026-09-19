@@ -680,7 +680,9 @@ class Router:
 
         The read-only router endpoints accept a loopback peer when no token is
         configured. Strict control and execution requests do not: a session is
-        scoped to the owner of that credential, so there has to be one.
+        scoped to the owner of that credential, so there has to be one. There
+        is no setting that turns this off; `require_control_token: false` is a
+        config error (spec 9.1).
         """
         cfg = self.config.session_routing
         if not cfg.enabled:
@@ -690,8 +692,6 @@ class Router:
             )
         env = self.config.settings.admin_token_env
         token = os.environ.get(env, "")
-        if not cfg.require_control_token:
-            return S.owner_key(token or "local-owner")
         if not token:
             raise SessionError(
                 S.ROUTER_UNAUTHORIZED,
