@@ -1,0 +1,36 @@
+id: mechanical-transform
+family: mechanical
+description: Convert a settings file from one stated format to another. The rule is given.
+prompt: >
+  `config/settings.env` holds `KEY=value` lines. Write `config/settings.json`
+  containing the same keys and values as a flat JSON object, with the keys
+  lower-cased. Leave `settings.env` alone.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    config/settings.env: |
+      HOST=127.0.0.1
+      PORT=8318
+      LOG_LEVEL=info
+    README.md: |
+      Settings live in config/.
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_settings.py: |
+      import json
+      import pathlib
+
+
+      def test_json_matches_the_env_file():
+          data = json.loads(pathlib.Path("config/settings.json").read_text())
+          assert data == {"host": "127.0.0.1", "port": "8318", "log_level": "info"}
+
+
+      def test_the_env_file_is_untouched():
+          text = pathlib.Path("config/settings.env").read_text()
+          assert "HOST=127.0.0.1" in text and "PORT=8318" in text
+  expect_fail_before: true
+caps:
+  max_calls: 10
+  wall_clock_seconds: 240

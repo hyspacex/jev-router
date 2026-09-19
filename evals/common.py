@@ -14,7 +14,7 @@ import os
 import random
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -195,6 +195,11 @@ class Case:
     source: str = "hand"      # hand, or the public dataset the case came from
     label_source: str = "hand"
     split: str = "tune"
+    # Labels for the atomic shadow questions, on the subset that carries them.
+    # A case without them is skipped by the per-question scorers; nothing in
+    # `expected` is ever restated here, so adding one cannot move an existing
+    # number (invariant I14).
+    labels: dict[str, Any] = field(default_factory=dict)
 
     @property
     def labelled(self) -> bool:
@@ -389,6 +394,7 @@ def _one_case(item: dict[str, Any]) -> Case:
         attack_vector=item.get("attack_vector", ""),
         source=item.get("source", "hand"),
         label_source=item.get("label_source", "hand"),
+        labels=dict(item.get("labels") or {}),
     )
 
 

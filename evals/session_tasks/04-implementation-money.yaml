@@ -1,0 +1,47 @@
+id: implementation-money
+family: implementation
+description: Split an amount across shares without losing or inventing a penny.
+prompt: >
+  Implement `split_amount(total_cents, shares)` in `src/money.py`. It returns a
+  list of `shares` integers that sums to exactly `total_cents`, as even as
+  possible, with any remainder going to the earliest entries. Raise
+  `ValueError` when `shares` is less than one.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    src/money.py: |
+      def split_amount(total_cents, shares):
+          raise NotImplementedError
+    tests/test_money.py: |
+      from src.money import split_amount
+
+
+      def test_even_split():
+          assert split_amount(300, 3) == [100, 100, 100]
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_money_hidden.py: |
+      import pytest
+
+      from src.money import split_amount
+
+
+      @pytest.mark.parametrize("total,shares", [(100, 3), (1, 4), (0, 2), (-5, 2)])
+      def test_the_parts_always_sum_to_the_total(total, shares):
+          parts = split_amount(total, shares)
+          assert len(parts) == shares
+          assert sum(parts) == total
+
+
+      def test_the_remainder_goes_to_the_front():
+          assert split_amount(100, 3) == [34, 33, 33]
+
+
+      def test_zero_shares_is_an_error():
+          with pytest.raises(ValueError):
+              split_amount(100, 0)
+  expect_fail_before: true
+caps:
+  max_calls: 14
+  wall_clock_seconds: 420

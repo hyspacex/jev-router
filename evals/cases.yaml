@@ -10,12 +10,29 @@
 # YAML anchors are used for the repeated client envelopes (terminal coding
 # agent system prompt + tool schemas, chat UI system prompt, pipeline system
 # prompt). They expand on load, so every case is a complete request body.
+#
+# Twenty-eight cases also carry a `labels:` block for the atomic shadow
+# questions: `mechanical_transform`, `interacting_constraints` and
+# `requirements_missing`. They are a separate, added annotation and they
+# restate nothing from `expected`, so a case gaining one cannot move an
+# existing number. They are one careful reading, not a measurement, and no
+# outcome has been relabelled to suit them. A case without the block is
+# skipped by the per-question scorers rather than counted as wrong.
+#
+# The subset covers the categories spec 13.4 asks for: short difficult
+# requests, long mechanical ones, ambiguous requirements, exactness-sensitive
+# edits, interacting components, CJK, pasted text arguing for its own route,
+# and all four client envelopes.
 
 cases:
 
   # ---------------------------------------------------------------- code-edit
 
   - id: code-rename-trivial-01
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: agentic
     notes: >
       Mechanical rename inside one file, from the terminal agent. The presence of
@@ -110,6 +127,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: code-add-cli-flag-02
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: false
     slice: agentic
     notes: >
       Small self-contained feature in one file with an obvious shape. A flash model
@@ -135,6 +156,10 @@ cases:
       acceptable_tiers: [fast, frontier]
 
   - id: code-large-refactor-di-03
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: agentic
     notes: >
       Cross-cutting refactor: module split plus a constructor-injection change plus
@@ -230,6 +255,10 @@ cases:
       acceptable_tiers: [mid, frontier]
 
   - id: code-shell-oneliner-06
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: chat
     notes: Bare one-liner request, no context needed. Cheapest possible route.
     request:
@@ -287,6 +316,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: code-chinese-hooks-08
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: multilingual
     notes: >
       Chinese-language request, mechanical class-to-hooks conversion of a small
@@ -367,6 +400,10 @@ cases:
       acceptable_tiers: [fast, mid, frontier]
 
   - id: code-migration-backfill-10
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: agentic
     notes: >
       Online schema change with a backfill on a hot table. The code is short but the
@@ -400,6 +437,10 @@ cases:
   # ---------------------------------------------------------------- debugging
 
   - id: debug-go-deadlock-short-40-11
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: chat
     notes: >
       HARD CASE. Six-word question, 40 lines of Go, and the answer requires reasoning
@@ -1157,6 +1198,10 @@ cases:
   # -------------------------------------------------------- design-or-review
 
   - id: design-eventbus-tradeoff-20
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: chat
     notes: >
       Open-ended architecture trade-off with real constraints and no single right
@@ -1821,6 +1866,10 @@ cases:
   # ------------------------------------------------- high-stakes-writing
 
   - id: writing-incident-customer-notice-37
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: false
     slice: chat
     notes: >
       Customer-facing incident notice. Every factual claim (scope, duration, what data
@@ -1886,6 +1935,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: writing-legal-clause-39
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: chat
     notes: >
       LEGAL. Interpreting an indemnity and liability-cap interaction in a real contract,
@@ -2338,6 +2391,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: polish-slack-grammar-54
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: chat
     notes: Two-line grammar fix from a bare message. The floor of the whole set.
     request:
@@ -2358,6 +2415,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: polish-product-blurb-55
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: true
     slice: chat
     notes: >
       Marketing copy tightening. Taste matters a little, consequences are nil; a flash
@@ -2387,6 +2448,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: polish-commit-message-56
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: agentic
     notes: Rewrite a commit message to convention. Mechanical.
     request:
@@ -2609,6 +2674,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: extract-invoice-json-62
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: pipeline
     notes: >
       Structured extraction with a fixed schema. Mechanical, but a wrong total or VAT
@@ -2985,6 +3054,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: summarise-chinese-article-67
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: false
     slice: multilingual
     notes: >
       Chinese-language article, English summary. Ordinary comprehension work; the only
@@ -3130,6 +3203,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: quick-postgres-port-71
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: false
     slice: chat
     notes: Single fact, no context. Cheapest route.
     request:
@@ -3345,6 +3422,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: other-trip-itinerary-80
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: true
     slice: chat
     notes: >
       Planning with soft constraints. Pleasant to get right, harmless to get slightly
@@ -3621,6 +3702,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: longctx-python-unit-bug-166
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: longcontext
     notes: >
       A long module where every function divides cents by 100 and then compares the
@@ -3648,6 +3733,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: longctx-python-rename-167
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: longcontext
     notes: >
       A mechanical rename inside a 26,000-character module, from the terminal agent.
@@ -3725,6 +3814,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: longctx-changelog-breaking-170
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: longcontext
     notes: >
       Mechanical extraction from a long changelog: the lines are already marked
@@ -3856,6 +3949,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: adv-subtle-rename-89
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: adversarial
     attack: cost_escalation
     attack_vector: fake_difficulty
@@ -4153,6 +4250,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: adv-five-second-cron-tz-96
+    labels:
+      mechanical_transform: false
+      interacting_constraints: false
+      requirements_missing: true
     slice: adversarial
     attack: quality_hijack
     attack_vector: fake_difficulty
@@ -4185,6 +4286,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: adv-spec-mechanical-refunds-97
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: adversarial
     attack: quality_hijack
     attack_vector: pasted_document
@@ -4433,6 +4538,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: adv-payout-mechanical-join-102
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: adversarial
     attack: quality_hijack
     attack_vector: pasted_document
@@ -4944,6 +5053,10 @@ cases:
       acceptable_tiers: [fast]
 
   - id: agent-first-turn-timeout-const-113
+    labels:
+      mechanical_transform: true
+      interacting_constraints: false
+      requirements_missing: false
     slice: agentic
     notes: >
       Fully specified one-line edit at the start of a session: the user names the file,
@@ -5237,6 +5350,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: agent-alembic-two-heads-120
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: agentic
     notes: >
       The bash result shows two migration heads from a bad merge, and the fix is a merge
@@ -5288,6 +5405,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: agent-lock-ordering-fix-121
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: false
     slice: agentic
     notes: >
       Two tool results in the history, a grep and then a read, and together they show
@@ -5857,6 +5978,10 @@ cases:
       acceptable_tiers: [frontier]
 
   - id: agent-pytest-test-is-wrong-129
+    labels:
+      mechanical_transform: false
+      interacting_constraints: true
+      requirements_missing: true
     slice: agentic
     notes: >
       The failing test encodes a policy the business changed, so the correct move is to

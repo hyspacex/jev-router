@@ -25,7 +25,7 @@ from .policy import RoutingError, select
 PACKET_SCHEMA = "pkt1"
 
 
-def _digest(payload: Any) -> str:
+def digest(payload: Any) -> str:
     blob = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str
     )
@@ -34,7 +34,7 @@ def _digest(payload: Any) -> str:
 
 def question_hash(config: RouterConfig, question_ids: list[str]) -> str:
     """A hash of the exact wording of these questions."""
-    return _digest({qid: config.questions.get(qid) for qid in sorted(question_ids)})
+    return digest({qid: config.questions.get(qid) for qid in sorted(question_ids)})
 
 
 def packet_version(
@@ -51,7 +51,7 @@ def packet_version(
         return ""
     return "{}:{}".format(
         PACKET_SCHEMA,
-        _digest(
+        digest(
             {
                 "questions": {
                     qid: config.questions.get(qid) for qid in sorted(question_ids)

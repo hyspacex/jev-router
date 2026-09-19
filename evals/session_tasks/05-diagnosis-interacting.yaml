@@ -1,0 +1,63 @@
+id: diagnosis-interacting
+family: diagnosis
+description: >
+  Two modules agree about units and one of them is wrong. The failing test
+  points at the wrong place, so the cause has to be worked out.
+prompt: >
+  `python -m pytest -q tests/` fails. Find out why and fix it. The reported
+  totals are meant to be in pounds. Do not change the tests.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    src/prices.py: |
+      """Everything in this module is in pence."""
+
+
+      def line_total(price_pence, qty):
+          return price_pence * qty
+
+
+      def order_total(lines):
+          return sum(line_total(p, q) for p, q in lines)
+    src/invoice.py: |
+      from src.prices import order_total
+
+
+      def render(lines):
+          # order_total is in pence, and an invoice is in pounds.
+          return f"GBP {order_total(lines) / 100:.2f}"
+
+
+      def summary(lines):
+          # This one forgot the conversion.
+          return {"total": order_total(lines), "currency": "GBP"}
+    tests/test_invoice.py: |
+      from src.invoice import render, summary
+
+
+      def test_render_is_in_pounds():
+          assert render([(250, 2), (125, 4)]) == "GBP 10.00"
+
+
+      def test_summary_is_in_pounds():
+          assert summary([(250, 2), (125, 4)]) == {"total": 10.0, "currency": "GBP"}
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_units_hidden.py: |
+      from src.invoice import render, summary
+      from src.prices import order_total
+
+
+      def test_prices_are_still_in_pence():
+          assert order_total([(250, 2)]) == 500
+
+
+      def test_both_outputs_agree():
+          lines = [(250, 2), (125, 4)]
+          assert render(lines) == "GBP 10.00"
+          assert summary(lines)["total"] == 10.0
+  expect_fail_before: true
+caps:
+  max_calls: 16
+  wall_clock_seconds: 480

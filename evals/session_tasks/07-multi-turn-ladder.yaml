@@ -1,0 +1,68 @@
+id: multi-turn-ladder
+family: multi-turn
+description: Routine, then demanding, then routine again, in one session.
+prompt: >
+  Add a `to_dict` method to the `Event` class in `src/events.py` that returns
+  its three fields as a plain dictionary.
+turns:
+  - >
+    Now make `merge(a, b)` combine two events into one. When both set the same
+    field the later `at` wins, an absent field never overwrites a present one,
+    and the result must keep the earliest `at` of the two. Add tests.
+  - >
+    Last thing: rename the module docstring's first line to "Event records."
+    and leave everything else alone.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    src/events.py: |
+      """Events."""
+
+
+      class Event:
+          def __init__(self, at, name=None, payload=None):
+              self.at = at
+              self.name = name
+              self.payload = payload
+
+
+      def merge(a, b):
+          raise NotImplementedError
+    tests/test_events.py: |
+      from src.events import Event
+
+
+      def test_event_holds_its_fields():
+          event = Event(1, "start", {"x": 1})
+          assert event.at == 1 and event.name == "start"
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_events_hidden.py: |
+      import pathlib
+
+      from src.events import Event, merge
+
+
+      def test_to_dict():
+          assert Event(1, "start", {"x": 1}).to_dict() == {
+              "at": 1, "name": "start", "payload": {"x": 1}
+          }
+
+
+      def test_merge_prefers_the_later_value_but_the_earliest_time():
+          first = Event(1, "start", {"x": 1})
+          second = Event(5, "stop", None)
+          merged = merge(first, second)
+          assert merged.at == 1
+          assert merged.name == "stop"
+          assert merged.payload == {"x": 1}
+
+
+      def test_the_docstring_was_renamed():
+          text = pathlib.Path("src/events.py").read_text()
+          assert text.lstrip().startswith('"""Event records.')
+  expect_fail_before: true
+caps:
+  max_calls: 20
+  wall_clock_seconds: 600

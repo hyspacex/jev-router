@@ -1,0 +1,37 @@
+id: context-growth-audit
+family: context-growth
+description: >
+  Twelve small modules with one real defect between them. Reading enough of the
+  repository to find it makes the history grow, at a fixed effort.
+prompt: >
+  One of the handlers in `src/handlers/` returns its status code as a string
+  instead of an integer, and `tests/test_handlers.py` does not catch it yet.
+  Find it, fix it, and say which one it was in a file called `FINDINGS.md`.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  generated:
+    kind: handlers
+    count: 12
+    broken: 7
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_status_types_hidden.py: |
+      import importlib
+      import pathlib
+
+
+      def test_every_handler_returns_an_int_status():
+          for path in sorted(pathlib.Path("src/handlers").glob("h*.py")):
+              module = importlib.import_module(f"src.handlers.{path.stem}")
+              status, _body = module.handle({})
+              assert isinstance(status, int), f"{path.stem} returned {status!r}"
+
+
+      def test_the_findings_name_the_handler():
+          text = pathlib.Path("FINDINGS.md").read_text()
+          assert "h07" in text
+  expect_fail_before: true
+caps:
+  max_calls: 24
+  wall_clock_seconds: 600

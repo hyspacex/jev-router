@@ -50,8 +50,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import yaml
 
 from checks import run_checks  # noqa: E402
+from manifest import (  # noqa: E402
+    build_manifest,
+    case_manifest,
+    profile_versions,
+    run_kind,
+    write_manifest,
+)
 from common import (  # noqa: E402
     EVALS_DIR,
+    config_with_overlay,
     ROUTE_ORDER,
     Budget,
     Case,
@@ -715,6 +723,42 @@ async def main_async(args: argparse.Namespace) -> int:
     }
     (EVALS_DIR / "outcomes.json").write_text(json.dumps(payload, indent=2))
     (EVALS_DIR / "outcomes.md").write_text(build_report(rows, routes))
+    write_manifest(
+        EVALS_DIR,
+        build_manifest(
+            script="evals/run_outcomes.py",
+            kind=run_kind(upstream.calls, len(order) * len(routes) * args.samples),
+            candidates=profile_versions(
+                config_with_overlay(), [m for m, _ in routes]
+            ),
+            cases=case_manifest(
+                [c for cid, c in cases.items() if cid in {r["case_id"] for r in rows}]
+            ),
+            seeds={"sample_salt": "sample index, see UpstreamClient.chat"},
+            repeats=args.samples,
+            cache={
+                "upstream": "disabled" if args.no_cache else "enabled",
+                "live_calls": upstream.calls,
+            },
+            caps={
+                "max_calls": args.max_calls,
+                "concurrency": args.concurrency,
+                "candidate_max_tokens": CANDIDATE_MAX_TOKENS,
+                "stop_reason": budget.stop_reason if budget else "",
+            },
+            quota={
+                "coverage": "not read; these are API token counts, not "
+                "subscription consumption"
+            },
+            graders={
+                "programmatic": "evals/checks.py",
+                "judge": JUDGE_MODEL,
+                "specs": "evals/outcome_specs.yaml",
+            },
+            # A case that did not run is named, not dropped.
+            unfinished=[{"case": cid, "reason": "capped or not reached"} for cid in skipped],
+        ),
+    )
 
     if args.apply_labels:
         changed = apply_clear_cut(proposals, EVALS_DIR / "cases.yaml")

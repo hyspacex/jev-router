@@ -1,0 +1,43 @@
+id: implementation-csv
+family: implementation
+description: Quoted CSV fields, with the edge cases that make it more than a split.
+prompt: >
+  `src/csvtool.py` splits a CSV line on commas. Make it handle quoted fields:
+  a field wrapped in double quotes may contain commas, and a doubled quote
+  inside a quoted field means one literal quote. Keep the function signature.
+  Add tests for what you change.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    src/csvtool.py: |
+      def parse_line(line):
+          """Split one CSV line into fields."""
+          return line.rstrip("\n").split(",")
+    tests/test_csvtool.py: |
+      from src.csvtool import parse_line
+
+
+      def test_plain():
+          assert parse_line("a,b,c") == ["a", "b", "c"]
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_quoted.py: |
+      from src.csvtool import parse_line
+
+
+      def test_quoted_field_may_contain_a_comma():
+          assert parse_line('a,"b,c",d') == ["a", "b,c", "d"]
+
+
+      def test_doubled_quote_is_one_literal_quote():
+          assert parse_line('a,"say ""hi""",b') == ["a", 'say "hi"', "b"]
+
+
+      def test_plain_lines_still_work():
+          assert parse_line("a,b,c") == ["a", "b", "c"]
+          assert parse_line("") == [""]
+  expect_fail_before: true
+caps:
+  max_calls: 14
+  wall_clock_seconds: 420

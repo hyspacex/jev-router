@@ -1,0 +1,47 @@
+id: mechanical-rename
+family: mechanical
+description: Rename one symbol across three files. The change is stated; nothing has to be chosen.
+prompt: >
+  Rename `calc_total` to `calculate_total` everywhere it appears in this
+  repository, including the call sites and the tests. Do not change anything
+  else.
+allowed_tools: [list_files, read_file, write_file, run_command]
+repo:
+  files:
+    src/billing.py: |
+      def calc_total(items):
+          return sum(item["price"] * item["qty"] for item in items)
+    src/report.py: |
+      from src.billing import calc_total
+
+
+      def render(items):
+          return f"total: {calc_total(items)}"
+    tests/test_billing.py: |
+      from src.billing import calc_total
+
+
+      def test_calc_total():
+          assert calc_total([{"price": 2, "qty": 3}]) == 6
+check:
+  command: [python, -m, pytest, -q, tests/]
+  hidden_files:
+    tests/test_renamed.py: |
+      import pathlib
+
+      from src.billing import calculate_total
+      from src.report import render
+
+
+      def test_new_name_works():
+          assert calculate_total([{"price": 2, "qty": 3}]) == 6
+          assert render([{"price": 2, "qty": 3}]) == "total: 6"
+
+
+      def test_old_name_is_gone():
+          for path in pathlib.Path("src").rglob("*.py"):
+              assert "calc_total" not in path.read_text().replace("calculate_total", "")
+  expect_fail_before: true
+caps:
+  max_calls: 10
+  wall_clock_seconds: 240

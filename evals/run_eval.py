@@ -31,10 +31,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import yaml
 
+from manifest import (  # noqa: E402
+    build_manifest,
+    case_manifest,
+    profile_versions,
+    run_kind,
+    variant_versions,
+    write_manifest,
+)
 from common import (  # noqa: E402
     CASE_TASKS,
     EVALS_DIR,
     SLICES,
+    SPLIT_SEED,
     TEN_CAT_TO_SEVEN,
     Case,
     JevClient,
@@ -119,6 +128,71 @@ def load_variants(path: Path | None = None) -> tuple[dict[str, Variant], dict[st
     for name, spec in (raw.get("variants") or {}).items():
         out[name] = Variant(name=name, **(spec or {}))
     return out, raw.get("groups") or {}
+
+
+# --- negative controls ---------------------------------------------------
+#
+# Four runs that have to come out badly. `shuffled-labels` and `constant-state`
+# check the harness. These two check the policy: if a rule set that never looks
+# at an answer scores as well as the real one, the answers are not what is
+# doing the work.
+
+CONTROL_CONSTANT_POLICY = {
+    "rulesets": {
+        "control_constant": {
+            "rules": [
+                {"name": "constant", "when": {}, "use": {"route": "frontier_medium"}}
+            ],
+            "default": {"route": "frontier_medium"},
+        }
+    }
+}
+
+CONTROL_LENGTH_ONLY = {
+    "rulesets": {
+        "control_length": {
+            "rules": [
+                {
+                    "name": "very_long",
+                    "when": {"est_tokens_gte": 8000},
+                    "use": {"route": "frontier_xhigh"},
+                },
+                {
+                    "name": "long",
+                    "when": {"est_tokens_gte": 2000},
+                    "use": {"route": "frontier_high"},
+                },
+                {
+                    "name": "medium",
+                    "when": {"est_tokens_gte": 500},
+                    "use": {"route": "mid"},
+                },
+                {"name": "short", "when": {}, "use": {"route": "fast"}},
+            ],
+            "default": {"route": "fast"},
+        }
+    }
+}
+
+POLICY_CONTROLS = {
+    "constant-policy": ("control_constant", CONTROL_CONSTANT_POLICY),
+    "length-only": ("control_length", CONTROL_LENGTH_ONLY),
+}
+
+CONTROLS = ("none", "shuffled-labels", "constant-state", *POLICY_CONTROLS)
+
+
+def apply_policy_control(variant: Variant, control: str) -> Variant:
+    """Swap a variant's ruleset for one that cannot read a Jev answer."""
+    from common import deep_merge
+
+    ruleset, overlay = POLICY_CONTROLS[control]
+    clone = copy.copy(variant)
+    clone.overlay = deep_merge(
+        deep_merge(variant.overlay, overlay),
+        {"aliases": {variant.alias: {"rules": ruleset}}},
+    )
+    return clone
 
 
 # --- one measured case --------------------------------------------------
@@ -638,6 +712,84 @@ async def run_stability(
     return [r for r in rows if r]
 
 
+# --- per-question agreement ----------------------------------------------
+
+# The label in a case's `labels:` block each question is scored against, and
+# how a raw answer becomes a comparable value. A case with no label for a
+# question is skipped, so a partially annotated set is honest about its
+# denominator rather than scoring the unlabelled cases as wrong.
+NOUL_THRESHOLD = 0.5
+
+ATOMIC_QUESTIONS = (
+    "mechanical_transform",
+    "interacting_constraints",
+    "requirements_missing",
+    "corrective_followup",
+    "failure_mode",
+)
+
+
+def score_question(rec: Record, qid: str) -> bool | None:
+    """Does this answer agree with the case's label for that question?
+
+    Returns None when the case carries no label for it, which keeps the
+    interval honest about how many cases actually said anything.
+    """
+    if qid not in rec.case.labels:
+        return None
+    answer = rec.answers.get(qid)
+    if not isinstance(answer, dict):
+        return None
+    want = rec.case.labels[qid]
+    kind = answer.get("type")
+    if kind == "noul":
+        value = answer.get("noul")
+        if value is None:
+            return None
+        return bool(value >= NOUL_THRESHOLD) == bool(want)
+    if kind == "choice":
+        return answer.get("choice") == want
+    if kind == "score":
+        value = answer.get("score")
+        return value is not None and abs(value - float(want)) <= 0.5
+    return None
+
+
+def question_table(records: list[Record], variant: Variant) -> list[dict[str, Any]]:
+    """One row per question asked: agreement, abstention, state size, latency."""
+    out: list[dict[str, Any]] = []
+    for qid in variant.questions:
+        if qid == "task":
+            agreement = rate_of(score_task(r, variant.task_space) for r in records)
+            against = "task label"
+        elif qid == "difficulty":
+            agreement = rate_of(
+                score_difficulty(r, variant.difficulty_levels) for r in records
+            )
+            against = "difficulty within tolerance"
+        elif qid in ATOMIC_QUESTIONS:
+            agreement = rate_of(score_question(r, qid) for r in records)
+            against = f"labels.{qid}"
+        elif qid == variant.faith_question:
+            agreement = rate_of(score_faith(r, variant) for r in records)
+            against = "needs_faithfulness"
+        else:
+            agreement = rate_of(score_question(r, qid) for r in records)
+            against = f"labels.{qid}"
+        answered = sum(1 for r in records if isinstance(r.answers.get(qid), dict))
+        out.append(
+            {
+                "question": qid,
+                "against": against,
+                "agreement": agreement,
+                "answered": answered,
+                "abstained": len(records) - answered,
+                "labelled": sum(1 for r in records if qid in r.case.labels),
+            }
+        )
+    return out
+
+
 def confusion(records: list[Record], variant: Variant) -> dict[str, dict[str, int]]:
     table: dict[str, dict[str, int]] = collections.defaultdict(lambda: collections.defaultdict(int))
     for r in records:
@@ -718,6 +870,7 @@ def write_summary(
     jev_model: str,
     stability_rows: list[dict[str, Any]] | None = None,
     control: str = "",
+    packet: bool = False,
 ) -> str:
     lines: list[str] = []
     w = lines.append
@@ -1038,6 +1191,62 @@ def write_summary(
                 )
             w("")
 
+    # --- per question ----------------------------------------------------
+    w("## Per question")
+    w("")
+    w("Agreement is against the label named in the `against` column. A case "
+      "that carries no label for a question is not counted, so `labelled` is "
+      "the real denominator; `abstained` counts answers that never came back. "
+      "Confidence is never read as the probability that the downstream model "
+      "will succeed: it describes Jev's own answer distribution.")
+    w("")
+    w("| variant | question | against | agreement | labelled | answered | abstained |")
+    w("|---|---|---|---|---:|---:|---:|")
+    for name, recs in results.items():
+        if name.startswith("baseline:"):
+            continue
+        v = variants.get(name) or Variant(name=name)
+        scored = [r for r in recs if r.case.labelled]
+        for row in question_table(scored, v):
+            w(
+                f"| {name} | {row['question']} | {row['against']} | "
+                f"{row['agreement']} | {row['labelled']} | {row['answered']} | "
+                f"{row['abstained']} |"
+            )
+    w("")
+
+    if packet:
+        w("## Packet comparison (spec 13.4)")
+        w("")
+        w("Four arms, one variable at a time: the baseline packet, the same "
+          "policy on the new bounded packet, the expanded packet with the "
+          "extra questions asked, and the distribution-aware policy against "
+          "the mean-only one. The last pair asks identical questions over an "
+          "identical state, so both arms read the same cached Jev answers and "
+          "the only thing that differs is the rule set.")
+        w("")
+        w("| arm | state builder | questions | tier correct | under | over | cost | state tokens |")
+        w("|---|---|---|---|---|---|---:|---:|")
+        for name, recs in results.items():
+            if name.startswith("baseline:"):
+                continue
+            v = variants.get(name) or Variant(name=name)
+            m = metrics(recs, v)
+            if not m:
+                continue
+            tokens = median([estimate_tokens(r.state) for r in recs if r.state])
+            w(
+                f"| {name} | {v.state_builder} | {len(v.questions)} | "
+                f"{cell(m, 'tier_correct')} | {cell(m, 'under_routed')} | "
+                f"{cell(m, 'over_routed')} | {fmt(m.get('mean_cost'))} | "
+                f"{tokens:.0f} |"
+            )
+        w("")
+        w("No conclusion is drawn here by the script. Two arms that differ by "
+          "less than the minimum detectable difference above are a tie, and "
+          "the paired bootstrap is what decides a real one.")
+        w("")
+
     text = "\n".join(lines) + "\n"
     (out_dir / "summary.md").write_text(text)
     return text
@@ -1049,7 +1258,9 @@ def write_summary(
 async def main_async(args: argparse.Namespace) -> int:
     all_variants, groups = load_variants()
     names: list[str] = []
-    if args.variants:
+    if args.packet and not args.variants and not args.group:
+        names = list(groups.get("packet", []))
+    elif args.variants:
         names = [n.strip() for n in args.variants.split(",") if n.strip()]
     elif args.group:
         for g in args.group.split(","):
@@ -1087,6 +1298,11 @@ async def main_async(args: argparse.Namespace) -> int:
     # Controls. Both are runs that have to come out badly: if a shuffled-label
     # run still scores well, the metric is not reading the labels, and if a
     # constant-state run still routes well, the router is not reading the state.
+    if args.control in POLICY_CONTROLS:
+        all_variants = {
+            name: (apply_policy_control(v, args.control) if name in names else v)
+            for name, v in all_variants.items()
+        }
     if args.control == "shuffled-labels":
         cases = shuffle_labels(cases)
     elif args.control == "constant-state":
@@ -1165,6 +1381,55 @@ async def main_async(args: argparse.Namespace) -> int:
         args.jev_model,
         stability_rows=stability_rows,
         control=args.control if args.control != "none" else "",
+        packet=args.packet,
+    )
+    write_manifest(
+        out_dir,
+        build_manifest(
+            script="evals/run_eval.py",
+            kind=run_kind(jev.calls, len(cases) * len(names) * args.repeats),
+            jev_model=args.jev_model,
+            variants={
+                name: variant_versions(
+                    all_variants[name].config(),
+                    all_variants[name].alias,
+                    all_variants[name].questions,
+                    all_variants[name].state_builder,
+                )
+                for name in names
+            },
+            candidates=profile_versions(config_with_overlay()),
+            cases=case_manifest(cases),
+            seeds={
+                "split": SPLIT_SEED,
+                "shuffled_labels": 4242,
+                "stability": "seeded per perturbation, see evals/metrics.py",
+            },
+            repeats=args.repeats,
+            cache={
+                "jev": "disabled" if args.no_cache else "enabled",
+                "hits": jev.cache.hits,
+                "live_calls": jev.calls,
+            },
+            caps={
+                "draft_max_calls": args.draft_max_calls if args.draft else 0,
+                "concurrency": args.concurrency,
+            },
+            # Nothing polls quota here: the policy replay takes pressure as an
+            # argument, and these runs pass none.
+            quota={"coverage": "not read; every case ran at pressure zero"},
+            extra={
+                "control": args.control,
+                "packet_comparison": bool(args.packet),
+                "slice_holdout": args.slice_holdout or "",
+            },
+            unfinished=[
+                {"variant": name, "case": r.case.id, "error": r.error}
+                for name, recs in results.items()
+                for r in recs
+                if r.error
+            ],
+        ),
     )
 
     latest = EVALS_DIR / "results" / "latest"
@@ -1200,9 +1465,11 @@ def main() -> int:
                    help="how many cases the draft run covers, stratified by slice")
     p.add_argument("--draft-max-calls", type=int, default=100,
                    help="hard cap on upstream calls for the draft step")
-    p.add_argument("--control", default="none",
-                   choices=("none", "shuffled-labels", "constant-state"),
+    p.add_argument("--control", default="none", choices=CONTROLS,
                    help="run a control that is supposed to score badly")
+    p.add_argument("--packet", action="store_true",
+                   help="run the four packet arms of spec 13.4 and add the "
+                        "comparison table to the summary")
     p.add_argument("--no-baselines", action="store_true")
     args = p.parse_args()
     return asyncio.run(main_async(args))

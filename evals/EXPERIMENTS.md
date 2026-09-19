@@ -902,3 +902,73 @@ scoring 10.0. A grading spec that gives every route full marks has not shown
 that the fast model is good enough; it has shown that the spec cannot tell the
 routes apart. `--apply-labels` was not run. The right fix is a harder rubric on
 those three cases, not a label change.
+
+## Milestone B machinery, 2026-09-19. Nothing measured yet.
+
+This entry records what was added, not what it is worth. **No run has been
+made.** Every number below is absent on purpose; filling them in is the next
+piece of work, and until then none of this has earned a place in the shipped
+packet.
+
+What is now runnable:
+
+- **Three shadow questions** — `mechanical_transform`, `interacting_constraints`
+  and `requirements_missing` — asked in the same batched call as the three
+  active ones and read by nothing. Two more, `corrective_followup` and
+  `failure_mode`, are written down for Milestone C and no alias asks them.
+- **`coding_state_v1`**, the bounded packet of spec 7.1, available as a variant
+  and used by no shipped alias.
+- **Distribution-aware rules**: `p_hard` and `p_nontrivial` over a Score's
+  probability vector, four rule conditions that read them, and an opt-in
+  confidence gate that does not escalate when the labels it is unsure between
+  route the same way. `semantic_policy.distribution_policy` ships as `shadow`,
+  so the experimental route is computed beside the real one and logged; it
+  decides nothing.
+- **Four arms** for spec 13.4, as `--packet`: `router_yaml` (baseline),
+  `b1_coding_state` (new packet, same policy), `b2_expanded_packet` (the extra
+  questions asked), `b3_distribution` (the illustrative rule of spec 7.4 as a
+  ruleset of its own). The last two ask identical questions over an identical
+  state, so both read the same cached answers and only the rules differ.
+- **Two more negative controls**, `--control constant-policy` and
+  `--control length-only`. Both must score at or below the fixed-route
+  baseline. A run where either scores well voids every other number in it.
+- **Per-question reporting** with Wilson intervals, against a `labels:` block
+  on 28 of the 171 cases. Those labels are one careful reading, not a
+  measurement. They restate nothing from `expected`, so a case gaining one
+  cannot move an existing number, and no outcome has been relabelled to suit
+  a new question (invariant I14).
+- **`evals/manifest.py`**: every run now writes `manifest.json` and
+  `manifest.md` with the repo SHA, the question and policy hashes, the packet
+  version, the candidate profiles, the case ids and splits, the seeds, the
+  cache condition, the caps, the grader versions and everything that did not
+  finish. A run that answered out of the cache is labelled `policy_replay`,
+  which is not a live classifier or latency measurement.
+- **`evals/session_tasks/` and `evals/run_sessions.py`**: eight pilot tasks
+  across the six families of 13.5, each with a programmatic check whose files
+  are hidden from the session, run in a disposable directory with a scrubbed
+  environment and hard call and wall-clock caps. A capped session is reported,
+  never dropped.
+- **`evals/quota_sim.py`**: chronological replay of recorded or synthetic
+  windows, resets, stale telemetry and outages. Output is labelled `simulated`
+  and it never touches `ROUTE_COST`.
+- **`evals/REPORT_TEMPLATE.md`**, which keeps policy replay, live
+  qualification, coding outcomes and subscription observations apart.
+
+### What has to happen before any of this is promoted
+
+1. Rerun all four controls. If shuffled labels scores above chance, constant
+   state beats the majority class, or either policy control matches the real
+   ladder, the harness is broken and nothing else counts.
+2. Run `--packet` with three repeats and report each arm with its Wilson
+   interval and a paired bootstrap against `router_yaml`. On 171 cases two
+   independent runs cannot separate a difference under about 11 points.
+3. Measure the batching overhead of the bigger packet: latency, error rate and
+   whether the active answers move at all when the shadow questions ride
+   along. Measure it; do not infer it.
+4. Run the eight-task pilot on at least two arms and report what it cost and
+   what failed. It cannot show a small improvement and must not be quoted as
+   if it had.
+
+A feature that cannot show a downstream benefit at a fixed model pool and a
+fixed workload comes out of the packet. Low inference cost is not a reason to
+keep an unused signal.
