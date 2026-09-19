@@ -7,7 +7,6 @@ names, so C07 is findable by grepping for c07.
 from __future__ import annotations
 
 import asyncio
-import json
 import sqlite3
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from conftest import make_config
 from session_harness import ADMIN, Client, Service, session_config, upstream
 from test_app import JEV_URL, jev_answers, mock_jev
 
-from jev_router.config import ConfigError, RouterConfig, SessionRoutingCfg, load_config
+from jev_router.config import RouterConfig, SessionRoutingCfg, load_config
 from jev_router.features import estimate_input, text_tokens
 from jev_router.pins import Store
 from jev_router.policy import MIN_RESERVE_TOKENS, context_budget
