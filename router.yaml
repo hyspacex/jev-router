@@ -226,6 +226,21 @@ quota_policy:
   # What pressure does.
   demote_above: 0.6             # a lane entry over this drops behind healthy ones
 
+# Strict sessions. A legacy alias pins a conversation for six hours and may
+# replace the model when the conversation no longer fits it. A strict alias
+# resolves one binding through POST /router/resolve and never moves it: no
+# repin, no TTL, no cross-model fallback. It is opt-in per alias, and every
+# alias below that does not say `session_mode: strict` is unchanged.
+#
+# Strict control and execution requests need the router credential named by
+# settings.admin_token_env, even on loopback.
+session_routing:
+  enabled: true
+  prepared_ttl_seconds: 600     # a resolved but never used contract expires
+  max_inflight_per_session: 1   # a second concurrent request is a conflict
+  require_control_token: true
+  max_request_history: 200      # finished request ids kept per session
+
 # Passed to Jev exactly as written. Wording is the main lever on accuracy:
 # be literal, be concrete, and make every score level a standalone situation.
 #
@@ -477,6 +492,24 @@ aliases:
     rules: policy
     allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
     max_effort: low
+
+  # The same choice as `auto`, made once and kept. Resolve a session through
+  # POST /router/resolve, then send every request with X-Router-Session,
+  # X-Router-Binding and X-Router-Request-Id. The model does not change for
+  # the life of the session: overflow, a changed capability, a 429 and a
+  # classifier outage all report the problem instead of moving the work.
+  # See docs/SESSION_ROUTING.md.
+  auto-session:
+    description: Pick a model once and keep it for the whole session.
+    session_mode: strict
+    state_builder: continuation_aware_v1
+    questions: [task, difficulty, harm_if_wrong]
+    rules: policy
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    # What admission binds when Jev is down. Without this an admission with no
+    # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
+    # whatever it binds here is as fixed as any other binding.
+    admission_fallback: {route: frontier_medium}
 
   auto-code:
     description: Coding work only. Skips the task question.
