@@ -103,10 +103,18 @@ ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def migrate(conn: sqlite3.Connection) -> list[str]:
-    """Add any column this version knows about and the file does not."""
+def migrate(
+    conn: sqlite3.Connection,
+    tables: dict[str, list[tuple[str, str]]] | None = None,
+) -> list[str]:
+    """Add any column this version knows about and the file does not.
+
+    `tables` defaults to this module's map. A feature that owns columns of its
+    own passes its own map, so each one stays responsible for the schema it
+    writes to and every migration is still additive and forward only.
+    """
     added: list[str] = []
-    for table, columns in ADDED_COLUMNS.items():
+    for table, columns in (ADDED_COLUMNS if tables is None else tables).items():
         try:
             rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         except sqlite3.Error:
@@ -159,6 +167,15 @@ class Store:
             self._conn.executescript(SCHEMA)
             self.migrated = migrate(self._conn)
             self._conn.commit()
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """The one connection. Another table in this file shares it."""
+        return self._conn
+
+    @property
+    def lock(self) -> threading.Lock:
+        return self._lock
 
     def close(self) -> None:
         with self._lock:
