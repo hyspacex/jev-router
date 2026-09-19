@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local state
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# Eval artifacts. .cache holds Jev and upstream replies so a run can resume.
+evals/.cache/
+evals/.e2e/
+evals/results/latest
+evals/results/*/per_case.jsonl
+
+# macOS
+.DS_Store

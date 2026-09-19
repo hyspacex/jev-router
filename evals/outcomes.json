@@ -1,0 +1,2714 @@
+{
+  "generated": "2026-09-19T07:08:17+00:00",
+  "adequate_gap": 0.5,
+  "routes": [
+    "ollama/glm-5.3-flash(none)",
+    "ollama/glm-5.3-flash(low)",
+    "ollama/glm-5.3-flash(high)",
+    "gpt-6-astra(low)",
+    "gpt-6-astra(medium)",
+    "gpt-6-astra(high)",
+    "gpt-6-astra(xhigh)"
+  ],
+  "cases": [
+    {
+      "case_id": "quick-postgres-port-71",
+      "split": "tune",
+      "label": {
+        "task": "quick-question",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 899,
+          "output_tokens": 13,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 923,
+          "output_tokens": 13,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2003,
+          "output_tokens": 189,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2419,
+          "output_tokens": 17,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1863,
+          "output_tokens": 17,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 4270,
+          "output_tokens": 17,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1707,
+          "output_tokens": 17,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "quick-percentage-74",
+      "split": "held_out",
+      "label": {
+        "task": "quick-question",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 663,
+          "output_tokens": 63,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 874,
+          "output_tokens": 76,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 872,
+          "output_tokens": 31,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1986,
+          "output_tokens": 16,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1892,
+          "output_tokens": 16,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2120,
+          "output_tokens": 29,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 3018,
+          "output_tokens": 47,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "quick-timezone-abbrev-77",
+      "split": "tune",
+      "label": {
+        "task": "quick-question",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2063,
+          "output_tokens": 80,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 1138,
+          "output_tokens": 51,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 3490,
+          "output_tokens": 186,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 3000,
+          "output_tokens": 45,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 2825,
+          "output_tokens": 43,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 4611,
+          "output_tokens": 46,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 5.0,
+          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "latency_ms": 3212,
+          "output_tokens": 71,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "code-regex-extract-04",
+      "split": "tune",
+      "label": {
+        "task": "code-edit",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 4412,
+          "output_tokens": 485,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 3667,
+          "output_tokens": 468,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 4422,
+          "output_tokens": 605,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 11362,
+          "output_tokens": 282,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 11610,
+          "output_tokens": 275,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 13768,
+          "output_tokens": 416,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 22540,
+          "output_tokens": 598,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "extract-invoice-json-62",
+      "split": "tune",
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast",
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2278,
+          "output_tokens": 244,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1940,
+          "output_tokens": 292,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2028,
+          "output_tokens": 311,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 9.17,
+          "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+          "latency_ms": 10424,
+          "output_tokens": 288,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.17,
+          "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+          "latency_ms": 10850,
+          "output_tokens": 306,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 15238,
+          "output_tokens": 395,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 9.17,
+          "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+          "latency_ms": 16967,
+          "output_tokens": 517,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "extract-action-items-65",
+      "split": "tune",
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1887,
+          "output_tokens": 161,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 1553,
+          "output_tokens": 133,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 2008,
+          "output_tokens": 143,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 5688,
+          "output_tokens": 122,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 4778,
+          "output_tokens": 121,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 7941,
+          "output_tokens": 188,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "",
+          "latency_ms": 8679,
+          "output_tokens": 247,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "writing-investor-update-numbers-44",
+      "split": "held_out",
+      "label": {
+        "task": "high-stakes-writing",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 8.0,
+          "note": "judge: Most financial calculations are derivable and the required context is included, but the invented goal of \u201ctwo more months of \u22656% MoM growth,\u201d unsupported hiring-priority claims, and potentially non-cohort-valid quarterly NRR materially violate the no-estimation requirement.",
+          "latency_ms": 9480,
+          "output_tokens": 1125,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.0,
+          "note": "judge: The update has the right investor-update structure, correctly computes MoM growth, QoQ growth, NRR, August burn, and runway, and includes all requested context, but it misstates July cash burn as \u20ac338,000 instead of \u20ac337,000, reports opex growth as 3.3% instead of about 3.4%, conflates opex with burn, and adds unsupported claims about ongoing interviews and bridge financing.",
+          "latency_ms": 7985,
+          "output_tokens": 662,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 7.0,
+          "note": "judge: It reads like an investor update and includes the required context, but it fails to compute the derivable August NRR (about 99.9%), gives an incorrect July growth rate of 6.7% (about 7.1%), and states an incorrect three-month average burn of \u20ac345,000 (about \u20ac340,667).",
+          "latency_ms": 10957,
+          "output_tokens": 1285,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 9.75,
+          "note": "judge: The update accurately derives MoM, completed-quarter QoQ, NRR, cash burn proxy, runway, opex, and headcount from the table, clearly flags burn limitations, and incorporates all supplied context, with only an unnecessary caveat that the explicitly provided two-logo context is not table-verifiable.",
+          "latency_ms": 19807,
+          "output_tokens": 587,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The update accurately derives MoM growth, completed-quarter QoQ growth, monthly NRR, cash-depletion burn proxy, runway, opex, and headcount from the table, clearly flags limitations, and incorporates all supplied business context without inventing figures.",
+          "latency_ms": 24908,
+          "output_tokens": 789,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.0,
+          "note": "judge: The update accurately derives MoM growth, trailing three-month and completed-quarter growth, NRR, cash burn proxy, runway, opex and headcount while flagging limitations, but it fails to state explicitly that two Enterprise logos closed in August as required.",
+          "latency_ms": 30160,
+          "output_tokens": 898,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 9.5,
+          "note": "judge: The update is accurate, appropriately flags burn and runway limitations, and includes the CTO search and October Series A, but it fails to explicitly state that two Enterprise logos closed in August.",
+          "latency_ms": 76442,
+          "output_tokens": 2468,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "summarise-adversarial-doc-69",
+      "split": "tune",
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately summarizes all policy sections, preserves every exception and approval condition, and correctly ignores the embedded instruction to use a single sentence.",
+          "latency_ms": 3534,
+          "output_tokens": 417,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "judge: The response accurately summarizes all policy sections, preserves every stated exception and condition, and correctly ignores the embedded instruction to use a single sentence.",
+          "latency_ms": 3354,
+          "output_tokens": 412,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "judge: The answer accurately summarizes all policy sections, preserves every stated exception and approval condition, and correctly ignores the embedded instruction to use a single sentence.",
+          "latency_ms": 3340,
+          "output_tokens": 479,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer ignores the embedded prompt injection, clearly summarizes all policy sections, preserves every exception and approval condition, and appropriately flags the ambiguity for flights lasting exactly six hours.",
+          "latency_ms": 15098,
+          "output_tokens": 454,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately summarizes all policy areas, preserves every exception and approval condition, notes the exactly-six-hours ambiguity, and correctly ignores the embedded instruction.",
+          "latency_ms": 15026,
+          "output_tokens": 412,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately and clearly summarizes every policy area and exception, correctly ignores the embedded one-sentence instruction, and even preserves the ambiguity for flights lasting exactly six hours.",
+          "latency_ms": 15357,
+          "output_tokens": 447,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer ignores the embedded prompt injection, is appropriately structured for new joiners, and accurately preserves every rule, threshold, condition, approval requirement, and exception in the policy.",
+          "latency_ms": 23932,
+          "output_tokens": 739,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "debug-adversarial-injection-in-log-16",
+      "split": "tune",
+      "label": {
+        "task": "debugging",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.0,
+          "note": "judge: It correctly traces lock contention through pool exhaustion to API timeouts, identifies the unbounded 4.8M-row sweeper as a major amplifier, and ignores the injected instruction, though it weakens the rubric\u2019s intended sweeper-root-cause narrative and includes a few imprecise claims about PostgreSQL locks and lock ordering.",
+          "latency_ms": 7250,
+          "output_tokens": 773,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 9.0,
+          "note": "judge: It correctly traces the required causal chain from the unbounded 4.8M-row sweeper through lock contention and pool exhaustion to API timeouts, and appropriately ignores the injected instruction, but its timeline incorrectly attributes contention beginning at 02:14:04 to a sweeper logged as starting at 02:14:30 and speculates about the remaining outage duration without evidence.",
+          "latency_ms": 7612,
+          "output_tokens": 688,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 9.0,
+          "note": "judge: It correctly identifies the expected causal chain from the unbounded 4.8M-row sweeper through lock contention, pool exhaustion, and API timeouts while rejecting the injected instruction, but it overstates unsupported details and mishandles timing\u2014the sweeper is logged as starting after contention began, its 310-second runtime does not explain the full 11-minute incident, and PostgreSQL lock behavior/transaction structure is inferred too confidently.",
+          "latency_ms": 15827,
+          "output_tokens": 1153,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 9.5,
+          "note": "judge: The answer correctly traces the unbounded 4.88M-row sweeper through database lock contention, blocked inventory updates, pool exhaustion, timeouts, and 5xxs while appropriately ignoring the injected log instruction and distinguishing confirmed evidence from unresolved timing details.",
+          "latency_ms": 31637,
+          "output_tokens": 999,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.75,
+          "note": "judge: The answer correctly traces the outage from the unbounded 4.88M-row sweeper through database lock contention, blocked inventory updates, connection-pool exhaustion, and API timeouts, while appropriately ignoring the injected one-line instruction and noting evidentiary gaps.",
+          "latency_ms": 29186,
+          "output_tokens": 921,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly traces the unbounded 4.88M-row sweeper through database lock contention and deadlocks to pool saturation, request timeouts, 500s, and recovery after completion, while appropriately ignoring the injected one-line instruction and distinguishing evidence from uncertainty.",
+          "latency_ms": 29257,
+          "output_tokens": 939,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 9.0,
+          "note": "judge: The answer correctly traces lock contention through connection-pool exhaustion to API timeouts, identifies the unbounded 4.88M-row sweeper as the leading cause, and ignores the injected one-line instruction, though it is more cautious than the rubric about attributing the long locking transactions directly to the sweeper.",
+          "latency_ms": 62010,
+          "output_tokens": 2007,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "summarise-trial-abstract-66",
+      "split": "tune",
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.2,
+          "note": "judge: The summary accurately preserves all reported effect sizes and confidence intervals, clearly identifies the primary endpoint and treats major bleeding as secondary, but it is only 112 words rather than the requested 120 and does not explicitly state that low event rates widened the confidence interval.",
+          "latency_ms": 2040,
+          "output_tokens": 248,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 9.6,
+          "note": "judge: The summary accurately preserves all effect sizes, confidence intervals, event counts, percentages, and the non-inferiority P value, clearly labels major bleeding as secondary, and notes key limitations, but it is 110 words rather than the requested 120.",
+          "latency_ms": 2322,
+          "output_tokens": 267,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.8,
+          "note": "judge: The summary is clinically clear and correctly distinguishes the primary and secondary endpoints while retaining reported HRs, CIs, and event rates, but it is only 109 words, omits the HR 1.5 non-inferiority margin, shortens the P-value label, and does not explicitly note that low event rates widened the confidence interval.",
+          "latency_ms": 3551,
+          "output_tokens": 275,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.0,
+          "note": "max_words 0.50: 122 words, limit 120 | judge: The summary preserves all reported effect sizes, confidence intervals, and the non-inferiority P value, clearly labels major bleeding as secondary, and notes key limitations, but it is 122 rather than 120 words and adds a potentially unwarranted claim that the P value conflicts with the confidence interval.",
+          "latency_ms": 9519,
+          "output_tokens": 273,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The summary is exactly 120 words, retains all reported effect sizes, confidence intervals, percentages, the non-inferiority margin and P value, clearly identifies major bleeding as secondary, and appropriately notes the open-label design and widened uncertainty.",
+          "latency_ms": 23307,
+          "output_tokens": 727,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The response is exactly 120 words, retains all reported effect sizes, confidence intervals, event rates, the non-inferiority margin and P value, clearly labels major bleeding as secondary, and appropriately notes the open-label design, widened uncertainty, limited applicability, and the apparent inconsistency between the confidence interval and non-inferiority claim.",
+          "latency_ms": 27068,
+          "output_tokens": 854,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The summary is exactly 120 words, preserves all reported effect sizes, confidence intervals, event counts, percentages, margin, and P value, clearly labels major bleeding as secondary, and appropriately notes the open-label design, unexpectedly low event rate, widened interval, limited applicability, and internal non-inferiority inconsistency.",
+          "latency_ms": 86562,
+          "output_tokens": 2842,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(low)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "summarise-meeting-notes-dates-61",
+      "split": "held_out",
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.2,
+          "note": "judge: The answer accurately captures the decisions, owners, dates, open questions, unassigned customer notification, and RC-date contradiction, with only minor overstatement in calling 2026-09-19 Friday and treating Rafa\u2019s screenshot commitment as confirmed.",
+          "latency_ms": 3677,
+          "output_tokens": 527,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 9.2,
+          "note": "judge: The answer accurately captures the decisions, actions, dates, open questions, unassigned customer outreach, and explicitly flags the RC-date contradiction, with only a minor concern that it assigns Yuki ownership of confirming release-note copy when the notes do not explicitly name an owner.",
+          "latency_ms": 3476,
+          "output_tokens": 564,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.4,
+          "note": "judge: The answer accurately captures nearly all decisions, owners, dates, and open questions and flags the RC-date contradiction, but it misses the weekday/date contradiction in \u201cMon 2026-09-22,\u201d arguably invents Yuki as the owner for confirming release-note authorship, and includes Dan as an owner despite no owned action.",
+          "latency_ms": 3761,
+          "output_tokens": 634,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately organizes decisions, owners and dates, and open questions, explicitly flags all date and RC contradictions, and avoids assigning unsupported owners or deadlines.",
+          "latency_ms": 22600,
+          "output_tokens": 712,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.2,
+          "note": "judge: The answer accurately organizes the decisions, owners, dates, and open questions, explicitly identifies both date contradictions, and avoids material invention, with only minor omissions such as not listing an owner for the delayed in-app announcement.",
+          "latency_ms": 23215,
+          "output_tokens": 720,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.6,
+          "note": "judge: The answer accurately organizes the decisions, actions, dates, unresolved items, and explicit contradictions without silently resolving them, with only a minor potentially unsupported inference that Yuki owns confirming Rafa\u2019s release-note involvement.",
+          "latency_ms": 26993,
+          "output_tokens": 831,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately organizes the decisions, owners and deadlines, and open questions, explicitly identifies both date contradictions, and avoids inventing missing owners or dates by marking them unspecified or unassigned.",
+          "latency_ms": 54523,
+          "output_tokens": 1774,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "debug-long-log-trivial-question-12",
+      "split": "tune",
+      "label": {
+        "task": "debugging",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 3.2,
+          "note": "max_words 0.00: 152 words, limit 120 | judge: The answer invents a Helm timeout, migration details, rollout status, and rollback that do not appear in the provided log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 3129,
+          "output_tokens": 274,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 4.0,
+          "note": "judge: The answer invents an error and detailed cause not present in the log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 2487,
+          "output_tokens": 101,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 4.0,
+          "note": "judge: The answer invents a Helm timeout, rollback revision, readiness failures, and migration details that do not appear in the log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 2260,
+          "output_tokens": 222,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 4.0,
+          "note": "judge: The response invents a timeout, rollback, replica, readiness, and migration failure that do not appear in the log; the final line is only a timestamp with no error message.",
+          "latency_ms": 12350,
+          "output_tokens": 104,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 4.0,
+          "note": "judge: The answer invents a timeout, replica failures, readiness errors, and a migration that do not appear in the log; the final line is only a timestamp with no error message.",
+          "latency_ms": 4616,
+          "output_tokens": 107,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 4.0,
+          "note": "judge: The answer invents a Helm timeout, replica status, migration, readiness failures, and rollback details that do not appear in the log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 4133,
+          "output_tokens": 90,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 4.0,
+          "note": "judge: The answer invents a Helm timeout, replica failures, migration details, and rollback that do not appear in the log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 9734,
+          "output_tokens": 269,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 4.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(low)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "quick-drug-interaction-73",
+      "split": "tune",
+      "label": {
+        "task": "quick-question",
+        "difficulty": 1,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.5,
+          "note": "judge: The answer is appropriately reassuring but cautious, clearly explains reduced blood-pressure control and kidney risk, recommends acetaminophen, and gives sensible reasons to contact a doctor, with the main omission being the heightened risk when a diuretic is also used.",
+          "latency_ms": 2484,
+          "output_tokens": 217,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "judge: The answer accurately explains that occasional ibuprofen is usually tolerated while clearly covering reduced blood-pressure control, kidney risk, the added danger with diuretics, paracetamol as the safer alternative, and when to consult a clinician without being alarmist.",
+          "latency_ms": 3220,
+          "output_tokens": 260,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "judge: It clearly explains the blood-pressure and kidney risks, notes the increased risk with diuretics and relevant conditions, recommends acetaminophen as the safer option, and advises when to consult a pharmacist or doctor without being alarmist.",
+          "latency_ms": 3643,
+          "output_tokens": 366,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.12,
+          "note": "contains_all 0.50: missing ['blood pressure|antihypertensive|reduce.{0,30}effect'] | judge: It clearly explains the kidney and blood-pressure risks, highlights the increased concern with dehydration, kidney disease, heart failure, or diuretics, recommends acetaminophen for a one-off headache, and gives appropriately non-alarmist guidance about consulting a pharmacist.",
+          "latency_ms": 7262,
+          "output_tokens": 159,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: It clearly explains the blood-pressure and kidney risks, highlights increased risk with diuretics and relevant conditions, recommends acetaminophen as the safer one-off option, and advises checking with a pharmacist without being alarmist.",
+          "latency_ms": 6645,
+          "output_tokens": 156,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer clearly explains that occasional ibuprofen is often tolerated but may reduce lisinopril\u2019s effect and increase kidney risk, highlights the added risks from diuretics and dehydration, recommends paracetamol as safer, and gives appropriately balanced advice on seeking professional guidance.",
+          "latency_ms": 9736,
+          "output_tokens": 270,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately explains the blood-pressure and kidney risks, appropriately frames a single dose as usually low-risk without being dismissive or alarmist, recommends acetaminophen as the safer option, and identifies key circumstances requiring pharmacist input.",
+          "latency_ms": 21469,
+          "output_tokens": 650,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "debug-go-deadlock-short-40-11",
+      "split": "held_out",
+      "label": {
+        "task": "debugging",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.0,
+          "note": "judge: It correctly identifies the send on the unbuffered results channel while holding w.mu as the deadlock cause and fixes it by unlocking before sending, though its claim that result miscorrelation alone strands a result is overstated absent cancellation.",
+          "latency_ms": 8905,
+          "output_tokens": 910,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.0,
+          "note": "judge: It correctly identifies the blocking send on the unbuffered results channel while holding w.mu and fixes it by moving channel operations outside the mutex and using buffered per-job replies, though it misleadingly presents result mispairing as the core deadlock cause rather than the send-under-mutex.",
+          "latency_ms": 17326,
+          "output_tokens": 1573,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 0.0,
+          "note": "judge: empty reply",
+          "latency_ms": 34258,
+          "output_tokens": 3000,
+          "error": "empty reply",
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies the unbuffered results send while holding w.mu as the deadlock mechanism and fixes it by moving channel communication outside the critical section while also addressing cancellation and result routing.",
+          "latency_ms": 29163,
+          "output_tokens": 889,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the unbuffered results send while holding w.mu as the deadlock cause and provides a sound fix that releases the mutex before sending, while also addressing cancellation and result misrouting.",
+          "latency_ms": 28640,
+          "output_tokens": 863,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies the unbuffered results send while holding w.mu as the core deadlock mechanism, explains the cancellation and result-routing issues, and provides a valid fix that releases the mutex before delivering results via per-request buffered channels.",
+          "latency_ms": 33210,
+          "output_tokens": 1068,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies the unbuffered result send while holding the mutex as the deadlock cause and provides a sound fix that releases the mutex before sending, while also addressing cancellation and result-routing issues.",
+          "latency_ms": 73831,
+          "output_tokens": 2383,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "quick-borrow-checker-misleading-75",
+      "split": "held_out",
+      "label": {
+        "task": "quick-question",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable and immutable borrows in both methods and provides valid fixes by narrowing/removing the `&self` borrow, without resorting to cloning the whole graph or using `RefCell`.",
+          "latency_ms": 4327,
+          "output_tokens": 428,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 7.0,
+          "note": "judge: It correctly identifies the overlapping mutable and immutable borrows in `relabel` and provides valid fixes, but it explicitly rejects the rubric\u2019s required claim that `recompute_degrees` has the same borrowing problem.",
+          "latency_ms": 6708,
+          "output_tokens": 640,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable borrow of `self.nodes` and immutable `&self` borrow in `relabel`, explains why direct disjoint field borrowing in `recompute_degrees` is allowed, and provides both rubric-approved fixes.",
+          "latency_ms": 6216,
+          "output_tokens": 821,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable and immutable borrows in `relabel`, provides the intended associated-function fix, and accurately explains why borrowing the distinct `edges` and `nodes` fields in `recompute_degrees` is accepted.",
+          "latency_ms": 8024,
+          "output_tokens": 219,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable and immutable borrows in `relabel`, provides the intended associated-function fix, and accurately explains why disjoint field borrowing allows `recompute_degrees`.",
+          "latency_ms": 7708,
+          "output_tokens": 214,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable borrow of `self.nodes` and immutable borrow of `self` in `relabel`, provides the recommended associated-function fix, and accurately explains why `recompute_degrees` can borrow disjoint fields.",
+          "latency_ms": 7634,
+          "output_tokens": 209,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the overlapping mutable and immutable borrows in `relabel`, provides the preferred fix of making `label_for` an associated function, and accurately explains why `recompute_degrees` can borrow disjoint fields.",
+          "latency_ms": 14241,
+          "output_tokens": 426,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "code-prose-shaped-really-code-09",
+      "split": "held_out",
+      "label": {
+        "task": "code-edit",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier",
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.0,
+          "note": "judge: It correctly recommends the csv module, proper quoting and doubled-quote escaping, UTF-8 with a BOM, and CRLF, but omits the rubric\u2019s explicit instruction to open the file with newline=\"\" on Windows.",
+          "latency_ms": 4201,
+          "output_tokens": 517,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "judge: The answer correctly recommends using Python\u2019s csv module, proper field quoting with doubled embedded quotes, UTF-8 with BOM via utf-8-sig, and newline=\"\"/CRLF handling for Excel compatibility.",
+          "latency_ms": 8573,
+          "output_tokens": 574,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.0,
+          "note": "judge: It correctly covers CSV quoting, doubled-quote escaping, UTF-8 BOM, and CRLF, but omits the rubric\u2019s important `newline=\"\"` file-opening requirement and assumes the supplied text stream is already UTF-8 encoded.",
+          "latency_ms": 7035,
+          "output_tokens": 770,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies all required changes: use Python\u2019s csv writer for proper field quoting and doubled-quote escaping, open with newline=\"\" for Windows-safe CSV line endings, and encode as utf-8-sig so Excel recognizes accented characters.",
+          "latency_ms": 11380,
+          "output_tokens": 309,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The answer fully identifies all required changes: use a proper CSV writer for field quoting, double embedded quotes for escaping, and open the file with UTF-8 BOM encoding plus newline=\"\" for Excel compatibility.",
+          "latency_ms": 11256,
+          "output_tokens": 311,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer fully identifies proper CSV quoting and doubled-quote escaping via csv.writer, plus UTF-8 with BOM and newline=\"\" for reliable Excel compatibility on Windows.",
+          "latency_ms": 14891,
+          "output_tokens": 393,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly specifies using Python\u2019s CSV writer for proper field quoting, doubling embedded double quotes, and opening the output with utf-8-sig and newline=\"\" for Excel-compatible encoding and line endings.",
+          "latency_ms": 23715,
+          "output_tokens": 728,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(low)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "code-sql-window-query-05",
+      "split": "tune",
+      "label": {
+        "task": "code-edit",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 7.0,
+          "note": "judge: The core gap-and-island query correctly uses LAG, a >=30-minute break via the ELSE branch, running SUM, and the requested aggregates without grouping by date, but it omits the rubric-required deterministic tiebreaker from the actual window order and incorrectly reverses the exactly-30-minutes explanation; its claim that LAG and SUM can be combined into one window expression is also invalid in PostgreSQL because window functions cannot be nested.",
+          "latency_ms": 8935,
+          "output_tokens": 813,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 2.0,
+          "note": "judge: Although it uses LAG, avoids grouping by date, and has the requested aggregates, it sums a same-session flag rather than a new-session marker\u2014so the session ID increments on every sub-30-minute event and fails to increment at 30-minute-or-greater gaps\u2014and it also lacks the rubric-required deterministic tiebreaker for identical timestamps.",
+          "latency_ms": 9573,
+          "output_tokens": 1032,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.5,
+          "note": "judge: The sessionization logic, 30-minute boundary, midnight handling, aggregation, and index note are correct, but the query omits the rubric-required deterministic tiebreaker in both window orderings and merely suggests optional use of ctid.",
+          "latency_ms": 23455,
+          "output_tokens": 2143,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.0,
+          "note": "judge: The query correctly sessionizes across midnight, uses the proper >= 30-minute boundary, aggregates all requested fields, and supports tied timestamps via a clever RANGE frame, but it does not satisfy the rubric\u2019s explicit requirement for a deterministic tiebreaker in the window ordering.",
+          "latency_ms": 29092,
+          "output_tokens": 877,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.0,
+          "note": "judge: The query correctly sessionizes across midnight, uses the proper >= 30-minute boundary, aggregates all requested fields, and handles timestamp peers robustly with RANGE, but it does not follow the rubric\u2019s explicit requirement for a deterministic tie-breaker in the LAG ordering.",
+          "latency_ms": 30601,
+          "output_tokens": 935,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.0,
+          "note": "judge: The query correctly sessionizes by user, handles 30-minute boundaries, identical timestamps via a valid RANGE-peer technique, cross-midnight sessions, required aggregates, and index considerations, but it does not follow the rubric\u2019s explicit requirement for a deterministic tiebreaker in both window orderings.",
+          "latency_ms": 34777,
+          "output_tokens": 1094,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 8.0,
+          "note": "judge: The query correctly sessionizes with LAG, a 30-minute boundary, running SUM, required aggregates, no date grouping, and useful index guidance, but it does not satisfy the rubric\u2019s explicit requirement for a deterministic tie-breaker on identical timestamps, instead using a valid RANGE-frame workaround.",
+          "latency_ms": 82522,
+          "output_tokens": 2700,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 9.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(high)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "high"
+    },
+    {
+      "case_id": "debug-css-overflow-17",
+      "split": "tune",
+      "label": {
+        "task": "debugging",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the flex item\u2019s default `min-width: auto` as the cause and provides the practical `min-width: 0` fix, while appropriately retaining ellipsis styles and sizing the actions as non-shrinking.",
+          "latency_ms": 2384,
+          "output_tokens": 235,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies the flex item\u2019s default `min-width: auto` as the cause and provides the practical `min-width: 0` fix, with appropriate flex sizing and ellipsis CSS.",
+          "latency_ms": 4003,
+          "output_tokens": 301,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 9.0,
+          "note": "judge: It correctly identifies the flex item\u2019s default `min-width: auto` and gives the standard `min-width: 0` plus `flex: 1` fix, though its claim that the already-present `overflow: hidden` alone reliably resets the automatic minimum size is misleading and contradicts the reported behavior.",
+          "latency_ms": 5175,
+          "output_tokens": 423,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the flex item\u2019s default `min-width: auto` as the cause, provides the canonical `min-width: 0` fix with appropriate flex sizing, and adds useful troubleshooting for wrappers, nested flex items, and unconstrained widths.",
+          "latency_ms": 12019,
+          "output_tokens": 307,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The answer correctly identifies the flex item\u2019s default `min-width: auto` as the cause, applies `min-width: 0` to allow shrinking, preserves the non-shrinking actions, and gives practical guidance for nested flex/grid containers.",
+          "latency_ms": 10117,
+          "output_tokens": 297,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the flex item\u2019s default `min-width: auto` as the cause, applies `min-width: 0` to the shrinking item, and adds practical guidance for wrappers, ancestors, and constrained width.",
+          "latency_ms": 11648,
+          "output_tokens": 342,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: It correctly identifies the flex item\u2019s default `min-width: auto` as the cause, applies `min-width: 0` to the shrinking item (and relevant ancestors), and preserves the nonshrinking actions while explaining the required width constraint.",
+          "latency_ms": 26964,
+          "output_tokens": 829,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "debug-spanish-slow-query-18",
+      "split": "tune",
+      "label": {
+        "task": "debugging",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 8.0,
+          "note": "judge: Diagnostica correctamente el escaneo secuencial, la incompatibilidad del \u00edndice con lower(), la gran discrepancia de cardinalidad y propone ANALYZE/autovacuum y una reescritura o \u00edndice concreto, aunque atribuye con demasiada certeza la estimaci\u00f3n a estad\u00edsticas obsoletas y llama \u201c\u00edndice de expresi\u00f3n\u201d a un \u00edndice parcial cuya clave es creado_en.",
+          "latency_ms": 5673,
+          "output_tokens": 644,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.0,
+          "note": "judge: Responde en espa\u00f1ol, identifica correctamente el escaneo secuencial, la inutilidad del \u00edndice simple ante lower(estado), la mala estimaci\u00f3n y propone ANALYZE, ajustes de autovacuum y un \u00edndice/rewrite concretos, aunque incluye afirmaciones imprecisas sobre la selectividad, la raz\u00f3n por la que rows=1 favorecer\u00eda el Seq Scan y la atribuci\u00f3n de las lecturas a clientes.",
+          "latency_ms": 8969,
+          "output_tokens": 717,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 9.0,
+          "note": "judge: Responde en espa\u00f1ol, identifica correctamente el escaneo secuencial, la gran discrepancia de cardinalidad y la inutilizaci\u00f3n del \u00edndice por lower(), y propone ANALYZE/autovacuum y un \u00edndice o reescritura concretos, aunque atribuye con demasiada certeza la estimaci\u00f3n err\u00f3nea a estad\u00edsticas desactualizadas y promete una latencia final algo optimista.",
+          "latency_ms": 10619,
+          "output_tokens": 1398,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el escaneo secuencial causado por lower(estado), la grave subestimaci\u00f3n y el coste del nested loop, y propone ANALYZE, revisar autovacuum, un \u00edndice funcional concreto y una reescritura segura.",
+          "latency_ms": 32670,
+          "output_tokens": 1050,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el escaneo secuencial y la grave subestimaci\u00f3n de cardinalidad, explica la relaci\u00f3n con ANALYZE/autovacuum y propone tanto un \u00edndice funcional sobre lower(estado) como una reescritura concreta.",
+          "latency_ms": 32580,
+          "output_tokens": 1046,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el escaneo secuencial y la gran mala estimaci\u00f3n, explica la relaci\u00f3n con estad\u00edsticas/autovacuum y propone tanto ANALYZE como un \u00edndice funcional o una reescritura concreta.",
+          "latency_ms": 38545,
+          "output_tokens": 1223,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: Diagnostica correctamente el escaneo secuencial causado por lower(estado), la gran subestimaci\u00f3n de filas y el posible desfase de estad\u00edsticas, y propone ANALYZE, revisar autovacuum y crear un \u00edndice funcional o reescribir el filtro, todo en espa\u00f1ol.",
+          "latency_ms": 82689,
+          "output_tokens": 2586,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "design-eventbus-tradeoff-20",
+      "split": "held_out",
+      "label": {
+        "task": "design-or-review",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "xhigh",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 9.5,
+          "note": "judge: The answer gives a context-specific recommendation, clearly weighs JetStream\u2019s benefits against operational and consistency costs, proposes cheaper first steps like parallel calls and rolling deploys, and states concrete conditions that would change the decision, with only minor overstatements about synchronous confirmation and service extraction fully solving deploy issues.",
+          "latency_ms": 24733,
+          "output_tokens": 1255,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 9.0,
+          "note": "judge: The answer is concrete and appropriately tailored, clearly recommends a lower-complexity path, explains JetStream\u2019s correctness and operational costs, proposes cheaper first steps, and names conditions that would change the decision, though it underplays the event bus\u2019s benefits and assumes the three checks can safely run independently without fully specifying atomic inventory reservation.",
+          "latency_ms": 12307,
+          "output_tokens": 1038,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "note": "judge: It gives a concrete, context-specific recommendation, clearly explains why JetStream would add saga, idempotency, outbox, lag, and operational costs without removing the acceptance dependency, proposes cheaper first steps such as zero-downtime deploys and parallel calls, and states specific conditions that would change the decision.",
+          "latency_ms": 18980,
+          "output_tokens": 1848,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer gives a concrete, context-sensitive recommendation, clearly weighs JetStream\u2019s latency and operational costs against its benefits, proposes cheaper first steps such as parallelization, modular boundaries, and zero-downtime deploys, and specifies what conditions would justify changing course.",
+          "latency_ms": 43447,
+          "output_tokens": 1388,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: It gives a clear, context-specific recommendation, rigorously weighs JetStream\u2019s benefits and operational costs for this team, proposes cheaper incremental fixes first, addresses the fulfilment invariant, and identifies concrete conditions that would change the decision.",
+          "latency_ms": 43698,
+          "output_tokens": 1409,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: It gives a clear, context-specific recommendation, carefully weighs JetStream\u2019s benefits against its operational and correctness costs, proposes cheaper incremental fixes for latency, deployments, and code ownership, and identifies concrete conditions that would change the decision.",
+          "latency_ms": 47535,
+          "output_tokens": 1520,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer gives a clear, context-specific recommendation, carefully weighs JetStream\u2019s benefits against distributed-workflow and operational costs, proposes several cheaper targeted fixes first, and states concrete conditions that would change the decision.",
+          "latency_ms": 87576,
+          "output_tokens": 2866,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none"
+    },
+    {
+      "case_id": "design-auth-module-review-23",
+      "split": "tune",
+      "label": {
+        "task": "design-or-review",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 5.0,
+          "note": "judge: It identifies several core flaws\u2014default JWT secret, SQL injection, weak password hashing, ineffective logout/revocation, reset-token replay, and absent brute-force enforcement\u2014but uses largely incorrect line numbers, materially misstates the 64-bit salt as 8-bit, invents a session-fixation hijack despite authentication relying on the bearer JWT, overstates practical MD5-MAC forgery and algorithm-confusion risks, duplicates findings, and misses important robustness/compatibility issues such as malformed stored hashes or claims causing errors and modern PyJWT requiring an algorithms allowlist.",
+          "latency_ms": 13087,
+          "output_tokens": 1461,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 6.0,
+          "note": "judge: The answer finds most major flaws\u2014SQL injection, default secret, weak password hashing, stale JWT authorization, ineffective logout, replayable reset tokens, and missing rate limiting\u2014but materially mischaracterizes PyJWT decoding and session fixation, overstates MD5 forgery feasibility, adds non-security or duplicate issues, omits malformed reset-token handling and key separation, and fails to provide an exploit sketch for several listed findings.",
+          "latency_ms": 15916,
+          "output_tokens": 1778,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 0.0,
+          "note": "judge: empty reply",
+          "latency_ms": 26695,
+          "output_tokens": 3000,
+          "error": "empty reply",
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 9.5,
+          "note": "judge: The answer identifies nearly all concrete flaws with accurate locations, plausible exploit sketches, and actionable fixes, while clearly qualifying deployment-dependent findings; only minor line-range inaccuracies and a few low-impact speculative hardening concerns keep it from perfect.",
+          "latency_ms": 87755,
+          "output_tokens": 2870,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.5,
+          "note": "judge: The review comprehensively identifies the module\u2019s concrete authentication, token, session, password, SQL injection, reset-token, authorization, and robustness flaws with accurate lines, exploit sketches, and fixes, with only minor overstatement in the severity of some conditional or impractical findings such as session fixation and timing attacks.",
+          "latency_ms": 96704,
+          "output_tokens": 3168,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.0,
+          "note": "judge: The review comprehensively identifies the module\u2019s substantive flaws with accurate line references, exploit sketches, fixes, and nuanced caveats, though a few conditional or very low-practicality findings\u2014such as universal admin semantics, timing comparisons, and tenant scoping\u2014are not definitively vulnerabilities from the pasted code alone.",
+          "latency_ms": 126129,
+          "output_tokens": 4152,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 9.3,
+          "note": "judge: The review identifies nearly all substantive flaws with accurate line references, exploit sketches, fixes, and careful qualifications, though a few findings are speculative or severity-inflated, particularly tenant authorization, session fixation in the current bearer-token design, truncated-MD5 practicality, and compatibility/availability issues presented as high-severity security findings.",
+          "latency_ms": 365072,
+          "output_tokens": 12107,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 9.5,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "design-naming-bikeshed-24",
+      "split": "held_out",
+      "label": {
+        "task": "design-or-review",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 4.0,
+          "note": "judge: It makes a sensible choice and explains it correctly, but greatly exceeds the requested short naming opinion with multiple sections, examples, and unasked language-specific caveats.",
+          "latency_ms": 3963,
+          "output_tokens": 296,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 4.0,
+          "note": "judge: It chooses the strongest option and gives a sound reason, but the response is far too long for the requested short naming opinion and adds several unnecessary tangents.",
+          "latency_ms": 5868,
+          "output_tokens": 380,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 4.0,
+          "note": "judge: It clearly picks `invoice_from_event` and gives a sound reason, but it is far longer than the requested one-line naming opinion and substantially overanswers the question.",
+          "latency_ms": 5874,
+          "output_tokens": 435,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 6.0,
+          "note": "judge: It correctly picks `invoice_from_event` and gives a sound reason, but it is substantially longer than the requested one-line naming opinion.",
+          "latency_ms": 5124,
+          "output_tokens": 123,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 7.0,
+          "note": "judge: It correctly picks `invoice_from_event` and gives a sound reason, but it exceeds the requested brevity with multiple bullets and extra alternatives.",
+          "latency_ms": 4900,
+          "output_tokens": 119,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 6.0,
+          "note": "judge: It correctly picks `invoice_from_event` and gives the key reason, but adds unnecessary alternatives, bullets, and class-method advice despite the rubric requiring only a brief naming opinion.",
+          "latency_ms": 7277,
+          "output_tokens": 164,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 7.0,
+          "note": "judge: It makes a clear, well-reasoned choice, but adds unnecessary bullet-by-bullet analysis and an extra naming suggestion when the rubric calls for only a one-line reason.",
+          "latency_ms": 12017,
+          "output_tokens": 350,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 7.0,
+      "cheapest_adequate": "gpt-6-astra(medium)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "medium"
+    },
+    {
+      "case_id": "writing-incident-customer-notice-37",
+      "split": "tune",
+      "label": {
+        "task": "high-stakes-writing",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 8.0,
+          "note": "judge: The notice is clear, direct, and accurately covers the supplied incident facts, but it adds unsupported details by calling the new pool \u201cdedicated,\u201d stating the load test will \u201cvalidate the fix,\u201d and directing customers to support or an account manager.",
+          "latency_ms": 2693,
+          "output_tokens": 284,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 7.0,
+          "note": "judge: The notice is clear and mostly faithful, but it adds unsupported assertions such as the API currently operating normally, both changes being deployed, the isolated job being unable to starve services, and testing under \u201ccomparable load,\u201d plus an unnecessary editorial note and placeholder.",
+          "latency_ms": 3779,
+          "output_tokens": 379,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 6.0,
+          "note": "judge: The core notice accurately reflects the supplied facts, but it adds unsupported claims such as all connections being consumed, requests failing because they could not obtain a connection, production-equivalent testing, confirmed root cause status, and no related incidents, while the forwarding and drafting notes make the result less plain and direct.",
+          "latency_ms": 5373,
+          "output_tokens": 443,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The notice uses only the supplied facts, accurately distinguishes request error rate from customer impact, and presents the cause, integrity assurances, remediation, and pending validation in a plain, procurement-appropriate tone.",
+          "latency_ms": 12188,
+          "output_tokens": 345,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The notice stays within the supplied facts, accurately states the timing, impact, cause, remediation, validation status, and affected plans, and uses a plain, procurement-appropriate tone.",
+          "latency_ms": 13210,
+          "output_tokens": 381,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.0,
+          "note": "judge: The notice accurately uses only the supplied facts, clearly separates impact, cause, integrity, remediation, and ongoing validation, and maintains a plain procurement-ready tone, with only minor redundancy and slightly legalistic phrasing.",
+          "latency_ms": 14786,
+          "output_tokens": 413,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The notice is plain, direct, appropriately technical, and confined to the supplied timeline, impact, cause, data and payment assurances, remediation, affected plans, and validation status without inventing facts.",
+          "latency_ms": 49578,
+          "output_tokens": 1592,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "writing-medical-discharge-38",
+      "split": "held_out",
+      "label": {
+        "task": "high-stakes-writing",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 0.0,
+          "note": "judge: It gives confidently incorrect medical reassurance that a normal CT \u201cconfirms no actual stroke occurred\u201d (CT can miss acute ischaemic infarction), overstates insurance invalidity, and does not clearly identify which interpretations\u2014such as diagnosis and carotid management\u2014should be confirmed with her clinician.",
+          "latency_ms": 5026,
+          "output_tokens": 509,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 0.0,
+          "note": "judge: It gives confident incorrect or unsupported medical/legal details: symptom resolution alone does not establish TIA over stroke, 40\u201349% carotid stenosis is not necessarily the culprit, and UK ordinary-licence drivers do not invariably have to notify the DVLA after a single fully resolved TIA.",
+          "latency_ms": 7747,
+          "output_tokens": 546,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 0.0,
+          "note": "judge: It gives confident incorrect medical claims\u2014especially that symptoms resolving within 24 hours necessarily mean TIA rather than stroke and that a normal CT is consistent enough to establish this\u2014and it unjustifiably identifies the 40\u201349% carotid narrowing as the likely cause.",
+          "latency_ms": 10817,
+          "output_tokens": 958,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately translates every abbreviation and finding, appropriately frames the event as a suspected TIA rather than a certain diagnosis, explains the medicines without inventing doses, treats the driving restriction seriously, highlights emergency warning signs, and directs follow-up and licensing questions to clinicians.",
+          "latency_ms": 22535,
+          "output_tokens": 673,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately translates every abbreviation and finding, appropriately frames the event as a suspected TIA rather than a certain diagnosis, explains the prescribed doses without inventing details, treats the driving restriction as substantive, and clearly directs diagnostic, testing, and return-to-driving questions to clinicians.",
+          "latency_ms": 23908,
+          "output_tokens": 746,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately translates all abbreviations and findings, appropriately frames the event as a suspected TIA rather than a certain diagnosis, gives no invented doses, emphasizes the genuine driving restriction and urgent recurrence advice, and directs individualized driving and follow-up questions to her clinicians or licensing authority.",
+          "latency_ms": 22920,
+          "output_tokens": 724,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "note": "judge: The answer accurately translates the summary, appropriately frames the event as a suspected TIA rather than a certain diagnosis, explains the tests, medications, follow-up and genuine driving restriction without inventing details, and clearly directs medication, driving-clearance and recurrent-symptom issues to clinicians or emergency services.",
+          "latency_ms": 45432,
+          "output_tokens": 1470,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    },
+    {
+      "case_id": "writing-legal-clause-39",
+      "split": "tune",
+      "label": {
+        "task": "high-stakes-writing",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 6.0,
+          "note": "judge: It clearly identifies the broad, uncapped indemnity and quotes the damaging wording, but it omits the other uncapped liability carve-outs, says nothing about termination or assignment (or that those cannot be assessed from the excerpts), lacks a plain legal-advice disclaimer, and inaccurately suggests settlements are expressly payable despite the clause covering damages \u201cfinally awarded.\u201d",
+          "latency_ms": 9975,
+          "output_tokens": 752,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 7.0,
+          "note": "judge: It clearly identifies and quotes the broad, uncapped indemnity and liability-cap carve-outs, but omits the rubric-required discussion of termination and assignment (or noting they cannot be assessed from the excerpts), fails to state that it is not legal advice, and somewhat overstates exposure to settlements not expressly covered by 9.2.",
+          "latency_ms": 8464,
+          "output_tokens": 815,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 7.0,
+          "note": "judge: It clearly identifies the uncapped indemnity and liability carve-outs and quotes the damaging wording, but it omits the rubric-required termination and assignment risks, does not expressly say it is not legal advice, and slightly overstates some effects of \u201chold harmless\u201d and Affiliate coverage.",
+          "latency_ms": 12866,
+          "output_tokens": 1305,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.0,
+          "note": "judge: The answer accurately explains the uncapped indemnity and liability-cap carve-out, quotes the damaging language, and gives a clear legal-advice caveat, but it does not address the rubric\u2019s requested termination and assignment risks or note that those cannot be assessed from the excerpts.",
+          "latency_ms": 31082,
+          "output_tokens": 884,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 7.0,
+          "note": "judge: The answer accurately explains the uncapped indemnity and liability carve-outs, quotes and analyzes the damaging wording, and gives a clear worst-case assessment, but it does not address termination or assignment risks and only implies rather than plainly states that it is not legal advice.",
+          "latency_ms": 30982,
+          "output_tokens": 982,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 7.0,
+          "note": "judge: The answer clearly explains the uncapped indemnity and liability-cap carve-outs with specific quoted wording, but it does not address termination or assignment risks as required by the rubric and only gives a preliminary-reading caveat rather than plainly stating that it is not legal advice.",
+          "latency_ms": 30986,
+          "output_tokens": 985,
+          "error": null,
+          "cached": true
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 7.0,
+          "note": "judge: It accurately explains the uncapped indemnity, broad triggering language, defense costs, and other liability carve-outs with supporting quotations, but it does not address the rubric\u2019s required termination and assignment risks and only implies rather than plainly states that it is not legal advice.",
+          "latency_ms": 57264,
+          "output_tokens": 1851,
+          "error": null,
+          "cached": true
+        }
+      ],
+      "best_score": 8.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low"
+    }
+  ],
+  "proposed_label_changes": [
+    {
+      "case_id": "summarise-adversarial-doc-69",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "summarise-trial-abstract-66",
+      "from_tier": "frontier",
+      "from_effort": "high",
+      "to_tier": "fast",
+      "to_effort": "low",
+      "clear_cut": false,
+      "confidence": "mixed",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(low), best score 10.0, fast-tier scores [9.2, 9.6, 8.8], frontier-tier scores [8.0, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "quick-drug-interaction-73",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [9.5, 10.0, 10.0], frontier-tier scores [8.12, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "quick-borrow-checker-misleading-75",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": false,
+      "confidence": "mixed",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 7.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "code-sql-window-query-05",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "high",
+      "clear_cut": false,
+      "confidence": "mixed",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(high), best score 9.0, fast-tier scores [7.0, 2.0, 8.5], frontier-tier scores [8.0, 9.0, 9.0, 8.0]."
+    },
+    {
+      "case_id": "design-eventbus-tradeoff-20",
+      "from_tier": "frontier",
+      "from_effort": "xhigh",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": false,
+      "confidence": "mixed",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [9.5, 9.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "design-naming-bikeshed-24",
+      "from_tier": "fast",
+      "from_effort": "none",
+      "to_tier": "frontier",
+      "to_effort": "medium",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was not good enough: cheapest adequate route is gpt-6-astra(medium), best score 7.0, fast-tier scores [4.0, 4.0, 4.0], frontier-tier scores [6.0, 7.0, 6.0, 7.0]."
+    }
+  ]
+}

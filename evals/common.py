@@ -1,0 +1,589 @@
+"""Shared pieces for the eval scripts: cases, labels, caching, API clients.
+
+Nothing here talks to the router's HTTP server. The scripts build features and
+state with the router's own code, so what is measured is what ships.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import hashlib
+import json
+import os
+import random
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import httpx
+import yaml
+
+EVALS_DIR = Path(__file__).resolve().parent
+ROOT = EVALS_DIR.parent
+CACHE_DIR = EVALS_DIR / ".cache"
+
+sys.path.insert(0, str(ROOT / "src"))
+
+from jev_router.config import RouterConfig  # noqa: E402
+from jev_router.features import Features, extract_features  # noqa: E402
+
+# --- labels -------------------------------------------------------------
+
+# The ten labels used in cases.yaml.
+CASE_TASKS = [
+    "code-edit",
+    "debugging",
+    "agentic-tool-task",
+    "design-or-review",
+    "quick-question",
+    "summarise-or-extract",
+    "high-stakes-writing",
+    "creative-prose",
+    "everyday-polish",
+    "other",
+]
+
+# cases.yaml label -> the seven categories router.yaml ships with.
+TEN_TO_SEVEN = {
+    "code-edit": "code",
+    "debugging": "debugging",
+    "agentic-tool-task": "agentic_tool_task",
+    "design-or-review": "analysis",
+    "quick-question": "quick_question",
+    "summarise-or-extract": "writing",
+    "high-stakes-writing": "writing",
+    "creative-prose": "writing",
+    "everyday-polish": "writing",
+    "other": "other",
+}
+
+# A ten-category question answers in cases.yaml's own names, so mapping down to
+# the seven is the same table.
+TEN_CAT_TO_SEVEN = dict(TEN_TO_SEVEN)
+
+TIERS = ("fast", "frontier")
+
+# Relative cost per route, cheapest first. Used to order routes and to score
+# "cheapest adequate". These are quota units, not currency: see EXPERIMENTS.md.
+ROUTE_COST = {
+    ("ollama/glm-5.3-flash", "none"): 1.0,
+    ("ollama/glm-5.3-flash", "low"): 1.4,
+    ("ollama/glm-5.3-flash", "high"): 2.2,
+    ("gpt-6-astra", "low"): 10.0,
+    ("gpt-6-astra", "medium"): 14.0,
+    ("gpt-6-astra", "high"): 20.0,
+    ("gpt-6-astra", "xhigh"): 30.0,
+    ("gpt-6-astra", "max"): 45.0,
+}
+
+ROUTE_ORDER = [
+    ("ollama/glm-5.3-flash", "none"),
+    ("ollama/glm-5.3-flash", "low"),
+    ("ollama/glm-5.3-flash", "high"),
+    ("gpt-6-astra", "low"),
+    ("gpt-6-astra", "medium"),
+    ("gpt-6-astra", "high"),
+    ("gpt-6-astra", "xhigh"),
+]
+
+EFFORT_ORDER = ["none", "low", "medium", "high", "xhigh", "max"]
+
+
+def route_cost(model: str, effort: str | None) -> float:
+    return ROUTE_COST.get((model, effort or "none"), 14.0)
+
+
+def tier_of(model: str) -> str:
+    return "fast" if model.startswith("ollama/") else "frontier"
+
+
+def effort_rank(effort: str | None) -> int:
+    if effort is None:
+        return 0
+    try:
+        return EFFORT_ORDER.index(effort)
+    except ValueError:
+        return 0
+
+
+# --- cases --------------------------------------------------------------
+
+LANGUAGE_MARKERS = {
+    "chinese": "zh",
+    "spanish": "es",
+    "german": "de",
+    "microcuento": "es",
+}
+
+
+@dataclass
+class Case:
+    id: str
+    notes: str
+    body: dict[str, Any]
+    expected: dict[str, Any]
+    shape: str
+    language: str
+    multi_turn: bool
+    adversarial: bool
+    trap: bool
+    split: str = "tune"
+
+    @property
+    def task(self) -> str:
+        return self.expected["task"]
+
+    @property
+    def task7(self) -> str:
+        return TEN_TO_SEVEN[self.expected["task"]]
+
+    @property
+    def difficulty(self) -> int:
+        return int(self.expected["difficulty"])
+
+    @property
+    def tolerance(self) -> int:
+        return int(self.expected["difficulty_tolerance"])
+
+    @property
+    def needs_faithfulness(self) -> bool:
+        return bool(self.expected["needs_faithfulness"])
+
+    @property
+    def tier(self) -> str:
+        return self.expected["tier"]
+
+    @property
+    def effort(self) -> str:
+        return self.expected["effort"]
+
+    @property
+    def acceptable_tiers(self) -> list[str]:
+        return list(self.expected["acceptable_tiers"])
+
+    def features(self) -> Features:
+        body = copy.deepcopy(self.body)
+        body.setdefault("model", "auto")
+        return extract_features(body)
+
+
+def _shape_of(body: dict[str, Any]) -> str:
+    """Which client envelope this request came in: the four shapes in the set."""
+    system = ""
+    for m in body.get("messages") or []:
+        if m.get("role") in ("system", "developer"):
+            c = m.get("content")
+            if isinstance(c, str):
+                system = c
+            break
+    if not system:
+        return "bare"
+    if "terminal coding agent" in system:
+        return "terminal-agent"
+    if "Follow the instruction exactly" in system:
+        return "pipeline"
+    return "chat-ui"
+
+
+def _language_of(case_id: str, body: dict[str, Any]) -> str:
+    low = case_id.lower()
+    for marker, lang in LANGUAGE_MARKERS.items():
+        if marker in low:
+            return lang
+    return "en"
+
+
+def _multi_turn(body: dict[str, Any]) -> bool:
+    roles = [m.get("role") for m in body.get("messages") or []]
+    return any(r in ("assistant", "tool") for r in roles)
+
+
+def load_cases(path: Path | None = None) -> list[Case]:
+    path = path or EVALS_DIR / "cases.yaml"
+    raw = yaml.safe_load(path.read_text())
+    cases: list[Case] = []
+    for item in raw["cases"]:
+        body = item["request"]
+        notes = " ".join(str(item.get("notes", "")).split())
+        upper = notes.upper()
+        cases.append(
+            Case(
+                id=item["id"],
+                notes=notes,
+                body=body,
+                expected=item["expected"],
+                shape=_shape_of(body),
+                language=_language_of(item["id"], body),
+                multi_turn=_multi_turn(body),
+                adversarial="ADVERSARIAL" in upper,
+                trap=any(w in upper for w in ("ADVERSARIAL", "MISLEADING", "HARD CASE")),
+            )
+        )
+    assign_splits(cases)
+    return cases
+
+
+SPLIT_SEED = 20260918
+TUNE_FRACTION = 0.70
+
+
+def assign_splits(cases: list[Case], seed: int = SPLIT_SEED) -> None:
+    """70/30 tune/held-out, stratified by task label so both halves cover all ten."""
+    by_task: dict[str, list[Case]] = {}
+    for c in cases:
+        by_task.setdefault(c.task, []).append(c)
+    rng = random.Random(seed)
+    for task in sorted(by_task):
+        group = sorted(by_task[task], key=lambda c: c.id)
+        rng.shuffle(group)
+        n_tune = max(1, round(len(group) * TUNE_FRACTION))
+        for i, case in enumerate(group):
+            case.split = "tune" if i < n_tune else "held_out"
+
+
+# --- config variants ----------------------------------------------------
+
+
+def deep_merge(base: Any, overlay: Any) -> Any:
+    """Dict-into-dict merge. Lists and scalars in the overlay replace."""
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        out = dict(base)
+        for k, v in overlay.items():
+            out[k] = deep_merge(base.get(k), v) if k in base else copy.deepcopy(v)
+        return out
+    return copy.deepcopy(overlay)
+
+
+def questions_to_replace(overlay: dict[str, Any] | None) -> list[str]:
+    """Question ids in an overlay that define their own `criteria`.
+
+    Those replace the shipped question outright. Merging two `criteria` maps
+    would leave both sets of category names in the question.
+    """
+    return [
+        qid
+        for qid, q in ((overlay or {}).get("questions") or {}).items()
+        if isinstance(q, dict) and "criteria" in q
+    ]
+
+
+def config_with_overlay(
+    overlay: dict[str, Any] | None = None,
+    path: Path | None = None,
+    replace_questions: list[str] | None = None,
+) -> RouterConfig:
+    """router.yaml with an overlay merged in.
+
+    Question ids named in `replace_questions` are taken from the overlay
+    whole, instead of being merged field by field. Merging a `criteria` map
+    would leave the old category names in place beside the new ones.
+    """
+    path = path or ROOT / "router.yaml"
+    raw = yaml.safe_load(path.read_text())
+    for qid in replace_questions or []:
+        (raw.get("questions") or {}).pop(qid, None)
+    merged = deep_merge(raw, overlay or {})
+    cfg = RouterConfig.model_validate(merged)
+    cfg._config_hash = hashlib.sha256(
+        json.dumps(merged, sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+    cfg._config_path = str(path)
+    return cfg
+
+
+# --- disk cache ---------------------------------------------------------
+
+
+class DiskCache:
+    def __init__(self, name: str, enabled: bool = True) -> None:
+        self.dir = CACHE_DIR / name
+        self.enabled = enabled
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.hits = 0
+        self.misses = 0
+
+    @staticmethod
+    def key(payload: Any) -> str:
+        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+    def get(self, key: str) -> Any | None:
+        if not self.enabled:
+            return None
+        f = self.dir / f"{key}.json"
+        if not f.exists():
+            return None
+        try:
+            self.hits += 1
+            return json.loads(f.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def put(self, key: str, value: Any) -> None:
+        if not self.enabled:
+            return
+        tmp = self.dir / f"{key}.json.tmp"
+        tmp.write_text(json.dumps(value, ensure_ascii=False))
+        tmp.replace(self.dir / f"{key}.json")
+
+
+# --- Jev client ---------------------------------------------------------
+
+
+class JevError(RuntimeError):
+    pass
+
+
+@dataclass
+class JevResult:
+    answers: dict[str, Any]
+    latency_ms: float
+    input_tokens: int
+    cached: bool
+
+
+class JevClient:
+    """Calls the real API. Backs off on 429 and 529, keeps concurrency low."""
+
+    URL = "https://api.typesafe.ai/v1/systemone"
+
+    def __init__(
+        self,
+        model: str = "jev-1.13.0",
+        concurrency: int = 8,
+        cache: bool = True,
+        timeout_s: float = 30.0,
+    ) -> None:
+        key = os.environ.get("TYPESAFE_API_KEY", "")
+        if not key:
+            raise JevError(
+                "TYPESAFE_API_KEY is not set. Export it, or put it in a .env file "
+                "and load that, before running the eval scripts. See .env.example."
+            )
+        self._key = key
+        self.model = model
+        self.cache = DiskCache("jev", enabled=cache)
+        self._sem = asyncio.Semaphore(concurrency)
+        self._client = httpx.AsyncClient(timeout=timeout_s)
+        self.calls = 0
+        self.input_tokens = 0
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def ask(
+        self, state: Any, questions: dict[str, Any], use_cache: bool = True
+    ) -> JevResult:
+        payload = {"model": self.model, "state": state, "questions": questions}
+        ckey = DiskCache.key(payload)
+        if use_cache:
+            hit = self.cache.get(ckey)
+            if hit is not None:
+                return JevResult(
+                    answers=hit["answers"],
+                    latency_ms=hit.get("latency_ms", 0.0),
+                    input_tokens=hit.get("input_tokens", 0),
+                    cached=True,
+                )
+
+        delay = 1.0
+        last: Exception | None = None
+        for attempt in range(6):
+            async with self._sem:
+                started = time.perf_counter()
+                try:
+                    resp = await self._client.post(
+                        self.URL,
+                        json=payload,
+                        headers={"Authorization": f"Bearer {self._key}"},
+                    )
+                except httpx.HTTPError as exc:  # network wobble
+                    last = exc
+                    resp = None
+            if resp is not None:
+                if resp.status_code in (429, 529, 500, 502, 503):
+                    last = JevError(f"jev returned {resp.status_code}")
+                elif resp.status_code >= 400:
+                    raise JevError(f"jev returned {resp.status_code}: {resp.text[:300]}")
+                else:
+                    elapsed = (time.perf_counter() - started) * 1000
+                    data = resp.json()
+                    usage = data.get("usage") or {}
+                    self.calls += 1
+                    self.input_tokens += int(usage.get("input_tokens") or 0)
+                    record = {
+                        "answers": data.get("answers") or {},
+                        "latency_ms": elapsed,
+                        "input_tokens": int(usage.get("input_tokens") or 0),
+                    }
+                    if use_cache:
+                        self.cache.put(ckey, record)
+                    return JevResult(
+                        answers=record["answers"],
+                        latency_ms=elapsed,
+                        input_tokens=record["input_tokens"],
+                        cached=False,
+                    )
+            await asyncio.sleep(delay + random.random() * 0.4)
+            delay = min(delay * 2, 20.0)
+        raise JevError(f"jev failed after retries: {last}")
+
+
+# --- upstream (proxy) client -------------------------------------------
+
+
+DEFAULT_UPSTREAM = "http://127.0.0.1:8317"
+
+
+def upstream_base_url() -> str:
+    """Where the proxy that serves the candidate models is listening."""
+    return os.environ.get("JEV_ROUTER_UPSTREAM", "").strip() or DEFAULT_UPSTREAM
+
+
+def upstream_key() -> str:
+    """The bearer token the proxy expects. Only the outcome benchmark needs it."""
+    key = os.environ.get("UPSTREAM_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError(
+            "UPSTREAM_API_KEY is not set. It is the key your OpenAI-compatible "
+            "proxy expects, and only evals/run_outcomes.py needs it. Set "
+            "JEV_ROUTER_UPSTREAM too if the proxy is not at "
+            f"{DEFAULT_UPSTREAM}. See .env.example."
+        )
+    return key
+
+
+@dataclass
+class ChatResult:
+    text: str
+    latency_ms: float
+    output_tokens: int
+    prompt_tokens: int
+    cached: bool
+    error: str | None = None
+
+
+class UpstreamClient:
+    """Chat completions through the proxy. Everything is cached on disk."""
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        concurrency: int = 4,
+        cache: bool = True,
+        timeout_s: float = 900.0,
+    ) -> None:
+        base_url = base_url or upstream_base_url()
+        self._key = upstream_key()
+        self.url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        self.cache = DiskCache("upstream", enabled=cache)
+        self._sem = asyncio.Semaphore(concurrency)
+        self._client = httpx.AsyncClient(timeout=timeout_s)
+        self.calls = 0
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int = 3000,
+        temperature: float | None = None,
+    ) -> ChatResult:
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        ckey = DiskCache.key(body)
+        hit = self.cache.get(ckey)
+        if hit is not None:
+            return ChatResult(
+                text=hit["text"],
+                latency_ms=hit.get("latency_ms", 0.0),
+                output_tokens=hit.get("output_tokens", 0),
+                prompt_tokens=hit.get("prompt_tokens", 0),
+                cached=True,
+                error=hit.get("error"),
+            )
+
+        delay = 2.0
+        last = ""
+        for attempt in range(4):
+            async with self._sem:
+                started = time.perf_counter()
+                try:
+                    resp = await self._client.post(
+                        self.url,
+                        json=body,
+                        headers={"Authorization": f"Bearer {self._key}"},
+                    )
+                except httpx.HTTPError as exc:
+                    last = f"{type(exc).__name__}: {exc}"
+                    resp = None
+            if resp is not None:
+                if resp.status_code in (429, 500, 502, 503, 529):
+                    last = f"status {resp.status_code}"
+                elif resp.status_code >= 400:
+                    return ChatResult("", 0.0, 0, 0, False, f"status {resp.status_code}: {resp.text[:200]}")
+                else:
+                    elapsed = (time.perf_counter() - started) * 1000
+                    data = resp.json()
+                    choice = (data.get("choices") or [{}])[0]
+                    text = (choice.get("message") or {}).get("content") or ""
+                    usage = data.get("usage") or {}
+                    self.calls += 1
+                    record = {
+                        "text": text,
+                        "latency_ms": elapsed,
+                        "output_tokens": int(usage.get("completion_tokens") or 0),
+                        "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                        "error": None if text.strip() else "empty reply",
+                    }
+                    self.cache.put(ckey, record)
+                    return ChatResult(
+                        text=record["text"],
+                        latency_ms=elapsed,
+                        output_tokens=record["output_tokens"],
+                        prompt_tokens=record["prompt_tokens"],
+                        cached=False,
+                        error=record["error"],
+                    )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+        return ChatResult("", 0.0, 0, 0, False, f"gave up: {last}")
+
+
+# --- small stats --------------------------------------------------------
+
+
+def pct(numer: float, denom: float) -> float:
+    return 100.0 * numer / denom if denom else 0.0
+
+
+def percentile(values: Iterable[float], q: float) -> float:
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return 0.0
+    if len(vals) == 1:
+        return vals[0]
+    pos = q * (len(vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(vals) - 1)
+    frac = pos - lo
+    return vals[lo] * (1 - frac) + vals[hi] * frac
+
+
+def median(values: Iterable[float]) -> float:
+    return percentile(values, 0.5)
+
+
+def estimate_tokens(state: Any) -> int:
+    blob = state if isinstance(state, str) else json.dumps(state, ensure_ascii=False)
+    return len(blob) // 4
