@@ -360,6 +360,37 @@ def validate_full_history(
     )
 
 
+def validate_maintenance(
+    items: list[Any], ledger: list[dict[str, Any]]
+) -> HistoryCheck:
+    """A request that is not a turn: checked for ownership, not for position.
+
+    A client assembles a compaction request for itself, and codex-cli 0.155.1
+    assembles it differently from a turn: it declares a different tool set, so
+    the very first item of the history carries a different id and every prefix
+    hash in front of every update changes with it. Measured on 2026-09-19. The
+    positions the ledger recorded describe a turn's replay, not this request,
+    so they are not checked here - checking them would refuse a compaction on
+    the strength of a difference that means nothing.
+
+    What is still checked is the thing that matters. The router is the only
+    owner of these items, so the history has to carry exactly the updates the
+    ledger knows about, asking for the same efforts in the same order, and
+    nothing else. A client-authored update still cannot get through.
+    """
+    sent = [update_effort(items[at]) for at in update_positions(items)]
+    want = [row.get("to_effort") for row in ledger]
+    if sent != want:
+        return HistoryCheck.refused(
+            f"this maintenance request carries effort updates {sent} and the "
+            f"ledger holds {want}; while the router manages adaptation it is "
+            "the only owner of these items"
+        )
+    return HistoryCheck(
+        ok=True, matched=tuple(str(row.get("plan_id")) for row in ledger)
+    )
+
+
 def _unanchored(
     items: list[Any],
     found: list[int],

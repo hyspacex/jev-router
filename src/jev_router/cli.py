@@ -750,9 +750,10 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
         state = row.get("compaction_state") or "known"
         folded = (
             f"  compact:  the client has folded this history up {epoch} time(s); "
-            f"the model is unchanged ({row['model_key'] or '-'}) and the effort "
-            f"went back to the base effort ({row['base_effort'] or '-'}) with the "
-            "last one, because an update does not survive a compaction"
+            f"the model did not change ({row['model_key'] or '-'}), and each "
+            f"time the effective effort went back to the base effort "
+            f"({row['base_effort'] or '-'}), because an update does not survive "
+            "a compaction. A later turn may have asked for more since"
         )
         if state == "unknown":
             folded += (

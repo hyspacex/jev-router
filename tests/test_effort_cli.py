@@ -178,7 +178,7 @@ def test_sessions_show_says_a_compaction_put_the_effort_back_to_base(tmp_path, c
     assert main(["-c", path, "sessions", "show", session_id]) == 0
     out = capsys.readouterr().out
     assert "folded this history up 1 time(s)" in out
-    assert "the model is unchanged (astra)" in out
+    assert "the model did not change (astra)" in out
     assert "went back to the base effort (low)" in out
 
 
