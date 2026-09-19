@@ -19,7 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import AliasCfg, Lane, Route, RouteEntry, RouterConfig, Ruleset
+from .config import AliasCfg, Lane, Route, RouteEntry, RouterConfig, Rule, Ruleset
 from .features import Features
 
 # Condition keys that read the request instead of a Jev answer.
@@ -38,6 +38,21 @@ FEATURE_CONDITIONS: dict[str, Callable[[Features, Any], bool]] = {
     "client_in": lambda f, v: f.client in v,
     "languages_include": lambda f, v: bool(set(f.languages) & set(v)),
     "tool_names_include": lambda f, v: bool(set(f.tool_names) & set(v)),
+}
+
+
+# Comparisons over a Score's probability vector rather than its mean. A Score
+# is a probability-weighted average, so two requests with the same mean can
+# have very different mass on the top level. These read that mass directly.
+#
+# They are experimental: `semantic_policy.distribution_policy` decides whether
+# a rule using one may fire, and config load refuses them in the shipped
+# `policy:` block so they stay in a named ruleset somebody is measuring.
+DISTRIBUTION_OPS = {
+    "p_hard_lte",
+    "p_hard_gte",
+    "p_nontrivial_lte",
+    "p_nontrivial_gte",
 }
 
 
@@ -82,6 +97,32 @@ class Shift:
         }
 
 
+@dataclass(frozen=True)
+class ExperimentalRoute:
+    """Where an experimental policy would have sent this request.
+
+    In `shadow` the router executes the route it always would have and records
+    one of these per experimental rule, plus one for all of them together. In
+    `active` the experimental rules decide and this records the mean-only
+    route instead, so both directions are always on the row.
+    """
+
+    policy: str
+    model: str
+    effort: str | None
+    rule: str
+    changed: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy": self.policy,
+            "model": self.model,
+            "effort": self.effort,
+            "rule": self.rule,
+            "changed": self.changed,
+        }
+
+
 @dataclass
 class PolicyResult:
     model: str
@@ -96,6 +137,81 @@ class PolicyResult:
     reordered: bool = False
     protected: bool = False
     pressure_changed_the_outcome: bool = False
+    # Distribution-aware experiments, recorded whether or not they decided.
+    experiments: list[ExperimentalRoute] = field(default_factory=list)
+    # Filled in by `select`, which adds the quality lane and the counterfactual
+    # on top of what the rules chose. Empty here keeps `evaluate` exactly what
+    # it was.
+    lane: str = ""
+    qualification_ref: str = ""
+    counterfactual: tuple[str, str | None] | None = None
+    exclusions: list[dict[str, Any]] = field(default_factory=list)
+    evidence: str = "weak"
+
+
+# --- reading a Score's distribution -------------------------------------
+
+
+def probabilities(answer: dict[str, Any] | None) -> dict[str, float]:
+    """The probability vector an answer carried, or an empty mapping.
+
+    The validator keeps the vector when the provider sends one and refuses a
+    malformed one outright, so anything here is either complete or absent.
+    Absent is not zero: a caller that needs the mass has to say so.
+    """
+    if not isinstance(answer, dict):
+        return {}
+    probs = answer.get("probabilities")
+    if not isinstance(probs, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, value in probs.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return {}
+        if not math.isfinite(value):
+            return {}
+        out[str(key)] = float(value)
+    return out
+
+
+def _levels(probs: dict[str, float]) -> list[int]:
+    out: list[int] = []
+    for key in probs:
+        try:
+            out.append(int(key))
+        except ValueError:
+            return []
+    return sorted(out)
+
+
+def p_hard(answer: dict[str, Any] | None) -> float | None:
+    """Mass on the top level of the rubric, or nothing when there is no vector."""
+    probs = probabilities(answer)
+    levels = _levels(probs)
+    if not levels:
+        return None
+    return probs[str(levels[-1])]
+
+
+def p_nontrivial(answer: dict[str, Any] | None) -> float | None:
+    """Mass at level two and above: `p[2] + p[3]` on the four-level rubric."""
+    probs = probabilities(answer)
+    levels = _levels(probs)
+    if not levels:
+        return None
+    return sum(probs[str(level)] for level in levels if level >= 2)
+
+
+def rule_uses_distribution(rule: Rule) -> bool:
+    return any(
+        isinstance(cond, dict) and bool(set(cond) & DISTRIBUTION_OPS)
+        for cond in rule.when.values()
+    )
+
+
+def experiment_rules(ruleset: Ruleset) -> list[str]:
+    """The rules of this ruleset that read a distribution, in order."""
+    return [r.name for r in ruleset.rules if rule_uses_distribution(r)]
 
 
 def evaluate(
@@ -108,9 +224,14 @@ def evaluate(
     """Choose a route. `pressures` is quota pressure per provider, or nothing."""
     ruleset = config.ruleset_for(alias_cfg)
     live = _live_pressures(config, pressures)
+    mode = config.semantic_policy.distribution_policy
+    experiments = experiment_rules(ruleset)
+    running = frozenset(experiments) if mode == "active" else frozenset()
+
     shifts: list[Shift] = []
+    notes: list[str] = []
     use, rule_name, reason, protected = _pick_route(
-        config, ruleset, answers, features, live, shifts
+        config, ruleset, answers, features, live, shifts, running, notes
     )
     result = finalize(
         config,
@@ -123,11 +244,74 @@ def evaluate(
         protected=protected,
     )
     result.shifts = shifts
+    result.notes = [*notes, *result.notes]
     if live:
         result.pressure_changed_the_outcome = _differs_without_pressure(
-            config, alias_cfg, ruleset, answers, features, result
+            config, alias_cfg, ruleset, answers, features, result, running
+        )
+    if mode != "off" and experiments:
+        result.experiments = _experiment_routes(
+            config, alias_cfg, ruleset, answers, features, live, result, mode, experiments
         )
     return result
+
+
+def _experiment_routes(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    ruleset: Ruleset,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float],
+    chosen: PolicyResult,
+    mode: str,
+    experiments: list[str],
+) -> list[ExperimentalRoute]:
+    """The route each experimental policy would have picked, beside the real one."""
+    if mode == "active":
+        wanted: list[tuple[str, frozenset[str]]] = [("mean_only", frozenset())]
+    else:
+        wanted = [(name, frozenset({name})) for name in experiments]
+        if len(experiments) > 1:
+            wanted.append(("all", frozenset(experiments)))
+
+    out: list[ExperimentalRoute] = []
+    for policy_name, running in wanted:
+        try:
+            use, rule_name, reason, protected = _pick_route(
+                config, ruleset, answers, features, pressures, [], running, None
+            )
+            alt = finalize(
+                config,
+                alias_cfg,
+                use,
+                rule_name,
+                reason,
+                features,
+                pressures=pressures,
+                protected=protected,
+            )
+        except RoutingError as exc:
+            out.append(
+                ExperimentalRoute(
+                    policy=policy_name,
+                    model="",
+                    effort=None,
+                    rule=f"routing_error: {exc}",
+                    changed=True,
+                )
+            )
+            continue
+        out.append(
+            ExperimentalRoute(
+                policy=policy_name,
+                model=alt.model,
+                effort=alt.effort,
+                rule=alt.rule,
+                changed=(alt.model, alt.effort) != (chosen.model, chosen.effort),
+            )
+        )
+    return out
 
 
 def _live_pressures(
@@ -154,10 +338,11 @@ def _differs_without_pressure(
     answers: dict[str, dict[str, Any]],
     features: Features,
     result: PolicyResult,
+    running: frozenset[str] = frozenset(),
 ) -> bool:
     """Would the same request have gone somewhere else at pressure zero?"""
     use, rule_name, reason, protected = _pick_route(
-        config, ruleset, answers, features, {}, []
+        config, ruleset, answers, features, {}, [], running, None
     )
     calm = finalize(
         config,
@@ -417,6 +602,8 @@ def _pick_route(
     features: Features,
     pressures: dict[str, float],
     shifts: list[Shift],
+    running: frozenset[str] = frozenset(),
+    notes: list[str] | None = None,
 ) -> tuple[Route, str, str, bool]:
     lc = ruleset.low_confidence
     if lc and lc.use and lc.questions:
@@ -425,15 +612,45 @@ def _pick_route(
             if ans is None:
                 continue
             conf = ans.get("confidence")
-            if conf is not None and conf < lc.min_confidence:
-                return (
-                    lc.use,
-                    "low_confidence",
-                    f"{qid} confidence {conf:.2f} below {lc.min_confidence}",
-                    True,
-                )
+            if conf is None or conf >= lc.min_confidence:
+                continue
+            if lc.action_equivalent and _action_equivalent(
+                config, ruleset, answers, features, pressures, qid, lc, running
+            ):
+                # Being unsure between two labels that route the same way is
+                # not a reason to send the work somewhere stronger. Off by
+                # default: without `action_equivalent` the gate fires as it
+                # always has.
+                if notes is not None:
+                    notes.append(
+                        f"{qid} confidence {conf:.2f} is below {lc.min_confidence}, "
+                        "but every label it is uncertain between routes the same way"
+                    )
+                continue
+            return (
+                lc.use,
+                "low_confidence",
+                f"{qid} confidence {conf:.2f} below {lc.min_confidence}",
+                True,
+            )
 
+    return _match_rules(config, ruleset, answers, features, pressures, shifts, running)
+
+
+def _match_rules(
+    config: RouterConfig,
+    ruleset: Ruleset,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float],
+    shifts: list[Shift],
+    running: frozenset[str],
+) -> tuple[Route, str, str, bool]:
     for rule in ruleset.rules:
+        if rule.name not in running and rule_uses_distribution(rule):
+            # An experimental rule fires only for the policy that is running
+            # it. In `shadow` that is never the executed pass.
+            continue
         # A protected rule exists because the request needs it, so quota never
         # makes it harder to reach.
         seen: list[Shift] = []
@@ -448,6 +665,62 @@ def _pick_route(
 
     default = ruleset.default or config.settings.default_route
     return default, "default", "no rule matched", True
+
+
+def candidate_labels(answer: dict[str, Any], min_mass: float) -> list[Any]:
+    """The labels an answer put real probability on, as values to compare.
+
+    With no vector this is empty, and the caller keeps today's behaviour.
+    """
+    probs = probabilities(answer)
+    kind = answer.get("type")
+    if not probs or kind not in ("choice", "score"):
+        return []
+    out: list[Any] = []
+    for key, mass in sorted(probs.items()):
+        if mass < min_mass:
+            continue
+        if kind == "score":
+            try:
+                out.append(float(int(key)))
+            except ValueError:
+                return []
+        else:
+            out.append(key)
+    return out
+
+
+def _action_equivalent(
+    config: RouterConfig,
+    ruleset: Ruleset,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float],
+    qid: str,
+    lc: Any,
+    running: frozenset[str],
+) -> bool:
+    """Would every label this answer is torn between pick the same route?
+
+    Pure, and it never reaches the gate again: the substituted runs go straight
+    to the rules, so there is no way round in a circle.
+    """
+    answer = answers[qid]
+    values = candidate_labels(answer, lc.equivalence_min_mass)
+    if len(values) < 2:
+        return False
+    kind = answer.get("type")
+    seen: set[tuple[Any, ...]] = set()
+    for value in values:
+        alt = dict(answers)
+        alt[qid] = {**answer, kind: value}
+        use, _name, _reason, _protected = _match_rules(
+            config, ruleset, alt, features, pressures, [], running
+        )
+        seen.add((use.route, use.model, use.effort))
+        if len(seen) > 1:
+            return False
+    return True
 
 
 def matches(
@@ -542,6 +815,17 @@ def _answer_matches(
 
     conf = answer.get("confidence")
     for op, operand in cond.items():
+        if op in DISTRIBUTION_OPS:
+            mass = p_hard(answer) if op.startswith("p_hard") else p_nontrivial(answer)
+            # No vector means the comparison cannot be made. It reads as "no",
+            # so an experimental rule never fires on an absence.
+            if mass is None:
+                return False
+            if op.endswith("_gte") and not mass >= operand:
+                return False
+            if op.endswith("_lte") and not mass <= operand:
+                return False
+            continue
         if op == "in" and value not in operand:
             return False
         if op == "not_in" and value in operand:

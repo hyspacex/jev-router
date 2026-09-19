@@ -74,6 +74,15 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     print(f"  routes:    {', '.join(config.routes) or '(none)'}")
     print(f"  questions: {', '.join(config.questions) or '(none)'}")
     print(f"  aliases:   {', '.join(config.aliases) or '(none)'}")
+    sp = config.semantic_policy
+    print(
+        f"  semantic:  active=[{', '.join(sp.active_questions) or '-'}] "
+        f"shadow=[{', '.join(sp.shadow_questions) or '-'}] "
+        f"distribution={sp.distribution_policy}"
+    )
+    for name, lane in config.quality_lanes.items():
+        pairs = ", ".join(f"{q.model}({q.effort or '-'})" for q in lane.qualified)
+        print(f"  lane {name}: [{pairs}] ref={lane.qualification_ref or '-'}")
     for name in config.provider_names():
         quota = config.quota_cfg(name)
         source = "none"

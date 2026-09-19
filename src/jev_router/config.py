@@ -260,14 +260,30 @@ class Rule(Base):
     # A protected rule ignores quota threshold shifts. It is for the moves that
     # exist because the request needs them: harm, vision, context overflow.
     protected: bool = False
+    # The quality lane this rule's work belongs to. Naming one says which set
+    # of model/effort pairs has been measured for it, and quota pressure may
+    # then only move the request inside that set.
+    lane: str = ""
 
 
 class LowConfidence(Base):
-    """Fires before the rules when a gated answer is not confident enough."""
+    """Fires before the rules when a gated answer is not confident enough.
+
+    `action_equivalent` is opt-in and off by default, so the gate behaves
+    exactly as it always has unless a config asks for more. Turned on, the gate
+    first checks whether the labels the answer is torn between would all route
+    the same way; being unsure between two labels that lead to the same model
+    and effort is not a reason to escalate. It needs the answer's probability
+    vector, so with a provider that sends none it also changes nothing.
+    """
 
     min_confidence: float = 0.0
     questions: list[str] = Field(default_factory=list)
     use: Route | None = None
+    action_equivalent: bool = False
+    # How much mass a label needs before it counts as one the answer is torn
+    # between. Below this it is noise, not a second reading.
+    equivalence_min_mass: float = Field(default=0.1, ge=0.0, le=1.0)
 
 
 class Ruleset(Base):
@@ -373,6 +389,81 @@ class SessionRoutingCfg(Base):
     max_request_history: int = Field(default=200, gt=0)
 
 
+class SemanticPolicyCfg(Base):
+    """Which questions decide, which are only measured, and how far.
+
+    `active_questions` is the set an alias may route on. `shadow_questions` are
+    asked in the same batched call, validated on their own, recorded, and never
+    read by the routing path. The two sets may not overlap: a question cannot
+    be both the answer and the experiment.
+
+    `distribution_policy` says what a rule condition over a Score's probability
+    vector may do. `off` is the default, and an omitted `semantic_policy` block
+    means `off`, which is exactly how the router behaved before any of this
+    existed. `shadow` computes the experimental route beside the real one and
+    records both. `active` lets it choose.
+    """
+
+    active_questions: list[str] = Field(default_factory=list)
+    shadow_questions: list[str] = Field(default_factory=list)
+    distribution_policy: Literal["off", "shadow", "active"] = "off"
+
+
+class LaneModel(Base):
+    """One model/effort pair somebody measured for one lane of work."""
+
+    model: str
+    effort: str | None = None
+    # Where the evidence is: a POOL.md heading, an admission artifact, a dated
+    # report. A pair with no reference is a guess, so it is refused.
+    qualification_ref: str
+
+    def as_pair(self) -> tuple[str, str | None]:
+        return (self.model, self.effort)
+
+
+class QualityLaneCfg(Base):
+    """A class of work with qualification evidence behind each candidate.
+
+    Capability and adequacy are different filters. A model that supports tools
+    is not thereby qualified to finish a tool-driven coding task, so quota
+    pressure may only move a request between the pairs listed here.
+    """
+
+    description: str = ""
+    # Where the lane as a whole was measured.
+    qualification_ref: str = ""
+    qualified: list[LaneModel] = Field(default_factory=list)
+    # What this lane takes when the evidence runs out: the safe end, not the
+    # cheap end.
+    conservative_default: Route | None = None
+
+    def pairs(self) -> list[tuple[str, str | None]]:
+        return [q.as_pair() for q in self.qualified]
+
+    def models(self) -> list[str]:
+        return [q.model for q in self.qualified]
+
+    def allows(self, model: str, effort: str | None) -> bool:
+        """Is this exact pair qualified? An unlisted effort is not qualified.
+
+        A lane entry with no effort means "any effort of this model", which is
+        how a model with no effort ladder is written down.
+        """
+        for entry in self.qualified:
+            if entry.model != model:
+                continue
+            if entry.effort is None or entry.effort == effort:
+                return True
+        return False
+
+    def reference_for(self, model: str, effort: str | None) -> str:
+        for entry in self.qualified:
+            if entry.model == model and entry.effort in (None, effort):
+                return entry.qualification_ref
+        return self.qualification_ref
+
+
 class RouterConfig(Base):
     settings: Settings
     providers: dict[str, ProviderCfg] = Field(default_factory=dict)
@@ -385,6 +476,8 @@ class RouterConfig(Base):
     clients: dict[str, ClientCfg] = Field(default_factory=dict)
     quota_policy: QuotaPolicyCfg = Field(default_factory=QuotaPolicyCfg)
     session_routing: SessionRoutingCfg = Field(default_factory=SessionRoutingCfg)
+    semantic_policy: SemanticPolicyCfg = Field(default_factory=SemanticPolicyCfg)
+    quality_lanes: dict[str, QualityLaneCfg] = Field(default_factory=dict)
 
     # Set by load_config; stored with every decision so a later tuning run
     # knows which router.yaml produced it.
@@ -410,6 +503,27 @@ class RouterConfig(Base):
 
     def question(self, qid: str) -> dict[str, Any]:
         return self.questions[qid]
+
+    def shadow_questions(self, alias_cfg: AliasCfg) -> list[str]:
+        """The questions this alias asks only to measure them.
+
+        A shadow question an alias already asks actively is dropped here: it is
+        answering for real, and asking it twice in one packet would be a second
+        copy of the same judgment.
+        """
+        asking = set(alias_cfg.questions)
+        return [
+            qid
+            for qid in self.semantic_policy.shadow_questions
+            if qid in self.questions and qid not in asking
+        ]
+
+    def lane_for(self, rule_name: str, ruleset: Ruleset) -> QualityLaneCfg | None:
+        """The lane a rule of this ruleset names, when it names one."""
+        for rule in ruleset.rules:
+            if rule.name == rule_name:
+                return self.quality_lanes.get(rule.lane) if rule.lane else None
+        return None
 
     def is_alias(self, name: str) -> bool:
         return name in self.aliases
@@ -604,6 +718,12 @@ class RouterConfig(Base):
             for rule in rs.rules:
                 check_route(rule.use, f"{where}.rules[{rule.name}].use")
                 problems.extend(self._check_when(rule.when, f"{where}.rules[{rule.name}].when"))
+                if rule.lane and rule.lane not in self.quality_lanes:
+                    problems.append(
+                        f"{where}.rules[{rule.name}].lane: unknown quality lane "
+                        f"{rule.lane!r} (known: "
+                        f"{', '.join(sorted(self.quality_lanes)) or 'none'})"
+                    )
 
         for alias, acfg in self.aliases.items():
             for qid in acfg.questions:
@@ -635,6 +755,9 @@ class RouterConfig(Base):
                 )
             problems.extend(self._check_envelope(alias, acfg))
 
+        problems.extend(self._check_semantic_policy())
+        problems.extend(self._check_lanes(check_pair, check_route))
+
         for cid, ccfg in self.clients.items():
             if ccfg.min_effort and ccfg.min_effort not in order:
                 problems.append(
@@ -647,6 +770,81 @@ class RouterConfig(Base):
         if problems:
             raise ValueError("\n".join(f"- {p}" for p in problems))
         return self
+
+    def _check_semantic_policy(self) -> list[str]:
+        """Every named question exists, and no question is both sets at once."""
+        sp = self.semantic_policy
+        problems: list[str] = []
+        for field_name, ids in (
+            ("active_questions", sp.active_questions),
+            ("shadow_questions", sp.shadow_questions),
+        ):
+            for qid in ids:
+                if qid not in self.questions:
+                    problems.append(
+                        f"semantic_policy.{field_name}: unknown question {qid!r} "
+                        f"(known: {', '.join(sorted(self.questions)) or 'none'})"
+                    )
+        both = sorted(set(sp.active_questions) & set(sp.shadow_questions))
+        if both:
+            problems.append(
+                "semantic_policy: "
+                f"{', '.join(both)} is in both active_questions and "
+                "shadow_questions; a question cannot be the answer and the "
+                "experiment at the same time"
+            )
+        shadow = set(sp.shadow_questions)
+        for alias, acfg in self.aliases.items():
+            clash = sorted(shadow & set(acfg.questions))
+            if clash:
+                problems.append(
+                    f"aliases.{alias}.questions: {', '.join(clash)} is a shadow "
+                    "question; an alias that routes on it must not also be "
+                    "measuring it"
+                )
+        return problems
+
+    def _check_lanes(self, check_pair: Any, check_route: Any) -> list[str]:
+        """A lane's pairs are real, and its conservative default is one of them."""
+        problems: list[str] = []
+        for name, lane in self.quality_lanes.items():
+            where = f"quality_lanes.{name}"
+            if not lane.qualified:
+                problems.append(f"{where}.qualified: a lane needs at least one pair")
+            seen: set[tuple[str, str | None]] = set()
+            for i, entry in enumerate(lane.qualified):
+                check_pair(entry.model, entry.effort, f"{where}.qualified[{i}]")
+                if entry.as_pair() in seen:
+                    problems.append(
+                        f"{where}.qualified[{i}]: {entry.model} "
+                        f"({entry.effort or 'any effort'}) is listed twice"
+                    )
+                seen.add(entry.as_pair())
+            route = lane.conservative_default
+            if route is None:
+                continue
+            check_route(route, f"{where}.conservative_default")
+            pairs = self._route_pairs(route)
+            outside = [
+                f"{model}({effort or '-'})"
+                for model, effort in pairs
+                if not lane.allows(model, effort)
+            ]
+            if outside:
+                problems.append(
+                    f"{where}.conservative_default: {', '.join(outside)} is not in "
+                    f"this lane's qualified set"
+                )
+        return problems
+
+    def _route_pairs(self, route: Route) -> list[tuple[str, str | None]]:
+        """Every model/effort a `use:` could reach, primary and fallbacks."""
+        if route.route is not None:
+            lane = self.routes.get(route.route)
+            if lane is None:
+                return []
+            return [(e.model, e.effort) for e in lane.entries()]
+        return [(route.model or "", route.effort)]
 
     def _check_envelope(self, alias: str, acfg: AliasCfg) -> list[str]:
         """A static envelope may only advertise what the whole pool can keep."""
@@ -694,14 +892,23 @@ class RouterConfig(Base):
         return problems
 
     def _check_when(self, when: dict[str, Any], where: str) -> list[str]:
-        from .policy import FEATURE_CONDITIONS  # local import avoids a cycle
+        from .policy import DISTRIBUTION_OPS, FEATURE_CONDITIONS  # local: avoids a cycle
 
         problems: list[str] = []
         known_providers = set(self.provider_names())
+        shipped = where.startswith("policy.")
         for key, cond in when.items():
             if isinstance(cond, dict) and set(cond) & SHIFT_KEYS:
                 problems.extend(self._check_shift(cond, known_providers, f"{where}.{key}"))
+            distribution = (
+                sorted(set(cond) & DISTRIBUTION_OPS) if isinstance(cond, dict) else []
+            )
             if key in FEATURE_CONDITIONS:
+                if distribution:
+                    problems.append(
+                        f"{where}.{key}: {', '.join(distribution)} reads a Jev "
+                        "answer's probability vector, so it needs a question id"
+                    )
                 continue
             if key not in self.questions:
                 known = sorted(set(self.questions) | set(FEATURE_CONDITIONS))
@@ -712,6 +919,34 @@ class RouterConfig(Base):
                 continue
             if not isinstance(cond, dict):
                 problems.append(f"{where}.{key}: expected a mapping of comparisons")
+                continue
+            if not distribution:
+                continue
+            if self.questions[key].get("type") != "score":
+                problems.append(
+                    f"{where}.{key}: {', '.join(distribution)} needs a score "
+                    f"question, and {key!r} is a "
+                    f"{self.questions[key].get('type')!r}"
+                )
+            if shipped:
+                # The shipped ladder is the reproducible baseline. An
+                # experiment lives in a named ruleset somebody is measuring,
+                # so it can be switched on and off without editing `policy`.
+                problems.append(
+                    f"{where}.{key}: {', '.join(distribution)} is experimental; "
+                    "put the rule in a named ruleset rather than in the shipped "
+                    "`policy` block"
+                )
+            for op in distribution:
+                amount = cond[op]
+                if (
+                    isinstance(amount, bool)
+                    or not isinstance(amount, (int, float))
+                    or not 0.0 <= amount <= 1.0
+                ):
+                    problems.append(
+                        f"{where}.{key}.{op}: expected a probability from 0 to 1"
+                    )
         return problems
 
     def _check_shift(

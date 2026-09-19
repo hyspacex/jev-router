@@ -241,6 +241,9 @@ groups:
   # every row in this group is measured against.
   expanded: [router_yaml, e11_output_length, e12_lang_domain, e13_router_instructions, e14_gate_040]
   draft: [router_yaml, e15_draft]
+  # The four arms of spec 13.4, in order: baseline packet, the same policy on
+  # the new packet, each new question activated, distribution against mean.
+  packet: [router_yaml, b1_coding_state, b2_expanded_packet, b3_distribution]
 
 variants:
 
@@ -564,6 +567,111 @@ variants:
     questions: [task, difficulty, harm_if_wrong]
     task_space: ten
     faith_question: harm_if_wrong
+
+  # ---- Milestone B: the versioned packet and its policy experiments -------
+  #
+  # `router_yaml` is the baseline arm for every row below. Change one thing at
+  # a time: the state builder, then the question set, then the policy.
+
+  # Arm 2 of 13.4: the same three questions, the same ladder, the new bounded
+  # packet. This measures what the packet shape costs on its own.
+  b1_coding_state:
+    group: packet
+    state_builder: coding_state_v1
+    questions: [task, difficulty, harm_if_wrong]
+    task_space: ten
+    faith_question: harm_if_wrong
+
+  # Arm 3: the expanded packet, same ladder. The three extra questions are
+  # asked and recorded; no rule reads them, so any change here is the cost of
+  # the bigger packet, not a policy effect.
+  b2_expanded_packet:
+    group: packet
+    state_builder: coding_state_v1
+    questions: [task, difficulty, harm_if_wrong, mechanical_transform,
+                interacting_constraints, requirements_missing]
+    task_space: ten
+    faith_question: harm_if_wrong
+    overlay:
+      semantic_policy:
+        shadow_questions: []
+
+  # Arm 4: distribution-aware against mean-only, on the same cached answers.
+  # The rule is the illustrative one from spec 7.4 - mechanical_transform
+  # >= 0.8, interacting_constraints <= 0.2, p_hard <= 0.1 - written as a
+  # ruleset of its own so the shipped `policy` block is untouched. The three
+  # numbers are candidate cutoffs for a tuning grid, not findings.
+  b3_distribution:
+    group: packet
+    state_builder: coding_state_v1
+    questions: [task, difficulty, harm_if_wrong, mechanical_transform,
+                interacting_constraints, requirements_missing]
+    task_space: ten
+    faith_question: harm_if_wrong
+    overlay:
+      semantic_policy:
+        shadow_questions: []
+        distribution_policy: active
+      aliases:
+        auto:
+          rules: distribution_experiment
+      rulesets:
+        distribution_experiment:
+          low_confidence:
+            min_confidence: 0.4
+            questions: [task, difficulty]
+            use: {route: frontier_medium}
+            action_equivalent: true
+          rules:
+            - name: images_easy
+              protected: true
+              when:
+                has_images: true
+                difficulty: {lte: 1.399}
+                harm_if_wrong: {lte: 0.799}
+              use: {route: fast_vision}
+            - name: images_need_vision
+              protected: true
+              when: {has_images: true}
+              use: {route: frontier_medium}
+            # The experimental rule. It fires only on work the packet says is
+            # a stated transformation with nothing pulling against it and
+            # almost no probability mass on the hardest level, whatever the
+            # mean difficulty says.
+            - name: mechanical_cheap
+              when:
+                mechanical_transform: {gte: 0.8}
+                interacting_constraints: {lte: 0.2}
+                difficulty: {p_hard_lte: 0.1}
+              use: {route: fast}
+            - name: very_hard
+              when: {difficulty: {gte: 3.0}}
+              use: {route: frontier_xhigh}
+            - name: hard
+              when: {difficulty: {gte: 2.4}}
+              use: {route: frontier_high}
+            - name: high_harm
+              protected: true
+              when: {harm_if_wrong: {gte: 0.8}}
+              use: {route: frontier_medium}
+            - name: tool_loop
+              when:
+                has_tools: true
+                difficulty: {gte: 1.4}
+              use: {route: frontier_medium}
+            - name: moderate_careful
+              when:
+                task: {not_in: [code-edit]}
+                difficulty: {gte: 1.4}
+                harm_if_wrong: {gte: 0.45}
+              use: {route: frontier_low}
+            - name: moderate
+              when: {difficulty: {gte: 1.4}}
+              use: {route: mid}
+            - name: easy
+              when: {}
+              use: {route: fast}
+          default: {route: frontier_medium}
 
   before_summary_v1:
     group: before
