@@ -48,6 +48,7 @@ from .policy import (
 from .policy import finalize as policy_finalize
 from .providers import ProviderBreakers, merge_pressures
 from .quota import QuotaMonitor
+from .semantic import SemanticResult
 from .security import Ingress
 from .sessions import ResolveRequest, SessionError, Sessions
 
@@ -547,7 +548,48 @@ class Router:
             shifted=[s.to_dict() for s in decision.shifts],
             reordered=decision.reordered,
         )
+        self.record_semantics(row, decision, action="pin" if pinned else "route")
         return decision, pinned, row, decision_id, key
+
+    def record_semantics(self, row_id: int, decision: Decision, action: str) -> None:
+        """Put the packet, the lane and the counterfactual on the decision row.
+
+        Values only, and never anything that could fail a request: a problem
+        writing diagnostics is a lost diagnostic, not a lost answer.
+        """
+        try:
+            self.sessions.annotate_semantics(
+                row_id,
+                packet_version=decision.packet_version,
+                shadow_packet_version=decision.shadow_packet_version,
+                shadow_answers=_shadow_values(decision),
+                action=action,
+                experiment_routes=[e.to_dict() for e in decision.experiments],
+                quota_snapshot=self.quota_snapshot(),
+                quota_status=self.quota_status(),
+                counterfactual=decision.counterfactual,
+                exclusions=decision.exclusions,
+                evidence=decision.evidence,
+                qualification_ref=decision.qualification_ref,
+            )
+        except Exception:  # noqa: BLE001 - diagnostics may never fail a request
+            log.exception("could not record the semantic facts for this decision")
+
+    def quota_snapshot(self) -> dict[str, Any]:
+        """The last reading per provider, windows and all. Never a payload."""
+        try:
+            return {
+                name: {
+                    "status": row.get("status"),
+                    "pressure": row.get("pressure"),
+                    "age_seconds": row.get("age_seconds"),
+                    "windows": row.get("windows") or [],
+                }
+                for name, row in self.quota.report()["providers"].items()
+            }
+        except Exception:  # noqa: BLE001 - quota may never fail a request
+            log.exception("could not read the quota snapshot")
+            return {}
 
     def plan_for(
         self,
@@ -839,6 +881,7 @@ class Router:
             request_id=req.request_id,
             quality_lane=decision.lane or decision.route,
         )
+        self.record_semantics(row_id, decision, action=f"admitted:{rule}")
         log.info(
             "admitted session alias=%s model=%s effort=%s rule=%s source=%s"
             " window=%s output=%s reserve=%s",
@@ -1205,6 +1248,14 @@ class Router:
 
 
 # --- session helpers ----------------------------------------------------
+
+
+def _shadow_values(decision: Decision) -> dict[str, Any]:
+    """Shadow answers as bare values, plus the ids that came back unusable."""
+    out = SemanticResult(shadow=decision.shadow_answers).shadow_values()
+    if decision.invalid_shadow:
+        out["_invalid"] = list(decision.invalid_shadow)
+    return out
 
 
 def _check_freshness(body: dict[str, Any], contract: Any) -> None:

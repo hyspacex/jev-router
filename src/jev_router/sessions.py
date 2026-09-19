@@ -200,6 +200,29 @@ ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# What the semantic packet and the quality guard add to a decision row. A
+# separate map for a separate release, so each one's migration list says
+# exactly what that release added. Same contract as the map above: every
+# column is nullable, nothing is dropped, and an older database keeps working.
+#
+# `shadow_answers` holds values only. No message text, no prompt, no key ever
+# reaches any of these.
+SEMANTIC_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "decisions": [
+        ("packet_version", "TEXT"),
+        ("shadow_packet_version", "TEXT"),
+        ("shadow_answers", "TEXT"),
+        ("action", "TEXT"),
+        ("experiment_routes", "TEXT"),
+        ("quota_snapshot", "TEXT"),
+        ("quota_status", "TEXT"),
+        ("counterfactual", "TEXT"),
+        ("exclusions", "TEXT"),
+        ("evidence", "TEXT"),
+        ("qualification_ref", "TEXT"),
+    ],
+}
+
 # The decision-log events a session produces. `effort_plan` belongs to the
 # effort experiment and nothing writes it yet.
 EVENT_ADMISSION = "admission"
@@ -366,6 +389,7 @@ class Sessions:
         with self._lock:
             self._conn.executescript(SESSION_SCHEMA)
             self.migrated = migrate(self._conn, ADDED_COLUMNS)
+            self.migrated_semantic = migrate(self._conn, SEMANTIC_COLUMNS)
             self._conn.commit()
         if guard and self.cfg.enabled:
             self._take_guard()
@@ -624,6 +648,56 @@ class Sessions:
             )
             self._conn.commit()
 
+    def annotate_semantics(
+        self,
+        row_id: int,
+        *,
+        packet_version: str | None = None,
+        shadow_packet_version: str | None = None,
+        shadow_answers: dict[str, Any] | None = None,
+        action: str | None = None,
+        experiment_routes: list[dict[str, Any]] | None = None,
+        quota_snapshot: dict[str, Any] | None = None,
+        quota_status: dict[str, str] | None = None,
+        counterfactual: tuple[str, str | None] | None = None,
+        exclusions: list[dict[str, Any]] | None = None,
+        evidence: str | None = None,
+        qualification_ref: str | None = None,
+    ) -> None:
+        """Add the packet and quality-guard facts to a decision row.
+
+        Everything here is optional and nullable. A row written before this
+        release, or by a path that has none of it, reads back as NULL, which
+        is what "this decision predates the feature" means.
+        """
+        if not row_id:
+            return
+        counter = (
+            f"{counterfactual[0]}({counterfactual[1] or '-'})"
+            if counterfactual
+            else None
+        )
+        fields: dict[str, Any] = {
+            "packet_version": packet_version or None,
+            "shadow_packet_version": shadow_packet_version or None,
+            "shadow_answers": _dump(shadow_answers),
+            "action": action or None,
+            "experiment_routes": _dump(experiment_routes),
+            "quota_snapshot": _dump(quota_snapshot),
+            "quota_status": _dump(quota_status),
+            "counterfactual": counter,
+            "exclusions": _dump(exclusions),
+            "evidence": evidence or None,
+            "qualification_ref": qualification_ref or None,
+        }
+        sets = ", ".join(f"{name} = COALESCE(?, {name})" for name in fields)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE decisions SET {sets} WHERE id = ?",
+                (*fields.values(), row_id),
+            )
+            self._conn.commit()
+
     # --- retention ------------------------------------------------------
 
     def prune(self, older_than_seconds: float) -> dict[str, int]:
@@ -673,6 +747,13 @@ class Sessions:
             ).rowcount
             self._conn.commit()
         return {"sessions": sessions, "session_requests": requests}
+
+
+def _dump(value: Any) -> str | None:
+    """JSON, or nothing at all. An empty value writes no column."""
+    if not value:
+        return None
+    return json.dumps(value, default=str)
 
 
 def _session_row(row: sqlite3.Row) -> dict[str, Any]:

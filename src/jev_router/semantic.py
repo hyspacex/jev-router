@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .config import AliasCfg, RouterConfig
+from .features import Features
+from .policy import RoutingError, select
 
 # Bumped when the shape of a packet version changes, so two strings from
 # different releases can never be compared as if they meant the same thing.
@@ -112,3 +114,151 @@ class SemanticResult:
                 row["probabilities"] = answer["probabilities"]
             out[qid] = row
         return out
+
+
+# --- replaying a decision from its own record ----------------------------
+
+
+def features_from_facts(facts: dict[str, Any]) -> Features:
+    """Rebuild what the policy needs from a logged row.
+
+    The decision log keeps counts and flags and never message text, so this is
+    everything a replay can have, and it is all a replay needs: invariant I13
+    says an active decision is reproducible from versioned configuration, the
+    semantic answers, the request facts and the quota snapshot, without the
+    original prompt.
+    """
+    return Features(
+        model=str(facts.get("requested_model") or "auto"),
+        message_count=int(facts.get("message_count") or 0),
+        est_tokens=int(facts.get("est_tokens") or 0),
+        total_chars=int(facts.get("total_chars") or 0),
+        has_tools=bool(facts.get("has_tools")),
+        tool_names=tuple(facts.get("tool_names") or ()),
+        has_images=bool(facts.get("has_images")),
+        has_code=bool(facts.get("has_code")),
+        languages=tuple(facts.get("languages") or ()),
+        client=str(facts.get("client") or ""),
+        stream=bool(facts.get("stream")),
+        max_tokens=int(facts.get("max_tokens") or 0),
+    )
+
+
+@dataclass
+class Replay:
+    """What a stored decision does when the same selection is run again."""
+
+    decision_id: str
+    stored: tuple[str, str | None]
+    stored_rule: str
+    replayed: tuple[str, str | None] | None = None
+    replayed_rule: str = ""
+    lane: str = ""
+    evidence: str = ""
+    counterfactual: tuple[str, str | None] | None = None
+    pressures: dict[str, float] = field(default_factory=dict)
+    config_hash_stored: str = ""
+    config_hash_now: str = ""
+    notes: list[str] = field(default_factory=list)
+    error: str = ""
+
+    @property
+    def same_config(self) -> bool:
+        return bool(self.config_hash_stored) and (
+            self.config_hash_stored == self.config_hash_now
+        )
+
+    @property
+    def reproduced(self) -> bool:
+        return self.replayed is not None and self.replayed == self.stored
+
+    def verdict(self) -> str:
+        if self.error:
+            return f"cannot replay: {self.error}"
+        if not self.same_config:
+            # A different router.yaml is a different policy. Saying "matches"
+            # here would claim something the run did not show.
+            return (
+                "config has changed since this decision "
+                f"({self.config_hash_stored or 'unrecorded'} -> "
+                f"{self.config_hash_now}); "
+                + (
+                    "the replay lands on the same route anyway"
+                    if self.reproduced
+                    else "the replay lands somewhere else"
+                )
+            )
+        return (
+            "reproduced: same config, same answers, same route"
+            if self.reproduced
+            else "NOT reproduced: the same inputs now route somewhere else"
+        )
+
+
+def replay_decision(config: RouterConfig, row: dict[str, Any]) -> Replay:
+    """Run the pure selection again from a stored decision row.
+
+    Pure with respect to the world: no Jev call, no quota poll, no upstream.
+    The answers, the request facts and the pressure all come off the row.
+    """
+    stored = (str(row.get("model") or ""), row.get("effort"))
+    out = Replay(
+        decision_id=str(row.get("decision_id") or ""),
+        stored=stored,
+        stored_rule=str(row.get("rule") or ""),
+        config_hash_stored=str(row.get("config_hash") or ""),
+        config_hash_now=config.config_hash,
+        pressures=_pressures(row.get("pressures")),
+    )
+    alias = str(row.get("alias") or "")
+    alias_cfg = config.aliases.get(alias)
+    if alias_cfg is None:
+        out.error = f"alias {alias!r} is not in this router.yaml any more"
+        return out
+    answers = row.get("answers") or {}
+    if not isinstance(answers, dict):
+        out.error = "the stored answers are unreadable"
+        return out
+    if not answers:
+        out.notes.append(
+            "no Jev answers were stored; this decision came from a fallback, "
+            "and a fallback is not replay evidence"
+        )
+    facts = row.get("features") or {}
+    if not isinstance(facts, dict):
+        out.error = "the stored request facts are unreadable"
+        return out
+    try:
+        result = select(
+            config, alias_cfg, answers, features_from_facts(facts), out.pressures
+        )
+    except RoutingError as exc:
+        out.error = str(exc)
+        return out
+    out.replayed = (result.model, result.effort)
+    out.replayed_rule = result.rule
+    out.lane = result.lane
+    out.evidence = result.evidence
+    out.counterfactual = result.counterfactual
+    out.notes.extend(result.notes)
+    return out
+
+
+def _pressures(raw: Any) -> dict[str, float]:
+    """The pressure a decision was taken under, ignoring zeros and rubbish."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, float] = {}
+    for name, value in raw.items():
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            out[str(name)] = number
+    return out

@@ -272,21 +272,64 @@ def cmd_explain(args: argparse.Namespace) -> int:
     if decision.routing_error:
         print(f"routing error: {decision.routing_error}", file=sys.stderr)
         return 2
-    print("\njev answers:")
+    print("\njev answers (active, these decide):")
     print(
         json.dumps(decision.answers, indent=2, default=str)
         if decision.answers
         else "  (none)"
     )
-    if pressures:
-        print("\npressure:")
-        for name, value in sorted(pressures.items()):
-            print(f"  {name}: {value:.2f}")
+    print("\njev answers (shadow, recorded and read by nothing):")
+    if decision.shadow_answers:
+        print(json.dumps(decision.shadow_answers, indent=2, default=str))
+    else:
+        print("  (none)")
+    if decision.invalid_shadow:
+        print(f"  dropped as invalid: {', '.join(decision.invalid_shadow)}")
+    if decision.packet_version:
+        print(f"\npacket version: {decision.packet_version}")
+        if decision.shadow_packet_version:
+            print(f"shadow packet:  {decision.shadow_packet_version}")
+
+    exclusions = decision.exclusions
+    print("\nhard constraints:")
+    if exclusions:
+        for row in exclusions:
+            effort = f"({row['effort'] or '-'})" if "effort" in row else ""
+            print(f"  ruled out {row['model']}{effort}: {row['reason']}")
+    else:
+        print("  every permitted model can serve this request")
+
+    print("\nquota:")
+    freshness = _quota_freshness(config)
+    for name in sorted(set(freshness) | set(pressures)):
+        word = freshness.get(name, "unknown")
+        live = pressures.get(name)
+        note = "" if word == "fresh" else "  (not measured; not spare capacity)"
+        shown = f"{live:.2f}" if live is not None else "-"
+        print(f"  {name}: {shown}  status={word}{note}")
+
     print("\ndecision:")
     print(f"  model:    {decision.model}")
     print(f"  effort:   {decision.effort}")
     print(f"  rule:     {decision.rule}")
     print(f"  route:    {decision.route or '-'}")
+    print(f"  lane:     {decision.lane or '-'}")
+    if decision.qualification_ref:
+        print(f"  qualified by: {decision.qualification_ref}")
+    print(f"  evidence: {decision.evidence}")
+    if decision.counterfactual:
+        model, effort = decision.counterfactual
+        same = (model, effort) == (decision.model, decision.effort)
+        print(
+            f"  without pressure: {model}({effort or '-'})"
+            + ("  (the same choice)" if same else "  (a different choice)")
+        )
+    for experiment in decision.experiments:
+        print(
+            f"  experiment {experiment.policy}: {experiment.model}"
+            f"({experiment.effort or '-'}) via {experiment.rule}"
+            f"{'  CHANGED' if experiment.changed else ''}"
+        )
     print(f"  reason:   {decision.reason}")
     print(f"  fallback: {decision.fallback}")
     if decision.plan:
@@ -313,8 +356,94 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    """Re-run the pure selection from a stored decision row.
+
+    No Jev call, no quota poll, no prompt: the answers, the request facts and
+    the pressure all come off the row, which is what invariant I13 asks for.
+    """
+    from .pins import Store
+    from .semantic import replay_decision
+
+    config = _load(args.config)
+    store = Store(config.settings.db_path, config.settings.log_state)
+    try:
+        decision_id = args.decision_id
+        if decision_id == "last":
+            decision_id = store.last_decision_id() or ""
+        row = store.get_decision(decision_id) if decision_id else None
+        if row is None:
+            print(f"unknown decision id {args.decision_id!r}", file=sys.stderr)
+            return 1
+        result = replay_decision(config, row)
+    finally:
+        store.close()
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "decision_id": result.decision_id,
+                    "stored": list(result.stored),
+                    "stored_rule": result.stored_rule,
+                    "replayed": list(result.replayed) if result.replayed else None,
+                    "replayed_rule": result.replayed_rule,
+                    "lane": result.lane,
+                    "evidence": result.evidence,
+                    "counterfactual": list(result.counterfactual)
+                    if result.counterfactual
+                    else None,
+                    "pressures": result.pressures,
+                    "config_hash_stored": result.config_hash_stored,
+                    "config_hash_now": result.config_hash_now,
+                    "same_config": result.same_config,
+                    "reproduced": result.reproduced,
+                    "verdict": result.verdict(),
+                    "notes": result.notes,
+                    "error": result.error,
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        return 0 if result.reproduced and result.same_config else 1
+
+    print(f"decision {result.decision_id}:")
+    print(f"  stored:   {result.stored[0]}({result.stored[1] or '-'}) "
+          f"rule={result.stored_rule}")
+    if result.replayed:
+        print(f"  replayed: {result.replayed[0]}({result.replayed[1] or '-'}) "
+              f"rule={result.replayed_rule}")
+    print(
+        f"  config:   stored {result.config_hash_stored or '-'}, "
+        f"now {result.config_hash_now}"
+    )
+    if result.pressures:
+        print(
+            "  pressure: "
+            + ", ".join(f"{k}={v:.2f}" for k, v in sorted(result.pressures.items()))
+        )
+    else:
+        print("  pressure: none recorded, so it was taken at pressure zero")
+    if result.lane:
+        print(f"  lane:     {result.lane} (evidence: {result.evidence})")
+    if result.counterfactual:
+        model, effort = result.counterfactual
+        print(f"  without pressure: {model}({effort or '-'})")
+    for note in result.notes:
+        print(f"  note:     {note}")
+    print(f"  {result.verdict()}")
+    return 0 if result.reproduced and result.same_config else 1
+
+
 def cmd_decisions(args: argparse.Namespace) -> int:
     from .pins import Store
+
+    if getattr(args, "action", None) == "replay":
+        if not args.decision_id:
+            print("decisions replay needs a decision id", file=sys.stderr)
+            return 2
+        return cmd_replay(args)
 
     config = _load(args.config)
     store = Store(config.settings.db_path, config.settings.log_state)
@@ -353,6 +482,7 @@ def cmd_decisions(args: argparse.Namespace) -> int:
             f"  {' '.join(bits)}"
             f"{'  [' + ', '.join(flags) + ']' if flags else ''}"
         )
+        _print_decision_extras(row)
         for mark in marks:
             better = ""
             if mark.get("better_model"):
@@ -364,6 +494,48 @@ def cmd_decisions(args: argparse.Namespace) -> int:
                 f"    feedback: {mark['verdict']}{better}{note} ({mark.get('source')})"
             )
     return 0
+
+
+def _print_decision_extras(row: dict[str, Any]) -> None:
+    """The packet, the lane and the counterfactual, when the row has them."""
+    shadow = row.get("shadow_answers")
+    if isinstance(shadow, dict) and shadow:
+        bits = []
+        for qid, answer in sorted(shadow.items()):
+            if qid == "_invalid":
+                bits.append(f"invalid={','.join(answer)}")
+            elif isinstance(answer, dict):
+                value = answer.get("value")
+                bits.append(
+                    f"{qid}={value:.2f}" if isinstance(value, float) else f"{qid}={value}"
+                )
+        print(f"    shadow: {' '.join(bits)}")
+    laned = []
+    if row.get("quality_lane"):
+        laned.append(f"lane={row['quality_lane']}")
+    if row.get("evidence"):
+        laned.append(f"evidence={row['evidence']}")
+    if row.get("action"):
+        laned.append(f"action={row['action']}")
+    if row.get("counterfactual"):
+        laned.append(f"without pressure={row['counterfactual']}")
+    if laned:
+        print(f"    {'  '.join(laned)}")
+    status = row.get("quota_status")
+    if isinstance(status, dict) and status:
+        print(
+            "    quota: " + ", ".join(f"{k}={v}" for k, v in sorted(status.items()))
+        )
+    for item in row.get("experiment_routes") or []:
+        if isinstance(item, dict):
+            print(
+                f"    experiment {item.get('policy')}: {item.get('model')}"
+                f"({item.get('effort') or '-'})"
+                f"{'  CHANGED' if item.get('changed') else ''}"
+            )
+    for item in row.get("exclusions") or []:
+        if isinstance(item, dict):
+            print(f"    ruled out {item.get('model')}: {item.get('reason')}")
 
 
 def cmd_feedback(args: argparse.Namespace) -> int:
@@ -608,7 +780,18 @@ def main(argv: list[str] | None = None) -> int:
     p_sess.add_argument("--json", action="store_true")
     p_sess.set_defaults(func=cmd_sessions)
 
-    p_dec = sub.add_parser("decisions", help="tail the decision log")
+    p_dec = sub.add_parser(
+        "decisions", help="tail the decision log, or replay one decision"
+    )
+    p_dec.add_argument(
+        "action",
+        nargs="?",
+        choices=["replay"],
+        help="replay re-runs the selection from a stored row",
+    )
+    p_dec.add_argument(
+        "decision_id", nargs="?", help="a decision id, or 'last', for replay"
+    )
     p_dec.add_argument("-n", "--limit", type=int, default=20)
     p_dec.add_argument("--json", action="store_true")
     p_dec.set_defaults(func=cmd_decisions)

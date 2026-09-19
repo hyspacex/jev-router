@@ -475,6 +475,13 @@ def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
         "state",
         "pressures",
         "shifted",
+        # Added with the semantic packet and the quality guard. A row written
+        # before them reads back as None.
+        "shadow_answers",
+        "experiment_routes",
+        "quota_snapshot",
+        "quota_status",
+        "exclusions",
     ):
         if item.get(field):
             item[field] = _load_json(item[field])
