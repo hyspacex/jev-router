@@ -77,7 +77,7 @@ class Ladder:
     faith_threshold: float = OFF    # needs_faithfulness at or above this -> frontier
 
     GRID = {
-        "conf_floor": [0.0, 0.25, 0.35, 0.45, 0.55],
+        "conf_floor": [0.0, 0.25, 0.35, 0.4, 0.45, 0.55],
         "model_cutoff": [1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
         "hard_min": [1.6, 1.8, 2.0, 2.2, 2.4],
         "very_hard_min": [2.4, 2.6, 2.8, 3.0],
@@ -199,6 +199,7 @@ class TuneCase:
     effort: str | None
     weight: float = 1.0
     source: str = "eval"
+    slice: str = "chat"
 
     def __post_init__(self) -> None:
         self.acceptable_tiers = list(self.acceptable_tiers)
@@ -266,9 +267,27 @@ def load_eval_cases(results_dir: Path, variant: str) -> list[TuneCase]:
                 features=features_from_facts(facts),
                 acceptable_tiers=r["label"]["acceptable_tiers"],
                 effort=r["label"]["effort"],
+                slice=(r.get("meta") or {}).get("slice", "chat"),
             )
         )
     return out
+
+
+def resplit_by_slice(cases: list[TuneCase], held: str) -> int:
+    """Hold out one whole slice instead of 30% of the rows.
+
+    A row split puts near-duplicates of a held-out case in the tuning half,
+    which flatters the held-out number. Holding out a whole shape asks the
+    harder question: do numbers tuned without this kind of request work on it?
+    """
+    n = 0
+    for case in cases:
+        if case.slice == held:
+            case.split = "held_out"
+            n += 1
+        else:
+            case.split = "tune"
+    return n
 
 
 def apply_outcomes(cases: list[TuneCase], outcomes_path: Path) -> int:
@@ -564,6 +583,8 @@ def main() -> int:
                    help="highest under-routing the search may accept, in percent")
     p.add_argument("--under-cost", type=float, default=UNDER_ROUTE_COST,
                    help="quota units one under-route costs (see the top of this file)")
+    p.add_argument("--slice-holdout",
+                   help="hold out one whole slice instead of 30%% of the rows")
     p.add_argument("--no-outcomes", action="store_true")
     p.add_argument("--no-feedback", action="store_true")
     args = p.parse_args()
@@ -576,6 +597,13 @@ def main() -> int:
     config = config_with_overlay(
         overlay, replace_questions=questions_to_replace(overlay)
     )
+
+    held_n = 0
+    if args.slice_holdout:
+        held_n = resplit_by_slice(cases, args.slice_holdout)
+        if not held_n:
+            print(f"no cases in slice {args.slice_holdout!r}", file=sys.stderr)
+            return 2
 
     widened = 0
     if not args.no_outcomes:
@@ -590,7 +618,8 @@ def main() -> int:
 
     print(f"tuning on {len(tune_cases)} cases "
           f"({len(feedback)} from feedback, weighted {FEEDBACK_WEIGHT:g}x), "
-          f"holding out {len(held_out)}")
+          f"holding out {len(held_out)}"
+          + (f" (the whole `{args.slice_holdout}` slice)" if args.slice_holdout else ""))
     if widened:
         print(f"outcome benchmark widened the acceptable tiers of {widened} cases")
 

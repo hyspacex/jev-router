@@ -1,79 +1,79 @@
 # Outcome benchmark (layer 3)
 
-- when: 2026-09-19T07:08:17+00:00
-- cases: 25
+- when: 2026-09-19T15:15:47+00:00
+- cases: 10
 - routes per case: 7
+- samples per route: 3
+- candidate token cap: 8000
 - a route counts as adequate when it scores within 0.5 of the best route
+- where a programmatic check exists it decides the score; the judge still runs so the two can be compared
 
 ## Route averages
 
-| route | mean score | median score | wins outright | adequate on | median latency ms | median output tokens |
-|---|---|---|---|---|---|---|
-| ollama/glm-5.3-flash(none) | 8.14 | 9.20 | 9/25 | 11/25 | 3963 | 428 |
-| ollama/glm-5.3-flash(low) | 7.71 | 9.00 | 10/25 | 11/25 | 4003 | 468 |
-| ollama/glm-5.3-flash(high) | 7.35 | 8.80 | 10/25 | 11/25 | 5373 | 605 |
-| gpt-6-astra(low) | 9.00 | 10.00 | 17/25 | 19/25 | 12188 | 309 |
-| gpt-6-astra(medium) | 9.18 | 10.00 | 20/25 | 21/25 | 13210 | 381 |
-| gpt-6-astra(high) | 9.10 | 10.00 | 18/25 | 20/25 | 15238 | 416 |
-| gpt-6-astra(xhigh) | 9.12 | 10.00 | 18/25 | 20/25 | 26964 | 829 |
+A route's score is the mean of its k samples. `spread` is the mean within-route standard deviation across samples: it is the noise floor, and a difference between two routes smaller than this is not a difference. `truncated` counts samples that stopped at the token cap of 8000 rather than finishing.
+
+| route | mean score | 95% CI | spread | wins outright | adequate on | truncated % | median latency ms | median output tokens |
+|---|---|---|---|---|---|---|---|---|
+| ollama/glm-5.3-flash(none) | 9.67 | [9.05, 10.29] | 0.24 | 9/10 | 9/10 | 0.0 | 2300 | 264 |
+| ollama/glm-5.3-flash(low) | 9.50 | [8.57, 10.43] | 0.00 | 9/10 | 9/10 | 0.0 | 2468 | 258 |
+| ollama/glm-5.3-flash(high) | 9.47 | [8.94, 10.00] | 0.65 | 7/10 | 7/10 | 0.0 | 3864 | 430 |
+| gpt-6-astra(low) | 9.28 | [8.36, 10.21] | 0.09 | 7/10 | 7/10 | 0.0 | 10478 | 282 |
+| gpt-6-astra(medium) | 9.50 | [8.57, 10.43] | 0.00 | 9/10 | 9/10 | 0.0 | 9876 | 271 |
+| gpt-6-astra(high) | 9.38 | [8.46, 10.29] | 0.13 | 7/10 | 7/10 | 0.0 | 12208 | 340 |
+| gpt-6-astra(xhigh) | 9.11 | [8.06, 10.16] | 0.51 | 7/10 | 7/10 | 0.0 | 21661 | 656 |
+
+## Winner stability
+
+The cheapest adequate route per case, recomputed on bootstrap resamples of the k samples. A case whose tier flips in more than 20% of draws is marked `unstable` and is not allowed to override a hand label.
+
+- mean tier flip rate: 0.000
+- mean route flip rate: 0.032
+- unstable cases: 0/10
+
+## Judge against the programmatic check
+
+- samples with both: 83
+- differ by 2 points or more: 32.5 [23.4, 43.2]
+- disagree on whether the answer passes (7 of 10): 16.9 [10.3, 26.3]
+- the judge is higher on: 6.0 [2.6, 13.3]
+- mean signed difference, judge minus check: -1.51
+
+Where the two disagree, the check is what the score used. The rate above is how much to discount the judge-only cases.
 
 ## Does effort change the answer?
 
 | model | effort pair | mean score difference | cases where the higher effort was better by 0.5+ |
 |---|---|---|---|
-| glm-5.3-flash | none -> low | -0.43 | 5/25 |
-| glm-5.3-flash | low -> high | -0.36 | 4/25 |
-| gpt-6-astra | low -> medium | +0.18 | 4/25 |
-| gpt-6-astra | medium -> high | -0.08 | 1/25 |
-| gpt-6-astra | high -> xhigh | +0.01 | 3/25 |
+| glm-5.3-flash | none -> low | -0.17 | 0/10 |
+| glm-5.3-flash | low -> high | -0.03 | 1/10 |
+| gpt-6-astra | low -> medium | +0.22 | 2/10 |
+| gpt-6-astra | medium -> high | -0.12 | 0/10 |
+| gpt-6-astra | high -> xhigh | -0.27 | 0/10 |
 
 ## Cheapest adequate route per case, against the hand label
 
-| case | label tier/effort | cheapest adequate | best score | agrees |
-|---|---|---|---|---|
-| code-prose-shaped-really-code-09 | frontier/medium | ollama/glm-5.3-flash(low) | 10.0 | yes |
-| code-regex-extract-04 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| code-sql-window-query-05 | frontier/medium | ollama/glm-5.3-flash(high) | 9.0 | NO |
-| debug-adversarial-injection-in-log-16 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
-| debug-css-overflow-17 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| debug-go-deadlock-short-40-11 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
-| debug-long-log-trivial-question-12 | fast/none | ollama/glm-5.3-flash(low) | 4.0 | yes |
-| debug-spanish-slow-query-18 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
-| design-auth-module-review-23 | frontier/high | gpt-6-astra(low) | 9.5 | yes |
-| design-eventbus-tradeoff-20 | frontier/xhigh | ollama/glm-5.3-flash(none) | 10.0 | NO |
-| design-naming-bikeshed-24 | fast/none | gpt-6-astra(medium) | 7.0 | NO |
-| extract-action-items-65 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| extract-invoice-json-62 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| quick-borrow-checker-misleading-75 | frontier/medium | ollama/glm-5.3-flash(none) | 10.0 | NO |
-| quick-drug-interaction-73 | frontier/medium | ollama/glm-5.3-flash(none) | 10.0 | NO |
-| quick-percentage-74 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| quick-postgres-port-71 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| quick-timezone-abbrev-77 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | yes |
-| summarise-adversarial-doc-69 | frontier/medium | ollama/glm-5.3-flash(none) | 10.0 | NO |
-| summarise-meeting-notes-dates-61 | frontier/medium | gpt-6-astra(low) | 10.0 | yes |
-| summarise-trial-abstract-66 | frontier/high | ollama/glm-5.3-flash(low) | 10.0 | NO |
-| writing-incident-customer-notice-37 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
-| writing-investor-update-numbers-44 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
-| writing-legal-clause-39 | frontier/high | gpt-6-astra(low) | 8.0 | yes |
-| writing-medical-discharge-38 | frontier/high | gpt-6-astra(low) | 10.0 | yes |
+| case | label tier/effort | cheapest adequate | best score | tier flip | outcome | agrees |
+|---|---|---|---|---|---|---|
+| code-regex-extract-04 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| debug-adversarial-injection-in-log-16 | frontier/high | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | NO |
+| extract-action-items-65 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| extract-invoice-json-62 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| quick-percentage-74 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| quick-postgres-port-71 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| quick-timezone-abbrev-77 | fast/none | ollama/glm-5.3-flash(high) | 10.0 | 0.00 | stable | yes |
+| summarise-adversarial-doc-69 | fast/none | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | yes |
+| summarise-trial-abstract-66 | frontier/high | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | NO |
+| writing-investor-update-numbers-44 | frontier/high | ollama/glm-5.3-flash(none) | 10.0 | 0.00 | stable | NO |
 
 ## Proposed label changes
 
 | case | label | outcome says | confidence | applied |
 |---|---|---|---|---|
-| summarise-adversarial-doc-69 | frontier/medium | fast/none | clear | yes |
-| summarise-trial-abstract-66 | frontier/high | fast/low | mixed | no, left for a person |
-| quick-drug-interaction-73 | frontier/medium | fast/none | clear | yes |
-| quick-borrow-checker-misleading-75 | frontier/medium | fast/none | mixed | no, left for a person |
-| code-sql-window-query-05 | frontier/medium | fast/high | mixed | no, left for a person |
-| design-eventbus-tradeoff-20 | frontier/xhigh | fast/none | mixed | no, left for a person |
-| design-naming-bikeshed-24 | fast/none | frontier/medium | clear | yes |
+| writing-investor-update-numbers-44 | frontier/high | fast/none | clear | yes |
+| debug-adversarial-injection-in-log-16 | frontier/high | fast/none | clear | yes |
+| summarise-trial-abstract-66 | frontier/high | fast/none | mixed | no, left for a person |
 
-- **summarise-adversarial-doc-69**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0].
-- **summarise-trial-abstract-66**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(low), best score 10.0, fast-tier scores [9.2, 9.6, 8.8], frontier-tier scores [8.0, 10.0, 10.0, 10.0].
-- **quick-drug-interaction-73**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [9.5, 10.0, 10.0], frontier-tier scores [8.12, 10.0, 10.0, 10.0].
-- **quick-borrow-checker-misleading-75**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 7.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0].
-- **code-sql-window-query-05**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(high), best score 9.0, fast-tier scores [7.0, 2.0, 8.5], frontier-tier scores [8.0, 9.0, 9.0, 8.0].
-- **design-eventbus-tradeoff-20**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [9.5, 9.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0].
-- **design-naming-bikeshed-24**: the fast model was not good enough: cheapest adequate route is gpt-6-astra(medium), best score 7.0, fast-tier scores [4.0, 4.0, 4.0], frontier-tier scores [6.0, 7.0, 6.0, 7.0].
+- **writing-investor-update-numbers-44**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0].
+- **debug-adversarial-injection-in-log-16**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0].
+- **summarise-trial-abstract-66**: the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 8.67], frontier-tier scores [8.67, 10.0, 9.33, 6.67].
 

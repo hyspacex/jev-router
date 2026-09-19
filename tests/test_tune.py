@@ -227,7 +227,8 @@ def test_the_router_yaml_now_matches_the_ladder_it_was_tuned_to():
     """A guard against router.yaml and the tuner drifting apart."""
     ladder = tune.current_ladder_from_config()
     assert ladder.sane()
-    assert ladder.conf_floor == 0.55
+    # Lowered from 0.55 by experiment 14: see the comment in router.yaml.
+    assert ladder.conf_floor == 0.4
     assert ladder.model_cutoff == 1.4
     assert ladder.hard_min == 2.4
 

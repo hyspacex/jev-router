@@ -1,8 +1,10 @@
+import json
+
 import httpx
 import pytest
 import respx
 
-from conftest import make_config
+from conftest import UPSTREAM, make_config
 from jev_router.deciders import build_decider
 from jev_router.deciders.rules import RulesDecider
 from jev_router.features import extract_features
@@ -142,3 +144,100 @@ async def test_rules_decider_reads_the_request(cfg):
 async def test_rules_decider_only_answers_asked_questions(cfg):
     decision = await RulesDecider(cfg).decide(feats(), cfg.aliases["auto-fast"])
     assert set(decision.answers) == {"difficulty"}
+
+
+# --- the optional AutoMix-style draft step -------------------------------
+
+
+DRAFT_CFG = {
+    "enabled": True,
+    "model": "small",
+    "max_tokens": 60,
+    "timeout_ms": 500,
+}
+
+
+def _draft_reply(text="A draft answer."):
+    return {"choices": [{"message": {"role": "assistant", "content": text}}]}
+
+
+@respx.mock
+async def test_draft_is_off_unless_the_alias_turns_it_on(cfg, monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    """No `draft` block means no upstream call and no extra state field."""
+    jev = respx.post(JEV_URL).mock(return_value=httpx.Response(200, json=answer_payload()))
+    upstream = respx.post(f"{UPSTREAM}/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_draft_reply())
+    )
+    async with httpx.AsyncClient() as client:
+        decider = build_decider("jev", cfg, {"jev_client": client})
+        decision = await decider.decide(feats("what is 2+2"), cfg.aliases["auto"])
+    assert jev.called
+    assert not upstream.called
+    assert "draft_answer_from_a_fast_model" not in (decision.state or {})
+
+
+@respx.mock
+async def test_draft_reaches_jev_when_the_alias_asks_for_it(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    config = make_config(aliases={"auto": {"draft": DRAFT_CFG}})
+    jev = respx.post(JEV_URL).mock(return_value=httpx.Response(200, json=answer_payload()))
+    upstream = respx.post(f"{UPSTREAM}/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_draft_reply("4"))
+    )
+    async with httpx.AsyncClient() as client:
+        decider = build_decider("jev", config, {"jev_client": client})
+        decision = await decider.decide(feats("what is 2+2"), config.aliases["auto"])
+    assert upstream.called
+    # The draft goes upstream under the upstream_id with its effort applied,
+    # the same way a forwarded request would. Without the effort a reasoning
+    # model spends the whole token budget thinking and returns empty content.
+    assert json.loads(upstream.calls[0].request.content)["model"] == "vendor/small(none)"
+    assert decision.state["draft_answer_from_a_fast_model"] == "4"
+    sent = json.loads(jev.calls[0].request.content)
+    assert sent["state"]["draft_answer_from_a_fast_model"] == "4"
+
+
+@respx.mock
+async def test_draft_failing_does_not_fail_the_request(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    """Fails open. A dead upstream must cost the draft, not the decision."""
+    config = make_config(aliases={"auto": {"draft": DRAFT_CFG}})
+    respx.post(JEV_URL).mock(return_value=httpx.Response(200, json=answer_payload()))
+    respx.post(f"{UPSTREAM}/v1/chat/completions").mock(
+        return_value=httpx.Response(503, text="down")
+    )
+    async with httpx.AsyncClient() as client:
+        decider = build_decider("jev", config, {"jev_client": client})
+        decision = await decider.decide(feats("what is 2+2"), config.aliases["auto"])
+    assert not decision.fallback
+    assert "draft_answer_from_a_fast_model" not in decision.state
+
+
+@respx.mock
+async def test_draft_timing_out_does_not_fail_the_request(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    config = make_config(aliases={"auto": {"draft": DRAFT_CFG}})
+    respx.post(JEV_URL).mock(return_value=httpx.Response(200, json=answer_payload()))
+    respx.post(f"{UPSTREAM}/v1/chat/completions").mock(
+        side_effect=httpx.ReadTimeout("slow")
+    )
+    async with httpx.AsyncClient() as client:
+        decider = build_decider("jev", config, {"jev_client": client})
+        decision = await decider.decide(feats("hello"), config.aliases["auto"])
+    assert not decision.fallback
+    assert decision.model
+
+
+@respx.mock
+async def test_an_empty_draft_is_left_out_of_the_state(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    config = make_config(aliases={"auto": {"draft": DRAFT_CFG}})
+    respx.post(JEV_URL).mock(return_value=httpx.Response(200, json=answer_payload()))
+    respx.post(f"{UPSTREAM}/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_draft_reply("   "))
+    )
+    async with httpx.AsyncClient() as client:
+        decider = build_decider("jev", config, {"jev_client": client})
+        decision = await decider.decide(feats("hello"), config.aliases["auto"])
+    assert "draft_answer_from_a_fast_model" not in decision.state

@@ -15,8 +15,17 @@ __pycache__/
 # Eval artifacts. .cache holds Jev and upstream replies so a run can resume.
 evals/.cache/
 evals/.e2e/
-evals/results/latest
-evals/results/*/per_case.jsonl
+# Only the final run's summary is kept in git.
+evals/results/*
+!evals/results/20260919-081432/
+evals/results/20260919-081432/*
+!evals/results/20260919-081432/summary.md
 
 # macOS
 .DS_Store
+
+# Sampled public traffic. WildChat and friends are real conversations that can
+# hold personal data, so the sample stays on the machine that made it and is
+# never republished from this repo. `evals/import_public.py` rebuilds it.
+evals/cases_public.yaml
+evals/cases_public_labels.yaml

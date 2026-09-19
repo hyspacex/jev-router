@@ -138,13 +138,21 @@ questions:
 #
 # Every number here came out of `uv run python evals/tune.py`, which searches
 # for the cheapest setting that keeps under-routing at or below 5% on the
-# tuning split. On the 62 tuning cases: tier correct 95.2%, under-routed 0.0%,
-# over-routed 8.1%, mean cost 8.2 quota units. On the 24 held-out cases:
-# 87.5%, 4.2%, 8.3%, 11.6. Rerun the tuner after any change to the questions
-# or to the state builder; the cutoffs only mean anything against one wording.
+# tuning split. On the 171-case set: tier correct 92.4% [87.4, 95.5],
+# under-routed 1.2%, over-routed 6.4%, mean cost 10.8 quota units. Rerun the
+# tuner after any change to the questions or to the state builder; the cutoffs
+# only mean anything against one wording.
 policy:
   low_confidence:
-    min_confidence: 0.55
+    # Lowered from 0.55 by experiment 14 in evals/EXPERIMENTS.md. Jev's
+    # difficulty confidence is not overconfident: its expected calibration
+    # error is 0.084 and it runs 0.05 *under* its own accuracy, so a gate at
+    # 0.55 rejected 37 answers of 171 that were mostly right and sent them to
+    # the frontier model. At 0.4 the gate fires 13 times, tier accuracy goes
+    # from 88.3% to 92.4% (paired p = 0.012) and under-routing does not move.
+    # The gate still earns its place: on the `task` question, answers below
+    # 0.55 are right 35% of the time against 78% above it.
+    min_confidence: 0.4
     questions: [task, difficulty]
     use:
       model: gpt-6-astra

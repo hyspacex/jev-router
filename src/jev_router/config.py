@@ -109,6 +109,36 @@ class Ruleset(Base):
     low_confidence: LowConfidence | None = None
 
 
+class DraftCfg(Base):
+    """An optional cheap draft shown to Jev before it decides.
+
+    AutoMix (arXiv 2310.12963) asks a cheap model to answer first and then asks
+    whether that answer will do. This is the same idea with the second step
+    done by the decision model rather than by a prompted LLM. It is off by
+    default: it costs one extra upstream call and about a second of latency on
+    the first turn of a conversation, and it only pays for itself if the
+    question that reads the draft changes enough routes.
+
+    It never runs on a pinned turn, because a pinned conversation does not call
+    the decider at all. Any failure is swallowed and the router decides without
+    the draft.
+    """
+
+    enabled: bool = False
+    model: str = ""
+    # The effort the draft runs at. It must be spelled the way the model
+    # expects, because a reasoning model given no effort and a small token
+    # budget spends the whole budget thinking and returns empty content.
+    # That is how the first measured draft run failed.
+    effort: str | None = "none"
+    max_tokens: int = 150
+    timeout_ms: int = 4000
+    # The env var holding the key the upstream wants. Empty means no header,
+    # which is right for a local proxy that does not check one.
+    api_key_env: str = ""
+    state_field: str = "draft_answer_from_a_fast_model"
+
+
 class AliasCfg(Base):
     state_builder: str = "summary_v1"
     questions: list[str] = Field(default_factory=list)
@@ -117,6 +147,7 @@ class AliasCfg(Base):
     allowed_models: list[str] | None = None
     max_effort: str | None = None
     decider: str | None = None
+    draft: DraftCfg | None = None
     description: str = ""
 
 

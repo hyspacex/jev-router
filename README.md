@@ -331,20 +331,46 @@ content. Turn on `settings.log_state` only while debugging question wording.
 
 ## Evaluating and tuning
 
-Everything under `evals/` measures the router against 86 labelled requests in
-`evals/cases.yaml`. The cases are split 70/30 by a fixed seed, stratified by
-task label: choices are made on the 62 tuning cases and reported on the 24
-held-out ones. Three scripts, all needing `TYPESAFE_API_KEY`:
+Everything under `evals/` measures the router against 171 labelled requests in
+`evals/cases.yaml`. Every case carries a `slice` saying what shape of request
+it is:
+
+| slice | n | slice | n |
+| --- | --- | --- | --- |
+| agentic | 46 | multilingual | 16 |
+| chat | 45 | longcontext | 11 |
+| adversarial | 27 | pipeline | 10 |
+| multiturn | 16 | | |
+
+The cases are split 70/30 by a fixed seed, stratified by task label: choices
+are made on the 120 tuning cases and reported on the 51 held-out ones. A slice
+can also be held out whole, which is a harder test than a row split, because a
+row split leaves near-duplicates of a held-out case in the tuning half.
+
+Four scripts. The first three need `TYPESAFE_API_KEY`:
 
 ```sh
 # Does Jev classify the request, and does the policy route it?
 uv run python evals/run_eval.py --group final --repeats 3
 
-# Run the gradeable cases on every candidate route and grade the answers.
-uv run python evals/run_outcomes.py
+# The same, plus a re-decide under four seeded rewordings of each request.
+uv run python evals/run_eval.py --variants router_yaml --stability
 
-# Search the policy's numbers and print a diff.
+# Two runs that are supposed to score badly. If they do not, the harness is broken.
+uv run python evals/run_eval.py --variants router_yaml --control shuffled-labels
+uv run python evals/run_eval.py --variants router_yaml --control constant-state
+
+# Run the gradeable cases on every candidate route, three times each, and grade them.
+uv run python evals/run_outcomes.py --samples 3 --max-calls 400
+
+# Search the policy's numbers and print a diff. Optionally hold a whole slice out.
 uv run python evals/tune.py --variant router_yaml --samples 5000
+uv run python evals/tune.py --variant router_yaml --slice-holdout agentic
+
+# Sample public datasets into a git-ignored out-of-distribution set.
+uv sync --group evals
+uv run python evals/import_public.py --limit 25
+uv run python evals/run_eval.py --variants router_yaml --public evals/cases_public.yaml
 ```
 
 `run_eval.py` scores Jev's answers against the labels and then feeds those
@@ -356,12 +382,28 @@ go to the network. A variant is one state builder plus one set of question
 wordings, defined in `evals/variants.yaml` as an overlay on `router.yaml`.
 `router_yaml` is this file as it stands and `--group` runs a named set.
 
-`run_outcomes.py` runs each gradeable case on all seven candidate routes and
-grades the replies with a programmatic check from `evals/checks.py`, a blind
-judge against a rubric, or both. It needs `UPSTREAM_API_KEY` and
-`JEV_ROUTER_UPSTREAM` as well, because it calls the models for real. It writes
-`evals/outcomes.json` and `evals/outcomes.md`; `--apply-labels` writes the
-clear-cut label changes back into `cases.yaml`.
+`evals/metrics.py` holds the definitions the scripts share: Wilson intervals,
+expected calibration error, the cost-matched random baseline, Gap@Oracle and
+Gain@BestSingle, and the seeded perturbations behind the stability number.
+
+`run_outcomes.py` runs each gradeable case on all seven candidate routes, k
+times per route, and grades the replies with a programmatic check from
+`evals/checks.py`, a blind judge against a rubric, or both. Where a check
+exists it decides the score and the judge is scored against it. It needs
+`UPSTREAM_API_KEY` and `JEV_ROUTER_UPSTREAM` as well, because it calls the
+models for real. Cases run one at a time in priority order under `--max-calls`,
+so a run that hits its budget leaves whole cases finished and resumes from the
+cache. It also stops itself if a route's own median latency triples or replies
+start coming back empty. It writes `evals/outcomes.json` and
+`evals/outcomes.md`; `--apply-labels` writes the clear-cut label changes back
+into `cases.yaml`, and never writes one from a case whose winner is `unstable`.
+
+`import_public.py` samples WildChat (ODC-BY), BFCL, LongBench v2 and MGSM into
+`evals/cases_public.yaml`. That file is git-ignored on purpose: real user
+conversations can hold personal data and must not be republished from here. The
+script drops anything the dataset flags as toxic and anything matching an email
+address, a phone number or a card-shaped number, and it never writes a label of
+its own. Labels live beside it in `cases_public_labels.yaml`.
 
 `tune.py` reads the cached answers, `evals/outcomes.json`, and the `decisions`
 and `feedback` tables in the sqlite log. Feedback rows count three times. It
@@ -375,38 +417,93 @@ before and after, including the ones that did not help.
 
 ### Where it stands
 
-From the run in `evals/results/20260919-001105/summary.md`, over all 86 cases:
+Over all 171 cases, with Wilson 95% intervals. On this many cases one case is
+0.6 points and two independent runs cannot separate a difference smaller than
+about 11 points, so read the intervals before reading the ranking.
 
 | | task acc | difficulty | tier correct | under-routed | over-routed | cost |
 | --- | --- | --- | --- | --- | --- | --- |
-| this config | 81.4% | 86.0% | 90.7% | 1.2% | 8.1% | 9.1 |
-| before the last tuning round | 68.6% | 62.8% | 68.6% | 2.3% | 29.1% | 13.5 |
-| always gpt-6-astra(medium) | - | - | 59.3% | 0.0% | 40.7% | 14.0 |
-| always ollama/glm-5.3-flash(none) | - | - | 54.7% | 45.3% | 0.0% | 1.0 |
-| the no-network `rules` decider | 18.6% | 36.0% | 62.8% | 23.3% | 14.0% | 6.2 |
+| this config | 73.7 [66.6, 79.7] | 74.9 [67.9, 80.8] | **92.4 [87.4, 95.5]** | 1.2 [0.3, 4.2] | 6.4 [3.6, 11.2] | 10.8 |
+| before the confidence-gate change | 73.7 | 74.9 | 88.3 [82.6, 92.3] | 1.2 | 10.5 | 10.7 |
+| cost-matched random (Zero Router) | - | - | 57.3 ± 3.4 | 24.3 | 18.4 | 10.9 |
+| always gpt-6-astra(medium) | - | - | 63.2 [55.7, 70.0] | 0.0 | 36.8 | 14.0 |
+| always ollama/glm-5.3-flash(none) | - | - | 46.2 [38.9, 53.7] | 53.8 | 0.0 | 1.0 |
+| the no-network `rules` decider | 30.4 [24.0, 37.7] | 31.6 [25.1, 38.9] | 60.2 [52.8, 67.3] | 23.4 | 16.4 | 7.4 |
+| majority class (ignore the request) | - | - | 63.2 | - | - | - |
+
+The row that matters is the cost-matched random one, which is RouterBench's
+Zero Router. It sends a request to the frontier tier with the router's own
+frontier rate and draws the effort from the router's own mix, so it spends
+10.9 quota units against the router's 10.8 and differs only in choosing at
+random. The router is 35 points better at the same spend, so it is choosing
+rather than spending.
 
 Cost is relative, not currency. `ROUTE_COST` in `evals/common.py` puts
 `gpt-6-astra(medium)` at 14 units and `ollama/glm-5.3-flash(none)` at 1.
 Nothing measured those ratios.
 
-Three targets in TESTPLAN.md were missed:
+By slice:
 
-- Task label accuracy is 81.4% against a target of 85%.
-- The faithfulness flag is 75.6% against a target of 85%. It uses
-  `harm_if_wrong` as a proxy; a dedicated `needs_faithfulness` question reaches
-  87.2% but made routing worse, so no alias asks it.
-- Tier correct on the held-out split is 87.5% against a target of 90%, which is
-  three cases out of 24.
+| slice | n | task acc | difficulty | tier correct | under | cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| chat | 45 | 77.8 [63.7, 87.5] | 91.1 [79.3, 96.5] | 93.3 [82.1, 97.7] | 2.2 | 8.7 |
+| agentic | 46 | 54.3 [40.2, 67.8] | 76.1 [62.1, 86.1] | 89.1 [77.0, 95.3] | 0.0 | 13.5 |
+| adversarial | 27 | 74.1 [55.3, 86.8] | 51.9 [34.0, 69.3] | 96.3 [81.7, 99.3] | 0.0 | 11.3 |
+| multiturn | 16 | 87.5 [64.0, 96.5] | 68.8 [44.4, 85.8] | 87.5 [64.0, 96.5] | 0.0 | 11.9 |
+| multilingual | 16 | 87.5 [64.0, 96.5] | 81.2 [57.0, 93.4] | 87.5 [64.0, 96.5] | 6.2 | 9.1 |
+| longcontext | 11 | 90.9 [62.3, 98.4] | 63.6 [35.4, 84.8] | 100.0 [74.1, 100.0] | 0.0 | 10.0 |
+| pipeline | 10 | 80.0 [49.0, 94.3] | 70.0 [39.7, 89.2] | 100.0 [72.2, 100.0] | 0.0 | 8.6 |
+
+Slice intervals are wide enough that this table is for finding where the router
+fails, not for deciding that one config beats another.
+
+The 27 adversarial cases cover three attack goals, delivered six ways. All 27
+hold their label: the route stays inside `acceptable_tiers` and the effort
+stays within one level.
+
+| attack goal | n | tier held | effort held |
+| --- | --- | --- | --- |
+| cost escalation | 8 | 100.0 [67.6, 100.0] | 100.0 [67.6, 100.0] |
+| quality hijacking | 9 | 100.0 [70.1, 100.0] | 100.0 [70.1, 100.0] |
+| harmful downgrade | 8 | 100.0 [67.6, 100.0] | 100.0 [67.6, 100.0] |
+
+With 8 cases per goal the lower bound of the interval is 68% even at 100%
+observed, so this says "no attack in this set works", not "no attack works".
+
+Three targets in TESTPLAN.md are missed, all on classification:
+
+- Task label accuracy is 73.7% against 85%. Most of the shortfall is the
+  agentic slice, where Jev answers `code-edit` on turns the labels call
+  `agentic-tool-task`. The policy treats those categories identically, so the
+  tier is right 89% of the time on that slice.
+- Difficulty within tolerance is 74.9% against 80%, concentrated on the
+  adversarial slice, which exists to push that answer around.
+- The faithfulness flag is 70.8% against 85%. It uses `harm_if_wrong` as a
+  proxy; a dedicated `needs_faithfulness` question predicts the label better
+  but made routing worse, so no alias asks it.
+
+Two more measured properties:
+
+- **Stability.** Reword a request four ways with a fixed seed and the route is
+  unchanged 95.0% [93.1, 96.4] of the time, with 85.4% of requests never moving
+  at all. The ones that move sit on a difficulty cutoff.
+- **Calibration.** ECE is 0.129 on `task`, where Jev is overconfident, and
+  0.084 on `difficulty`, where it is slightly underconfident. That is why
+  `low_confidence.min_confidence` is 0.40 rather than 0.55.
 
 The fast model is always used at `effort: none`. The outcome benchmark found
 that raising its effort made answers slightly worse on average and cost a third
-more latency. `evals/outcomes.md` has the table.
+more latency. A rerun with three samples per route and the token cap raised
+from 3,000 to 8,000 found the same signs, no truncation at all on any route,
+and a blind judge that scores about 1.5 points below the programmatic check it
+was measured against. `evals/outcomes.md` has the tables.
 
-Two caveats. The cases are synthetic, written to be realistic and labelled by
-one person, so task accuracy is measured against one opinion and several
-remaining misses are disagreements that route to the same place. The outcome
-benchmark is partial: 25 of 43 specs finished before the run was stopped, so
-its findings rest on a quarter of the case set.
+Caveats. The cases are written rather than sampled, and labelled by one person,
+so task accuracy is measured against one opinion. A sample of 100 public
+requests (WildChat, BFCL, LongBench v2, MGSM) routes at 86.0% [77.9, 91.5]
+tier-correct with 5.0% under-routing, against 92.4% and 1.2% on the written
+set, so the written set is somewhat easier than real traffic. The outcome
+benchmark is partial.
 
 Rerun the classification scores after any change to a question or a state
 builder, and the tuner after that. The cutoffs only mean anything against one
@@ -429,6 +526,11 @@ on TypeSafe's side cannot move routing without a rerun.
 - Jev is a closed, paid API from TypeSafe. Without a key the router falls back
   to the `rules` decider, which reads counts rather than meaning and
   under-routes about a quarter of the case set.
+- Reword a request and about one time in twenty the route changes. The pin
+  contains this within a conversation but not across conversations.
+- The evaluation is a benchmark of one deployment, not of models. Two specific
+  models, one specific proxy, and a cost model in `evals/common.py` that nobody
+  measured. Change `ROUTE_COST` first before reusing any of this.
 
 ## Tests
 

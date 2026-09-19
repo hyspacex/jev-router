@@ -23,6 +23,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "respx>=0.21",
 ]
+# Only evals/import_public.py needs these. The router does not.
+evals = [
+    "datasets>=3.0",
+    "huggingface-hub>=0.26",
+]
 
 [build-system]
 requires = ["hatchling"]

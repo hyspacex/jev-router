@@ -174,3 +174,105 @@ def x_squeeze_only(features: Features, config: Any) -> dict[str, Any]:
     if features.system_prompt.strip():
         state["start_of_system_prompt"] = features.system_prompt[:400]
     return state
+
+
+# --- experiment 12: language and domain as computed facts ----------------
+#
+# Both are computed in code, with no model call. Jev cannot count and should
+# not be asked to guess a language from a sample it can already see, but the
+# questions and their criteria are written in English, and the eval set shows
+# non-English requests scoring lower. Naming the language is one way to see
+# whether that gap is Jev not recognising the language or the wording simply
+# not carrying over.
+
+# Script ranges that identify a language on their own.
+SCRIPTS = (
+    ("ja", ("぀", "ヿ")),   # hiragana and katakana
+    ("ko", ("가", "힯")),   # hangul
+    ("zh", ("一", "鿿")),   # han, after the kana check
+    ("ru", ("Ѐ", "ӿ")),   # cyrillic
+    ("ar", ("؀", "ۿ")),   # arabic
+    ("el", ("Ͱ", "Ͽ")),   # greek
+    ("he", ("֐", "׿")),   # hebrew
+)
+
+# Function words for the Latin-script languages in the case set. Function
+# words, not content words, because they survive a technical topic.
+STOPWORDS: dict[str, frozenset[str]] = {
+    "es": frozenset("el la los las de que y en un una por con para pero como no se lo está cuando donde".split()),
+    "pt": frozenset("o a os as de que e em um uma por com para mas como não se está quando onde muito".split()),
+    "fr": frozenset("le la les de que et en un une par avec pour mais comme ne se est quand où très".split()),
+    "de": frozenset("der die das und ist ich nicht mit für auf eine einen dem den aber wie wenn wo sehr".split()),
+    "it": frozenset("il lo la i gli le di che e in un una per con ma come non si quando dove molto".split()),
+    "nl": frozenset("de het een en is niet met voor op maar hoe als waar zeer dat die ik je".split()),
+    "en": frozenset("the a an and is to of that it for with on but how if where very this i you".split()),
+}
+
+DOMAIN_WORDS: dict[str, tuple[str, ...]] = {
+    "medical": ("patient", "dose", "dosage", "mg", "diagnosis", "discharge", "clinical",
+                "symptom", "prescription", "contraindicated", "trial", "placebo"),
+    "legal": ("clause", "indemnity", "liability", "contract", "counterparty", "jurisdiction",
+              "regulator", "statute", "breach", "warranty", "gdpr", "compliance"),
+    "finance": ("invoice", "ledger", "revenue", "tax", "vat", "payroll", "refund",
+                "reconcile", "fx", "pension", "mortgage", "amortis"),
+    "infrastructure": ("kubernetes", "terraform", "docker", "compose", "deploy", "nginx",
+                       "systemd", "cron", "helm", "ingress", "tls", "dns"),
+    "data": ("sql", "select ", "postgres", "query plan", "index", "dataframe", "etl",
+             "schema", "partition", "warehouse", "csv"),
+    "software": ("function", "class ", "def ", "import ", "refactor", "compile", "traceback",
+                 "stack trace", "unit test", "pytest", "typescript", "rust", "golang"),
+}
+
+
+def detect_language(text: str) -> str:
+    """A two-letter guess at the language of `text`, or "en".
+
+    Script first, because a script settles it. Then function-word counts over
+    the first few hundred words, because a technical request in any language is
+    mostly English nouns and the function words are what is left.
+    """
+    sample = text[:4000]
+    if not sample.strip():
+        return "en"
+    for code, (lo, hi) in SCRIPTS:
+        hits = sum(1 for ch in sample if lo <= ch <= hi)
+        if hits >= max(4, len(sample) * 0.02):
+            return code
+    words = [w.strip(".,;:!?()[]{}\"'`").lower() for w in sample.split()][:400]
+    if not words:
+        return "en"
+    scores = {
+        code: sum(1 for w in words if w in stops) for code, stops in STOPWORDS.items()
+    }
+    best = max(scores, key=lambda c: (scores[c], c == "en"))
+    return best if scores[best] >= 3 else "en"
+
+
+def detect_domain(text: str) -> str:
+    """The subject area, from fixed keyword lists. "general" when unsure."""
+    low = text[:6000].lower()
+    scores = {
+        name: sum(low.count(w) for w in words) for name, words in DOMAIN_WORDS.items()
+    }
+    best = max(scores, key=lambda n: (scores[n], n))
+    return best if scores[best] >= 2 else "general"
+
+
+@register("x_lang_domain")
+def x_lang_domain(features: Features, config: Any) -> dict[str, Any]:
+    """continuation_aware_v1 with two more computed facts: language and domain."""
+    state = continuation_aware_v1(features, config)
+    whole = features.last_user_message
+    state["facts"]["request_language"] = detect_language(whole)
+    state["facts"]["subject_area"] = detect_domain(whole)
+    return state
+
+
+@register("x_draft")
+def x_draft(features: Features, config: Any) -> dict[str, Any]:
+    """continuation_aware_v1. The draft field is added by the caller.
+
+    Registered under its own name so a run using the draft is visible in the
+    results as a different builder, even though the code is the same.
+    """
+    return continuation_aware_v1(features, config)
