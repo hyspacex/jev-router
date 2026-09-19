@@ -80,6 +80,24 @@ def cmd_check_config(args: argparse.Namespace) -> int:
         f"shadow=[{', '.join(sp.shadow_questions) or '-'}] "
         f"distribution={sp.distribution_policy}"
     )
+    effort = config.adaptive_effort()
+    print(
+        f"  effort:    adaptive_effort={effort.mode} "
+        f"profiles=[{', '.join(effort.qualified_profiles) or '-'}] "
+        f"ladder=[{', '.join(effort.ladder)}] "
+        f"hysteresis={'on' if effort.hysteresis else 'off'}"
+    )
+    for model in effort.qualified_profiles:
+        mcfg = config.models.get(model)
+        if mcfg is None:
+            continue
+        control = mcfg.effort_control
+        print(
+            f"    {model}: {control.between_turn} {control.qualification} "
+            f"cache={control.cache_behavior} "
+            f"rungs=[{', '.join(config.effort_ladder(model))}] "
+            f"ref={control.qualification_ref or '-'}"
+        )
     for name, lane in config.quality_lanes.items():
         pairs = ", ".join(f"{q.model}({q.effort or '-'})" for q in lane.qualified)
         print(f"  lane {name}: [{pairs}] ref={lane.qualification_ref or '-'}")
@@ -510,6 +528,28 @@ def _print_decision_extras(row: dict[str, Any]) -> None:
                     f"{qid}={value:.2f}" if isinstance(value, float) else f"{qid}={value}"
                 )
         print(f"    shadow: {' '.join(bits)}")
+    if row.get("event_type") == "effort_plan":
+        facts = row.get("features") or {}
+        moved = (
+            f"{facts.get('from_effort')} -> {facts.get('to_effort')}"
+            if facts.get("action") == "change_effort"
+            else f"kept {facts.get('from_effort')}"
+        )
+        print(
+            f"    effort plan: {moved}  (model unchanged, base "
+            f"{facts.get('base_effort')})  recommended="
+            f"{facts.get('recommendation')}  turn={row.get('turn_id')}"
+        )
+        if facts.get("confirmations"):
+            print(
+                f"      downgrade confirmations: {facts['confirmations']} of "
+                f"{facts.get('needed_confirmations')}"
+            )
+        if row.get("response_ms") is not None:
+            print(
+                f"      jev {round(row['jev_ms']) if row.get('jev_ms') else '-'}ms, "
+                f"plan end to end {round(row['response_ms'])}ms"
+            )
     laned = []
     if row.get("quality_lane"):
         laned.append(f"lane={row['quality_lane']}")
@@ -632,11 +672,22 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
         f"max output {row['max_output_tokens'] or '-'}, "
         f"reserve {row['reserve_tokens'] or '-'}"
     )
+    adaptation = row.get("adaptation") or row.get("adaptation_mode") or "off"
     print(
         f"  effort:   base={row['base_effort'] or '-'} "
         f"effective={row['effective_effort'] or '-'} "
-        f"mode={row['effort_mode'] or 'fixed'}  adaptation=off"
+        f"expected={row.get('expected_effort') or row['base_effort'] or '-'} "
+        f"confirmed={row.get('confirmed_effort') or row['base_effort'] or '-'}"
     )
+    print(
+        f"            mode={row['effort_mode'] or 'fixed'}  adaptation={adaptation}"
+        + (
+            f"  lineage={row['effort_lineage']}"
+            if row.get("effort_lineage") not in (None, "known")
+            else ""
+        )
+    )
+    _print_ledger(row)
     print(f"  binding:  {row['binding_revision'] or '-'}")
     print(
         f"  versions: config={row['config_hash'] or '-'} "
@@ -665,6 +716,37 @@ def _print_session(row: dict[str, Any], quota: dict[str, str]) -> None:
     print(f"  created:  {created}  last seen {seen}")
 
 
+def _print_ledger(row: dict[str, Any]) -> None:
+    """The recent turn plans, said in words that cannot be misread.
+
+    "model unchanged" is the whole point of the experiment, so the line says
+    it rather than leaving a reader to infer it from two identical columns.
+    """
+    plans = row.get("turn_plans") or []
+    if not plans:
+        return
+    model = row.get("model_key") or "the bound model"
+    print("  turns:")
+    for plan in plans[-5:]:
+        where = f"{plan.get('turn_id')} [{plan.get('status')}]"
+        if plan.get("action") == "change_effort":
+            what = (
+                f"model unchanged ({model}); the next user turn requests "
+                f"{plan.get('to_effort')} effort instead of "
+                f"{plan.get('from_effort')} under the "
+                f"{plan.get('mode') or 'active'} native update experiment"
+            )
+        elif plan.get("action") == "blocked":
+            what = f"blocked, nothing changed: {plan.get('reason') or '-'}"
+        else:
+            what = (
+                f"model and effort unchanged ({model} at "
+                f"{plan.get('from_effort')}); recommended "
+                f"{plan.get('recommendation') or '-'}"
+            )
+        print(f"    {where} {what}")
+
+
 def _quota_freshness(config: RouterConfig) -> dict[str, str]:
     """What the last stored snapshot says, without polling anything."""
     from .quota import QuotaMonitor
@@ -680,6 +762,41 @@ def _quota_freshness(config: RouterConfig) -> dict[str, str]:
     }
 
 
+def _reconcile(sessions: Any, row: dict[str, Any], args: argparse.Namespace) -> int:
+    """Say what really happened to an effort update nobody could call settled."""
+    plan_id = args.plan
+    if not plan_id:
+        open_rows = [
+            p for p in row["turn_plans"] if p["status"] in ("outcome_unknown", "accepted")
+        ]
+        if len(open_rows) != 1:
+            print(
+                "name the plan with --plan; this session has "
+                f"{len(open_rows)} unsettled update(s)",
+                file=sys.stderr,
+            )
+            return 2
+        plan_id = open_rows[0]["plan_id"]
+    plan = sessions.plan_by_id(plan_id)
+    if plan is None or plan["session_id"] != row["session_id"]:
+        print(f"unknown plan {plan_id!r} for this session", file=sys.stderr)
+        return 1
+    result = sessions.reconcile(plan, row, args.outcome)
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+    if result["already_settled"]:
+        print(f"{plan_id} was already {result['was']}; nothing moved")
+    else:
+        print(f"{plan_id}: {result['was']} -> {result['status']}")
+    print(
+        f"  effort: base={result['base_effort'] or '-'} "
+        f"effective={result['effective_effort'] or '-'} "
+        f"confirmed={result['confirmed_effort'] or '-'}  (model unchanged)"
+    )
+    return 0
+
+
 def cmd_sessions(args: argparse.Namespace) -> int:
     """Inspect and close strict session bindings."""
     config = _load(args.config)
@@ -688,7 +805,11 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     try:
         if args.action == "list":
             rows = [
-                row | {"unresolved_requests": sessions.unresolved(row["session_id"])}
+                row
+                | {
+                    "unresolved_requests": sessions.unresolved(row["session_id"]),
+                    "turn_plans": sessions.plans(row["session_id"], limit=5),
+                }
                 for row in sessions.recent(args.limit)
             ]
             if args.json:
@@ -707,6 +828,9 @@ def cmd_sessions(args: argparse.Namespace) -> int:
             print(f"unknown session {args.session_id!r}", file=sys.stderr)
             return 1
         row["unresolved_requests"] = sessions.unresolved(args.session_id)
+        row["turn_plans"] = sessions.plans(args.session_id, limit=10)
+        if args.action == "reconcile":
+            return _reconcile(sessions, row, args)
         if args.action == "close":
             if row["state"] == "closed":
                 print(f"{args.session_id} was already closed")
@@ -774,9 +898,17 @@ def main(argv: list[str] | None = None) -> int:
     p_quota.set_defaults(func=cmd_quota)
 
     p_sess = sub.add_parser("sessions", help="inspect or close strict session bindings")
-    p_sess.add_argument("action", choices=["list", "show", "close"])
-    p_sess.add_argument("session_id", nargs="?", help="a session id, for show and close")
+    p_sess.add_argument("action", choices=["list", "show", "close", "reconcile"])
+    p_sess.add_argument(
+        "session_id", nargs="?", help="a session id, for show, close and reconcile"
+    )
     p_sess.add_argument("-n", "--limit", type=int, default=20)
+    p_sess.add_argument("--plan", help="the turn plan to reconcile")
+    p_sess.add_argument(
+        "--outcome",
+        choices=["applied", "not_applied"],
+        help="whether the provider really applied that effort update",
+    )
     p_sess.add_argument("--json", action="store_true")
     p_sess.set_defaults(func=cmd_sessions)
 
@@ -808,6 +940,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "sessions" and args.action != "list" and not args.session_id:
         parser.error(f"sessions {args.action} needs a session id")
+    if args.command == "sessions" and args.action == "reconcile" and not args.outcome:
+        parser.error("sessions reconcile needs --outcome applied or not_applied")
     return args.func(args)
 
 

@@ -845,6 +845,58 @@ class Sessions:
             )
             self._conn.commit()
 
+    def reconcile(
+        self, plan: dict[str, Any], row: dict[str, Any], outcome: str
+    ) -> dict[str, Any]:
+        """Close an ambiguous update by hand, in one direction or the other.
+
+        The router cannot find this out for itself: a disconnected response
+        may well have run. Somebody who can check the provider says which it
+        was, and only then does the ledger move again.
+
+        `applied` confirms the transition that was already expected.
+        `not_applied` puts the ledger back to the previous confirmed state and
+        leaves the same plan retryable. Either way the lineage flag is cleared
+        and a competing transition is unblocked.
+        """
+        settled = plan["status"] in ("confirmed", "rejected")
+        status = "confirmed" if outcome == "applied" else "rejected"
+        effort = plan["to_effort"] if outcome == "applied" else None
+        if not settled:
+            self.update_plan(plan["plan_id"], status=status, confirmed_effort=effort)
+        current = self.get(row["session_id"]) or row
+        if not settled and plan["action"] == "change_effort":
+            keep = (
+                effort
+                if outcome == "applied"
+                else (current.get("confirmed_effort") or current["base_effort"])
+            )
+            self.update(
+                row["session_id"],
+                current["version"],
+                effective_effort=keep,
+                confirmed_effort=keep,
+                expected_effort=keep,
+            )
+        after = self.get(row["session_id"]) or current
+        if after.get("effort_lineage") == "unknown":
+            self.update(row["session_id"], after["version"], effort_lineage="known")
+            after = self.get(row["session_id"]) or after
+        return {
+            "schema_version": "1",
+            "session_id": row["session_id"],
+            "plan_id": plan["plan_id"],
+            "turn_id": plan["turn_id"],
+            "outcome": outcome,
+            "was": plan["status"],
+            "status": (self.plan_by_id(plan["plan_id"]) or plan)["status"],
+            "already_settled": settled,
+            "base_effort": after.get("base_effort"),
+            "effective_effort": after.get("effective_effort"),
+            "confirmed_effort": after.get("confirmed_effort"),
+            "effort_lineage": after.get("effort_lineage") or "known",
+        }
+
     def applied_updates(self, session_id: str) -> list[dict[str, Any]]:
         """Every effort update this session's history is supposed to carry.
 

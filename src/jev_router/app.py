@@ -1567,64 +1567,15 @@ class Router:
     def reconcile(
         self, plan: dict[str, Any], row: dict[str, Any], outcome: str
     ) -> dict[str, Any]:
-        """Close an ambiguous update by hand, in one direction or the other.
-
-        `applied` confirms the transition that was already expected.
-        `not_applied` puts the ledger back to the previous confirmed state and
-        leaves the same plan retryable. Either way a competing transition is
-        unblocked afterwards, and the lineage flag is cleared.
-        """
-        settled = plan["status"] in (E.CONFIRMED, E.REJECTED)
-        if outcome == "applied":
-            status, effort = E.CONFIRMED, plan["to_effort"]
-        else:
-            status, effort = E.REJECTED, None
-        if not settled:
-            self.sessions.update_plan(
-                plan["plan_id"],
-                status=status,
-                confirmed_effort=effort,
-            )
-        current = self.sessions.get(row["session_id"]) or row
-        if not settled and plan["action"] == E.CHANGE:
-            keep = (
-                effort
-                if outcome == "applied"
-                else (current.get("confirmed_effort") or current["base_effort"])
-            )
-            self.sessions.update(
-                row["session_id"],
-                current["version"],
-                effective_effort=keep,
-                confirmed_effort=keep,
-                expected_effort=keep,
-            )
-        after = self.sessions.get(row["session_id"]) or current
-        if after.get("effort_lineage") == "unknown":
-            self.sessions.update(
-                row["session_id"], after["version"], effort_lineage="known"
-            )
-            after = self.sessions.get(row["session_id"]) or after
+        """Settle an ambiguous update. The store owns the rules; this logs it."""
+        result = self.sessions.reconcile(plan, row, outcome)
         log.info(
             "reconciled plan=%s outcome=%s effective=%s",
             plan["plan_id"],
             outcome,
-            after.get("effective_effort"),
+            result["effective_effort"],
         )
-        return {
-            "schema_version": "1",
-            "session_id": row["session_id"],
-            "plan_id": plan["plan_id"],
-            "turn_id": plan["turn_id"],
-            "outcome": outcome,
-            "was": plan["status"],
-            "status": (self.sessions.plan_by_id(plan["plan_id"]) or plan)["status"],
-            "already_settled": settled,
-            "base_effort": after.get("base_effort"),
-            "effective_effort": after.get("effective_effort"),
-            "confirmed_effort": after.get("confirmed_effort"),
-            "effort_lineage": after.get("effort_lineage") or "known",
-        }
+        return result
 
     def record_observation(self, row: dict[str, Any], observation: Any) -> None:
         """Keep the lineage a chain request will be checked against."""
