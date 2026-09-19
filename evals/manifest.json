@@ -1,0 +1,270 @@
+{
+  "schema_version": "1",
+  "script": "evals/run_outcomes.py",
+  "kind": "mixed",
+  "written_at": "2026-09-19T22:17:17+00:00",
+  "repo_sha": "31932d7caf9f61a9776b784eb181c10c95311299-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "ollama/glm-5.3-flash": {
+      "upstream_id": "ollama/glm-5.3-flash",
+      "provider": "ollama",
+      "protocol": "openai-chat",
+      "context_window": 128000,
+      "max_output_tokens": null,
+      "compatibility_revision": "",
+      "efforts": [
+        "none",
+        "low",
+        "high"
+      ],
+      "effort_control": {
+        "between_turn": "fixed",
+        "qualification": "unverified",
+        "cache_behavior": "unverified",
+        "qualification_ref": null
+      }
+    },
+    "gpt-6-astra": {
+      "upstream_id": "gpt-6-astra",
+      "provider": "openai",
+      "protocol": "openai-chat",
+      "context_window": 400000,
+      "max_output_tokens": null,
+      "compatibility_revision": "",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "effort_control": {
+        "between_turn": "fixed",
+        "qualification": "unverified",
+        "cache_behavior": "unverified",
+        "qualification_ref": null
+      }
+    }
+  },
+  "cases": {
+    "count": 19,
+    "by_split": {
+      "held_out": [
+        "debug-css-overflow-17",
+        "extract-invoice-json-62",
+        "quick-borrow-checker-misleading-75",
+        "writing-investor-update-numbers-44"
+      ],
+      "tune": [
+        "code-prose-shaped-really-code-09",
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "debug-adversarial-injection-in-log-16",
+        "debug-go-deadlock-short-40-11",
+        "debug-long-log-trivial-question-12",
+        "debug-spanish-slow-query-18",
+        "extract-action-items-65",
+        "quick-drug-interaction-73",
+        "quick-percentage-74",
+        "quick-postgres-port-71",
+        "quick-timezone-abbrev-77",
+        "summarise-adversarial-doc-69",
+        "summarise-meeting-notes-dates-61",
+        "summarise-trial-abstract-66"
+      ]
+    },
+    "slices": {
+      "adversarial": 2,
+      "chat": 11,
+      "multilingual": 1,
+      "pipeline": 5
+    },
+    "sources": {
+      "hand": 19
+    }
+  },
+  "seeds": {
+    "sample_salt": "sample index, see UpstreamClient.chat"
+  },
+  "repeats": 3,
+  "cache": {
+    "upstream": "enabled",
+    "live_calls": 256
+  },
+  "caps": {
+    "max_calls": 400,
+    "concurrency": 3,
+    "candidate_max_tokens": 8000,
+    "stop_reason": "ollama/glm-5.3-flash(high) median latency went from 5.6s to 16.9s, more than 3x, stopping"
+  },
+  "quota": {
+    "coverage": "not read; these are API token counts, not subscription consumption"
+  },
+  "graders": {
+    "programmatic": "evals/checks.py",
+    "judge": "gpt-5.6-sol(high)",
+    "specs": "evals/outcome_specs.yaml"
+  },
+  "exclusions": [],
+  "unfinished": [
+    {
+      "case": "design-eventbus-tradeoff-20",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "design-auth-module-review-23",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "design-naming-bikeshed-24",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-incident-customer-notice-37",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-medical-discharge-38",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-legal-clause-39",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-rsu-tax-explainer-40",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-security-advisory-41",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "writing-regulator-response-42",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-limerick-printer-45",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-noir-opening-46",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-wedding-speech-49",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-parody-lyrics-50",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "polish-product-blurb-55",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "polish-readme-intro-58",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "polish-translate-customer-reply-59",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "summarise-blogpost-tldr-63",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "summarise-ticket-export-themes-64",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-simple-question-proof-78",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-probability-puzzle-79",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-gym-split-81",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-buy-vs-rent-84",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-explain-to-child-83",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "code-chinese-hooks-08",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "multilingual-pt-coorte-retencao-161",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "multiturn-ratelimiter-continue-138",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "adv-five-second-cron-tz-96",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "design-index-strategy-26",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "adv-static-markup-rounding-99",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "quick-weakmap-vs-map-72",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "adv-sow-dates-91",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "quick-bash-for-loop-70",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "code-shell-oneliner-06",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "debug-nameerror-typo-14",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "polish-slack-grammar-54",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "quick-german-idempotent-76",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-npc-dialogue-48",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "creative-pov-rewrite-51",
+      "reason": "capped or not reached"
+    },
+    {
+      "case": "other-chitchat-85",
+      "reason": "capped or not reached"
+    }
+  ]
+}

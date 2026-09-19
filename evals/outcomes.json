@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-19T15:15:47+00:00",
+  "generated": "2026-09-19T22:17:17+00:00",
   "adequate_gap": 0.5,
   "samples": 3,
   "candidate_max_tokens": 8000,
@@ -12,17 +12,8 @@
     "gpt-6-astra(high)",
     "gpt-6-astra(xhigh)"
   ],
-  "budget": "upstream calls 4/1, empty 0, median latency 19.6s, STOPPED: budget spent: 3 of 1 calls",
+  "budget": "upstream calls 256/400, empty 0, median latency 8.5s, STOPPED: ollama/glm-5.3-flash(high) median latency went from 5.6s to 16.9s, more than 3x, stopping",
   "not_run": [
-    "summarise-meeting-notes-dates-61",
-    "debug-long-log-trivial-question-12",
-    "quick-drug-interaction-73",
-    "debug-go-deadlock-short-40-11",
-    "quick-borrow-checker-misleading-75",
-    "code-prose-shaped-really-code-09",
-    "code-sql-window-query-05",
-    "debug-css-overflow-17",
-    "debug-spanish-slow-query-18",
     "design-eventbus-tradeoff-20",
     "design-auth-module-review-23",
     "design-naming-bikeshed-24",
@@ -46,6 +37,21 @@
     "other-gym-split-81",
     "other-buy-vs-rent-84",
     "other-explain-to-child-83",
+    "code-chinese-hooks-08",
+    "multilingual-pt-coorte-retencao-161",
+    "multiturn-ratelimiter-continue-138",
+    "adv-five-second-cron-tz-96",
+    "design-index-strategy-26",
+    "adv-static-markup-rounding-99",
+    "quick-weakmap-vs-map-72",
+    "adv-sow-dates-91",
+    "quick-bash-for-loop-70",
+    "code-shell-oneliner-06",
+    "debug-nameerror-typo-14",
+    "polish-slack-grammar-54",
+    "quick-german-idempotent-76",
+    "creative-npc-dialogue-48",
+    "creative-pov-rewrite-51",
     "other-chitchat-85"
   ],
   "cases": [
@@ -613,13 +619,13 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "none",
           "cost": 1.0,
-          "score": 6.67,
+          "score": 10.0,
           "scores": [
             10.0,
-            5.0,
-            5.0
+            10.0,
+            10.0
           ],
-          "score_sd": 2.36,
+          "score_sd": 0.0,
           "samples": 3,
           "note": "",
           "latency_ms": 1424,
@@ -632,8 +638,8 @@
           "truncated": 0,
           "check_scores": [
             10.0,
-            5.0,
-            5.0
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -648,15 +654,15 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "low",
           "cost": 1.4,
-          "score": 5.0,
+          "score": 10.0,
           "scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "score_sd": 0.0,
           "samples": 3,
-          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "note": "",
           "latency_ms": 2477,
           "output_tokens": 67,
           "finish_reasons": [
@@ -666,9 +672,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -718,15 +724,15 @@
           "model": "gpt-6-astra",
           "effort": "low",
           "cost": 10.0,
-          "score": 5.0,
+          "score": 10.0,
           "scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "score_sd": 0.0,
           "samples": 3,
-          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "note": "",
           "latency_ms": 2940,
           "output_tokens": 45,
           "finish_reasons": [
@@ -736,9 +742,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -753,15 +759,15 @@
           "model": "gpt-6-astra",
           "effort": "medium",
           "cost": 14.0,
-          "score": 5.0,
+          "score": 10.0,
           "scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "score_sd": 0.0,
           "samples": 3,
-          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "note": "",
           "latency_ms": 4638,
           "output_tokens": 46,
           "finish_reasons": [
@@ -771,9 +777,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -788,15 +794,15 @@
           "model": "gpt-6-astra",
           "effort": "high",
           "cost": 20.0,
-          "score": 5.0,
+          "score": 10.0,
           "scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "score_sd": 0.0,
           "samples": 3,
-          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "note": "",
           "latency_ms": 2815,
           "output_tokens": 45,
           "finish_reasons": [
@@ -806,9 +812,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -823,15 +829,15 @@
           "model": "gpt-6-astra",
           "effort": "xhigh",
           "cost": 30.0,
-          "score": 5.0,
+          "score": 10.0,
           "scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "score_sd": 0.0,
           "samples": 3,
-          "note": "contains_all 0.00: missing ['no( longer)?( observ| use| chang| do)|does not (change|observe)|without (daylight|summer)|no daylight|not observe']",
+          "note": "",
           "latency_ms": 3489,
           "output_tokens": 70,
           "finish_reasons": [
@@ -841,9 +847,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            5.0,
-            5.0,
-            5.0
+            10.0,
+            10.0,
+            10.0
           ],
           "judge_scores": [
             null,
@@ -855,10 +861,10 @@
         }
       ],
       "best_score": 10.0,
-      "cheapest_adequate": "ollama/glm-5.3-flash(high)",
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
       "cheapest_adequate_tier": "fast",
-      "cheapest_adequate_effort": "high",
-      "route_flip_rate": 0.32,
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
       "tier_flip_rate": 0.0,
       "outcome_label": "stable"
     },
@@ -873,7 +879,8 @@
         "tier": "fast",
         "effort": "none",
         "acceptable_tiers": [
-          "fast"
+          "fast",
+          "mid"
         ],
         "needs_faithfulness": false
       },
@@ -1145,7 +1152,8 @@
         "effort": "none",
         "acceptable_tiers": [
           "fast",
-          "frontier"
+          "frontier",
+          "mid"
         ],
         "needs_faithfulness": true
       },
@@ -1698,13 +1706,13 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "none",
           "cost": 1.0,
-          "score": 10.0,
+          "score": 9.74,
           "scores": [
             10.0,
             10.0,
-            10.0
+            9.23
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.36,
           "samples": 3,
           "note": "judge: The update covers all requested metrics and context, with mostly correct MRR growth, NRR, August burn, and runway calculations, but it incorrectly states July burn as \u20ac357,000 instead of \u20ac337,000, gives unsupported/inconsistent churn-rate comparisons, and invents claims about ongoing interviews and needing the raise agreed by year-end.",
           "latency_ms": 12053,
@@ -1718,7 +1726,7 @@
           "check_scores": [
             10.0,
             10.0,
-            10.0
+            9.23076923076923
           ],
           "judge_scores": [
             6.0,
@@ -1733,13 +1741,13 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "low",
           "cost": 1.4,
-          "score": 10.0,
+          "score": 9.49,
           "scores": [
             10.0,
             10.0,
-            10.0
+            8.46
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.73,
           "samples": 3,
           "note": "judge: The update is well structured and most calculations are correct, but it materially violates the rubric by mislabeling \u20ac278,000 as May burn (May\u2019s cash decline is \u20ac306,000) and inventing an unsupported plan to close the Series A by early Q1 2027.",
           "latency_ms": 9339,
@@ -1753,7 +1761,7 @@
           "check_scores": [
             10.0,
             10.0,
-            10.0
+            8.461538461538462
           ],
           "judge_scores": [
             6.0,
@@ -1768,13 +1776,13 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "high",
           "cost": 2.2,
-          "score": 10.0,
+          "score": 9.49,
           "scores": [
             10.0,
             10.0,
-            10.0
+            8.46
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.73,
           "samples": 3,
           "note": "judge: While many August MoM figures and cash burn are correctly derived, it materially misstates QoQ growth and QoQ NRR, gives an internally false \u20ac139,400 quarterly net-new-MRR total, mismatches the 7.2-month runway with the stated average burn, and makes unsupported claims about the Enterprise contracts\u2019 line-item impact and fundraising timing.",
           "latency_ms": 15051,
@@ -1788,7 +1796,7 @@
           "check_scores": [
             10.0,
             10.0,
-            10.0
+            8.461538461538462
           ],
           "judge_scores": [
             3.0,
@@ -1803,15 +1811,15 @@
           "model": "gpt-6-astra",
           "effort": "low",
           "cost": 10.0,
-          "score": 10.0,
+          "score": 9.23,
           "scores": [
+            8.46,
             10.0,
-            10.0,
-            10.0
+            9.23
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.63,
           "samples": 3,
-          "note": "judge: The revenue calculations are largely correct and derivable, but the response is incomplete and malformed, omits runway and all required company context, and fails to deliver a finished monthly investor update.",
+          "note": "contains_all 0.00: missing ['7\\\\.2|7 months|seven months|7\\\\.1']; contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU'] | judge: The revenue calculations are largely correct and derivable, but the response is incomplete and malformed, omits runway and all required company context, and fails to deliver a finished monthly investor update.",
           "latency_ms": 23765,
           "output_tokens": 714,
           "finish_reasons": [
@@ -1821,9 +1829,9 @@
           ],
           "truncated": 0,
           "check_scores": [
+            8.461538461538462,
             10.0,
-            10.0,
-            10.0
+            9.23076923076923
           ],
           "judge_scores": [
             3.0,
@@ -1838,13 +1846,13 @@
           "model": "gpt-6-astra",
           "effort": "medium",
           "cost": 14.0,
-          "score": 10.0,
+          "score": 9.49,
           "scores": [
             10.0,
-            10.0,
-            10.0
+            9.23,
+            9.23
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.36,
           "samples": 3,
           "note": "judge: All quantitative claims are correctly derived from the table or explicitly identified as supplied context, unavailable metrics are appropriately caveated, and the update clearly covers MoM, QoQ, NRR, burn/runway, Enterprise wins, the CTO search, and the October Series A.",
           "latency_ms": 23763,
@@ -1857,8 +1865,8 @@
           "truncated": 0,
           "check_scores": [
             10.0,
-            10.0,
-            10.0
+            9.23076923076923,
+            9.23076923076923
           ],
           "judge_scores": [
             10.0,
@@ -1873,13 +1881,13 @@
           "model": "gpt-6-astra",
           "effort": "high",
           "cost": 20.0,
-          "score": 10.0,
+          "score": 9.49,
           "scores": [
             10.0,
-            10.0,
-            10.0
+            9.23,
+            9.23
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.36,
           "samples": 3,
           "note": "judge: All financial figures are correctly derived and burn/runway limitations are clearly flagged, but the update fails to state explicitly that two Enterprise logos closed in August, despite the rubric requiring that context.",
           "latency_ms": 29021,
@@ -1892,8 +1900,8 @@
           "truncated": 0,
           "check_scores": [
             10.0,
-            10.0,
-            10.0
+            9.23076923076923,
+            9.23076923076923
           ],
           "judge_scores": [
             9.0,
@@ -1908,13 +1916,13 @@
           "model": "gpt-6-astra",
           "effort": "xhigh",
           "cost": 30.0,
-          "score": 10.0,
+          "score": 9.49,
           "scores": [
             10.0,
-            10.0,
-            10.0
+            9.23,
+            9.23
           ],
-          "score_sd": 0.0,
+          "score_sd": 0.36,
           "samples": 3,
           "note": "judge: All financial calculations are accurate and appropriately caveated, but it fails the explicit requirement to state that two Enterprise logos closed in August and incorrectly says the logo count is unavailable despite that figure being provided in the context.",
           "latency_ms": 76195,
@@ -1927,8 +1935,8 @@
           "truncated": 0,
           "check_scores": [
             10.0,
-            10.0,
-            10.0
+            9.23076923076923,
+            9.23076923076923
           ],
           "judge_scores": [
             8.0,
@@ -1939,12 +1947,12 @@
           "cached": true
         }
       ],
-      "best_score": 10.0,
+      "best_score": 9.74,
       "cheapest_adequate": "ollama/glm-5.3-flash(none)",
       "cheapest_adequate_tier": "fast",
       "cheapest_adequate_effort": "none",
-      "route_flip_rate": 0.0,
-      "tier_flip_rate": 0.0,
+      "route_flip_rate": 0.334,
+      "tier_flip_rate": 0.036,
       "outcome_label": "stable"
     },
     {
@@ -2581,13 +2589,13 @@
           "model": "ollama/glm-5.3-flash",
           "effort": "high",
           "cost": 2.2,
-          "score": 8.67,
+          "score": 9.33,
           "scores": [
-            8.0,
+            9.0,
             10.0,
-            8.0
+            9.0
           ],
-          "score_sd": 0.94,
+          "score_sd": 0.47,
           "samples": 3,
           "note": "max_words 0.50: 121 words, limit 120 | judge: The summary is exactly 120 words, preserves all reported effect sizes, confidence intervals, percentages, non-inferiority P value and margin, and clearly labels major bleeding as secondary, though it notes low event rates without explicitly stating that they widened the confidence interval.",
           "latency_ms": 11535,
@@ -2599,9 +2607,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            8.0,
+            9.0,
             10.0,
-            8.0
+            9.0
           ],
           "judge_scores": [
             9.5,
@@ -2616,13 +2624,13 @@
           "model": "gpt-6-astra",
           "effort": "low",
           "cost": 10.0,
-          "score": 8.67,
+          "score": 9.33,
           "scores": [
-            8.0,
+            9.0,
             10.0,
-            8.0
+            9.0
           ],
-          "score_sd": 0.94,
+          "score_sd": 0.47,
           "samples": 3,
           "note": "max_words 0.50: 122 words, limit 120 | judge: The summary accurately preserves all effect sizes, confidence intervals, event counts, percentages, margin, and non-inferiority P value, clearly labels major bleeding as secondary, and notes key limitations, but it is 122 rather than exactly 120 words.",
           "latency_ms": 14260,
@@ -2634,9 +2642,9 @@
           ],
           "truncated": 0,
           "check_scores": [
-            8.0,
+            9.0,
             10.0,
-            8.0
+            9.0
           ],
           "judge_scores": [
             9.0,
@@ -2686,13 +2694,13 @@
           "model": "gpt-6-astra",
           "effort": "high",
           "cost": 20.0,
-          "score": 9.33,
+          "score": 9.67,
           "scores": [
-            8.0,
+            9.0,
             10.0,
             10.0
           ],
-          "score_sd": 0.94,
+          "score_sd": 0.47,
           "samples": 3,
           "note": "max_words 0.50: 121 words, limit 120 | judge: The summary preserves all reported effect sizes, confidence intervals, event rates, margin and P value, clearly distinguishes the primary and secondary outcomes, and notes key limitations, but it appears to be 121 rather than exactly 120 words.",
           "latency_ms": 32180,
@@ -2704,49 +2712,49 @@
           ],
           "truncated": 0,
           "check_scores": [
-            8.0,
+            9.0,
             10.0,
             10.0
           ],
           "judge_scores": [
             9.0,
             10.0,
-            null
+            10.0
           ],
           "error": null,
-          "cached": false
+          "cached": true
         },
         {
           "route": "gpt-6-astra(xhigh)",
           "model": "gpt-6-astra",
           "effort": "xhigh",
           "cost": 30.0,
-          "score": 6.67,
+          "score": 10.0,
           "scores": [
             10.0,
             10.0,
-            0.0
+            10.0
           ],
-          "score_sd": 4.71,
+          "score_sd": 0.0,
           "samples": 3,
           "note": "judge: The summary is exactly 120 words, retains all reported effect sizes, confidence intervals, event rates, and the non-inferiority P value, clearly labels major bleeding as secondary, and appropriately notes the open-label design and imprecision.",
-          "latency_ms": 71408,
-          "output_tokens": 2320,
+          "latency_ms": 76247,
+          "output_tokens": 2470,
           "finish_reasons": [
             "stop",
             "stop",
-            ""
+            "stop"
           ],
           "truncated": 0,
           "check_scores": [
             10.0,
             10.0,
-            0.0
+            10.0
           ],
           "judge_scores": [
             10.0,
             10.0,
-            0.0
+            10.0
           ],
           "error": null,
           "cached": false
@@ -2759,6 +2767,2450 @@
       "route_flip_rate": 0.0,
       "tier_flip_rate": 0.0,
       "outcome_label": "stable"
+    },
+    {
+      "case_id": "summarise-meeting-notes-dates-61",
+      "slice": "pipeline",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "summarise-or-extract",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer accurately captures the decisions, open questions, and RC-date contradiction, but it invents a responsibility for Dan to \u201cabsorb GA communications,\u201d which the notes do not assign, and slightly overstates Yuki\u2019s relay task as relaying notes.",
+          "latency_ms": 3835,
+          "output_tokens": 494,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The summary accurately captures nearly all decisions, owners, dates, open questions, and the RC-date contradiction, but it fails to flag that 2026-09-22 is a Tuesday rather than Monday and somewhat overstates Yuki as the explicit owner for confirming the release-notes writer.",
+          "latency_ms": 4180,
+          "output_tokens": 533,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            8.0,
+            9.0,
+            9.5
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer captures the decisions, open questions, unassigned customer communication, and RC-date contradiction well, but it incorrectly labels 2026-09-19 as Friday and arguably invents Yuki as the owner for confirming release-note copy when the notes do not explicitly assign that owner.",
+          "latency_ms": 4253,
+          "output_tokens": 682,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            8.0,
+            8.5,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer accurately captures the decisions, dated actions, open questions, and explicit date contradictions, with only a minor overreach in assigning Yuki ownership of confirming Rafa\u2019s contribution when the notes do not clearly assign that action.",
+          "latency_ms": 23406,
+          "output_tokens": 726,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            9.0,
+            9.0,
+            9.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer accurately organizes the decisions, actions, dates, and open questions, explicitly flags both substantive and calendar contradictions, and largely avoids invention, with only a minor overreach in assigning Yuki responsibility for confirming Rafa\u2019s release-note role when the notes do not explicitly name the confirmer.",
+          "latency_ms": 23403,
+          "output_tokens": 724,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            9.0,
+            10.0,
+            9.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer accurately organizes the decisions, owners, dates, and open questions, explicitly flags genuine contradictions, and only has minor issues in implicitly assigning Yuki to confirm Rafa\u2019s contribution and omitting an explicit owner entry for the 2026-11-03 in-app announcement.",
+          "latency_ms": 26345,
+          "output_tokens": 802,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            9.0,
+            9.5,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 8.57,
+          "scores": [
+            8.57,
+            8.57,
+            8.57
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))'] | judge: The answer accurately organizes the decisions, owners and dates, and open questions, explicitly flags all material date contradictions, and avoids inventing unspecified owners or deadlines.",
+          "latency_ms": 53541,
+          "output_tokens": 1738,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.571428571428571,
+            8.571428571428571,
+            8.571428571428571
+          ],
+          "judge_scores": [
+            10.0,
+            9.5,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 8.57,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "debug-long-log-trivial-question-12",
+      "slice": "pipeline",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "debugging",
+        "difficulty": 0,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 8.0,
+          "scores": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "max_words 0.00: 160 words, limit 120 | judge: The final line contains only a timestamp and no error, while the answer invents an unseen Helm timeout, migration details, rollback revision, and diagnosis.",
+          "latency_ms": 4562,
+          "output_tokens": 407,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.67,
+          "scores": [
+            8.0,
+            8.0,
+            10.0
+          ],
+          "score_sd": 0.94,
+          "samples": 3,
+          "note": "max_words 0.00: 195 words, limit 120 | judge: The answer invents a Helm timeout and extensive events absent from the provided log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 4708,
+          "output_tokens": 353,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.0,
+            8.0,
+            10.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 8.0,
+          "scores": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "max_words 0.00: 235 words, limit 120 | judge: The final log line contains no error message, but the answer invents a Helm timeout, rollback, pod states, migration details, and other facts absent from the provided log.",
+          "latency_ms": 5245,
+          "output_tokens": 505,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: The response invents a readiness timeout, replica failures, HTTP 503s, and a migration issue that do not appear in the log; the final line is only a timestamp with no error message.",
+          "latency_ms": 5000,
+          "output_tokens": 102,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: The response invents a timeout, rollback, replica failures, readiness errors, and migration details that do not appear in the log; the final line is only a timestamp with no error message.",
+          "latency_ms": 4803,
+          "output_tokens": 101,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: The response invents a readiness timeout, rollback, replica failures, HTTP 503s, and migration details that do not appear in the log; the final line is only a timestamp with no error message.",
+          "latency_ms": 4660,
+          "output_tokens": 89,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: The answer invents a Helm timeout, replica failures, migration details, and rollback that do not appear in the log; the actual last line is only a timestamp with no error message.",
+          "latency_ms": 9812,
+          "output_tokens": 273,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "gpt-6-astra(low)",
+      "cheapest_adequate_tier": "frontier",
+      "cheapest_adequate_effort": "low",
+      "route_flip_rate": 0.328,
+      "tier_flip_rate": 0.328,
+      "outcome_label": "unstable"
+    },
+    {
+      "case_id": "quick-drug-interaction-73",
+      "slice": "chat",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "quick-question",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: It accurately explains that occasional ibuprofen is usually tolerated, clearly notes blood-pressure and kidney risks\u2014especially with diuretics\u2014suggests acetaminophen as safer, and gives appropriate guidance on when to seek professional advice without being alarmist.",
+          "latency_ms": 3110,
+          "output_tokens": 217,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            10.0,
+            9.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: The answer is appropriately reassuring but cautious, clearly explains reduced blood-pressure control and kidney risk, recommends acetaminophen/paracetamol, and identifies when to seek professional advice, with only the added risk from concurrent diuretic use omitted.",
+          "latency_ms": 3258,
+          "output_tokens": 306,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            9.0,
+            10.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: It clearly explains the blood-pressure and kidney risks, recommends acetaminophen, and identifies when to seek advice, but omits the heightened risk with concurrent diuretics and ends with an overly absolute reassurance that one dose \u201cwon\u2019t hurt.\u201d",
+          "latency_ms": 4169,
+          "output_tokens": 320,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            8.5,
+            9.0,
+            9.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 6.25,
+          "scores": [
+            6.25,
+            6.25,
+            6.25
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_all 0.50: missing ['blood pressure|antihypertensive|reduce.{0,30}effect'] | judge: The answer accurately explains the kidney and blood-pressure risks, highlights increased risk with dehydration, kidney/heart disease, or a diuretic, recommends acetaminophen as the safer one-off option, and gives appropriately reassuring but cautious advice about consulting a pharmacist before repeated doses.",
+          "latency_ms": 6100,
+          "output_tokens": 156,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            6.25,
+            6.25,
+            6.25
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 6.25,
+          "scores": [
+            6.25,
+            6.25,
+            6.25
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_all 0.50: missing ['blood pressure|antihypertensive|reduce.{0,30}effect'] | judge: It accurately gives a balanced caveat, explains reduced antihypertensive effect and kidney risk\u2014especially with dehydration, kidney/heart disease, or a diuretic\u2014recommends acetaminophen for a one-off headache, and appropriately advises checking with a pharmacist before repeated use.",
+          "latency_ms": 7601,
+          "output_tokens": 155,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            6.25,
+            6.25,
+            6.25
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "judge: It clearly explains that occasional ibuprofen is usually low risk but may reduce lisinopril\u2019s blood-pressure effect and impair kidney function, recommends paracetamol, highlights higher-risk situations including diuretic use, and advises appropriate clinician or pharmacist input without being alarmist.",
+          "latency_ms": 10860,
+          "output_tokens": 289,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 7.5,
+          "scores": [
+            10.0,
+            6.25,
+            6.25
+          ],
+          "score_sd": 1.77,
+          "samples": 3,
+          "note": "judge: It accurately explains the blood-pressure and kidney risks, appropriately notes higher risk with diuretics and dehydration, recommends acetaminophen/paracetamol for a one-off headache, and gives balanced guidance on when to consult a pharmacist without being alarmist.",
+          "latency_ms": 29257,
+          "output_tokens": 918,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            6.25,
+            6.25
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "debug-go-deadlock-short-40-11",
+      "slice": "chat",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "debugging",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 8566,
+          "output_tokens": 902,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 10780,
+          "output_tokens": 851,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 35673,
+          "output_tokens": 2443,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 27135,
+          "output_tokens": 861,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 28163,
+          "output_tokens": 890,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 9.58,
+          "scores": [
+            8.75,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.59,
+          "samples": 3,
+          "note": "contains_all 0.67: missing ['(hold|while hold|under|inside)[^.\\\\n]{0,40}(lock|mutex|mu)|lock[^.\\\\n]{0,30}(held|while)[^.\\\\n]{0,30}send']",
+          "latency_ms": 35973,
+          "output_tokens": 1142,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.75,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 9.58,
+          "scores": [
+            8.75,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.59,
+          "samples": 3,
+          "note": "contains_all 0.67: missing ['(hold|while hold|under|inside)[^.\\\\n]{0,40}(lock|mutex|mu)|lock[^.\\\\n]{0,30}(held|while)[^.\\\\n]{0,30}send']",
+          "latency_ms": 71334,
+          "output_tokens": 2330,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.75,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "quick-borrow-checker-misleading-75",
+      "slice": "chat",
+      "split": "held_out",
+      "samples": 3,
+      "label": {
+        "task": "quick-question",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "mid",
+          "frontier"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 4480,
+          "output_tokens": 431,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 5706,
+          "output_tokens": 412,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 8173,
+          "output_tokens": 933,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 8047,
+          "output_tokens": 209,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 8947,
+          "output_tokens": 209,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 7808,
+          "output_tokens": 214,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 14970,
+          "output_tokens": 450,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "code-prose-shaped-really-code-09",
+      "slice": "chat",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "code-edit",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "fast",
+          "mid",
+          "frontier"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 5589,
+          "output_tokens": 528,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 6001,
+          "output_tokens": 534,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 6892,
+          "output_tokens": 642,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 8.89,
+          "scores": [
+            8.89,
+            8.89,
+            8.89
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['replace[^.\\\\n]{0,30}comma|strip[^.\\\\n]{0,20}quote|remove the comma']",
+          "latency_ms": 11035,
+          "output_tokens": 310,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.88888888888889,
+            8.88888888888889,
+            8.88888888888889
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 9.63,
+          "scores": [
+            10.0,
+            8.89,
+            10.0
+          ],
+          "score_sd": 0.52,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 11339,
+          "output_tokens": 337,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            8.88888888888889,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 8.89,
+          "scores": [
+            8.89,
+            8.89,
+            8.89
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['replace[^.\\\\n]{0,30}comma|strip[^.\\\\n]{0,20}quote|remove the comma']",
+          "latency_ms": 10723,
+          "output_tokens": 309,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.88888888888889,
+            8.88888888888889,
+            8.88888888888889
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 8.89,
+          "scores": [
+            8.89,
+            8.89,
+            8.89
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "contains_none 0.00: found ['replace[^.\\\\n]{0,30}comma|strip[^.\\\\n]{0,20}quote|remove the comma']",
+          "latency_ms": 24157,
+          "output_tokens": 741,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            8.88888888888889,
+            8.88888888888889,
+            8.88888888888889
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "code-sql-window-query-05",
+      "slice": "chat",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "code-edit",
+        "difficulty": 2,
+        "tier": "frontier",
+        "effort": "medium",
+        "acceptable_tiers": [
+          "mid",
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 7490,
+          "output_tokens": 716,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 7420,
+          "output_tokens": 809,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 25409,
+          "output_tokens": 2544,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 27512,
+          "output_tokens": 864,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 28013,
+          "output_tokens": 874,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 34945,
+          "output_tokens": 1117,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 85584,
+          "output_tokens": 2755,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "debug-css-overflow-17",
+      "slice": "chat",
+      "split": "held_out",
+      "samples": 3,
+      "label": {
+        "task": "debugging",
+        "difficulty": 1,
+        "tier": "fast",
+        "effort": "none",
+        "acceptable_tiers": [
+          "fast",
+          "mid"
+        ],
+        "needs_faithfulness": false
+      },
+      "graded_by": "checks+judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 2746,
+          "output_tokens": 253,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 2679,
+          "output_tokens": 223,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 11420,
+          "output_tokens": 896,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 10753,
+          "output_tokens": 301,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 10748,
+          "output_tokens": 303,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 13597,
+          "output_tokens": 350,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 10.0,
+          "scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "score_sd": 0.0,
+          "samples": 3,
+          "note": "",
+          "latency_ms": 29995,
+          "output_tokens": 927,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "judge_scores": [
+            null,
+            null,
+            null
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 10.0,
+      "cheapest_adequate": "ollama/glm-5.3-flash(none)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "none",
+      "route_flip_rate": 0.0,
+      "tier_flip_rate": 0.0,
+      "outcome_label": "stable"
+    },
+    {
+      "case_id": "debug-spanish-slow-query-18",
+      "slice": "multilingual",
+      "split": "tune",
+      "samples": 3,
+      "label": {
+        "task": "debugging",
+        "difficulty": 3,
+        "tier": "frontier",
+        "effort": "high",
+        "acceptable_tiers": [
+          "frontier"
+        ],
+        "needs_faithfulness": true
+      },
+      "graded_by": "judge",
+      "routes": [
+        {
+          "route": "ollama/glm-5.3-flash(none)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "none",
+          "cost": 1.0,
+          "score": 5.83,
+          "scores": [
+            8.5,
+            9.0,
+            0.0
+          ],
+          "score_sd": 4.13,
+          "samples": 3,
+          "note": "judge: Identifica correctamente la subestimaci\u00f3n extrema, el Seq Scan, el efecto de lower() sobre el \u00edndice y propone ANALYZE, ajustes de autovacuum y una reescritura concreta, aunque el \u00edndice de expresi\u00f3n sugerido puede fallar si estado es enum porque el cast enum\u2192text no es inmutable y atribuye demasiado del coste al Nested Loop.",
+          "latency_ms": 9294,
+          "output_tokens": 766,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            8.5,
+            9.0,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(low)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "low",
+          "cost": 1.4,
+          "score": 8.33,
+          "scores": [
+            8.0,
+            8.0,
+            9.0
+          ],
+          "score_sd": 0.47,
+          "samples": 3,
+          "note": "judge: Identifica correctamente el Seq Scan, la incompatibilidad del \u00edndice simple con lower(estado), la gran discrepancia de cardinalidad y propone ANALYZE, ajustes de autovacuum e \u00edndices concretos, aunque atribuye con demasiada certeza la estimaci\u00f3n a estad\u00edsticas desactualizadas y sugiere que ANALYZE por s\u00ed solo podr\u00eda resolver una expresi\u00f3n sin estad\u00edsticas propias.",
+          "latency_ms": 7285,
+          "output_tokens": 760,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            8.0,
+            8.0,
+            9.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "ollama/glm-5.3-flash(high)",
+          "model": "ollama/glm-5.3-flash",
+          "effort": "high",
+          "cost": 2.2,
+          "score": 6.0,
+          "scores": [
+            9.0,
+            9.0,
+            0.0
+          ],
+          "score_sd": 4.24,
+          "samples": 3,
+          "note": "judge: Responde en espa\u00f1ol, interpreta correctamente el gran error de cardinalidad, el sequential scan, el costo del nested loop y la incompatibilidad de lower(estado) con el \u00edndice simple, adem\u00e1s de proponer ANALYZE, ajustes de autovacuum y un \u00edndice o rewrite concreto; solo exagera un poco al atribuirlo necesariamente a un plan aparentemente barato y prometer tiempos de milisegundos.",
+          "latency_ms": 19687,
+          "output_tokens": 1548,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            9.0,
+            9.0,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(low)",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "cost": 10.0,
+          "score": 6.67,
+          "scores": [
+            10.0,
+            10.0,
+            0.0
+          ],
+          "score_sd": 4.71,
+          "samples": 3,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el escaneo secuencial y la mala estimaci\u00f3n, explica por qu\u00e9 el \u00edndice sobre estado no sirve para lower(estado), aborda ANALYZE/autovacuum y propone \u00edndices y reescrituras concretas.",
+          "latency_ms": 32204,
+          "output_tokens": 989,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            "stop"
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            null
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(medium)",
+          "model": "gpt-6-astra",
+          "effort": "medium",
+          "cost": 14.0,
+          "score": 6.67,
+          "scores": [
+            10.0,
+            10.0,
+            0.0
+          ],
+          "score_sd": 4.71,
+          "samples": 3,
+          "note": "judge: Responde en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el seq scan, la grave subestimaci\u00f3n y el nested loop costoso, relaciona el cambio con crecimiento/estad\u00edsticas/posible cambio de plan, y propone ANALYZE, revisar autovacuum y un \u00edndice funcional o reescritura concretos.",
+          "latency_ms": 32209,
+          "output_tokens": 1007,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            ""
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(high)",
+          "model": "gpt-6-astra",
+          "effort": "high",
+          "cost": 20.0,
+          "score": 6.67,
+          "scores": [
+            10.0,
+            10.0,
+            0.0
+          ],
+          "score_sd": 4.71,
+          "samples": 3,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN se\u00f1alando el seq scan, la grave subestimaci\u00f3n y el nested loop costoso, explica el papel de ANALYZE/autovacuum y propone soluciones concretas como un \u00edndice sobre lower(estado) o reescribir el filtro.",
+          "latency_ms": 41667,
+          "output_tokens": 1249,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            ""
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            10.0,
+            10.0,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        },
+        {
+          "route": "gpt-6-astra(xhigh)",
+          "model": "gpt-6-astra",
+          "effort": "xhigh",
+          "cost": 30.0,
+          "score": 3.33,
+          "scores": [
+            10.0,
+            0.0,
+            0.0
+          ],
+          "score_sd": 4.71,
+          "samples": 3,
+          "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN, identifica el sequential scan y la grave subestimaci\u00f3n de filas, explica por qu\u00e9 el \u00edndice simple no sirve con lower(), y propone ANALYZE, ajustes de autovacuum y un \u00edndice funcional o reescritura concretos.",
+          "latency_ms": 83429,
+          "output_tokens": 2729,
+          "finish_reasons": [
+            "stop",
+            "stop",
+            ""
+          ],
+          "truncated": 0,
+          "check_scores": [
+            null,
+            null,
+            null
+          ],
+          "judge_scores": [
+            10.0,
+            null,
+            0.0
+          ],
+          "error": null,
+          "cached": false
+        }
+      ],
+      "best_score": 8.33,
+      "cheapest_adequate": "ollama/glm-5.3-flash(low)",
+      "cheapest_adequate_tier": "fast",
+      "cheapest_adequate_effort": "low",
+      "route_flip_rate": 0.992,
+      "tier_flip_rate": 0.966,
+      "outcome_label": "unstable"
     }
   ],
   "proposed_label_changes": [
@@ -2770,7 +5222,7 @@
       "to_effort": "none",
       "clear_cut": true,
       "confidence": "clear",
-      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 9.7, fast-tier scores [9.74, 9.49, 9.49], frontier-tier scores [9.23, 9.49, 9.49, 9.49]."
     },
     {
       "case_id": "debug-adversarial-injection-in-log-16",
@@ -2790,7 +5242,47 @@
       "to_effort": "none",
       "clear_cut": false,
       "confidence": "mixed",
-      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 8.67], frontier-tier scores [8.67, 10.0, 9.33, 6.67]."
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 9.33], frontier-tier scores [9.33, 10.0, 9.67, 10.0]."
+    },
+    {
+      "case_id": "summarise-meeting-notes-dates-61",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 8.6, fast-tier scores [8.57, 8.57, 8.57], frontier-tier scores [8.57, 8.57, 8.57, 8.57]."
+    },
+    {
+      "case_id": "debug-go-deadlock-short-40-11",
+      "from_tier": "frontier",
+      "from_effort": "high",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 9.58, 9.58]."
+    },
+    {
+      "case_id": "quick-borrow-checker-misleading-75",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
+    },
+    {
+      "case_id": "code-sql-window-query-05",
+      "from_tier": "frontier",
+      "from_effort": "medium",
+      "to_tier": "fast",
+      "to_effort": "none",
+      "clear_cut": true,
+      "confidence": "clear",
+      "reason": "the fast model was good enough: cheapest adequate route is ollama/glm-5.3-flash(none), best score 10.0, fast-tier scores [10.0, 10.0, 10.0], frontier-tier scores [10.0, 10.0, 10.0, 10.0]."
     }
   ]
 }
