@@ -343,6 +343,24 @@ async def test_a_new_user_message_is_a_new_turn(rig, router):
     assert router.plans[1]["previous_turn"]["id"] == "turn-0001"
 
 
+async def test_a_continuation_reports_the_effort_the_turn_moved_to(rig, router):
+    """The trace follows the router, not the effort the session was bound at."""
+    router.plan_answers = [change_plan("high")]
+    first = user_item("hard work", "m1")
+    await send(rig, body(first))
+    await send(
+        rig,
+        body(
+            first,
+            {"type": "function_call", "call_id": "c1", "name": "exec", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c1", "output": "ok"},
+        ),
+    )
+    line = next(l for l in rig.trace if "action=continuation" in l)
+    assert "base=low" in line
+    assert "effective=high" in line
+
+
 async def test_a_tool_continuation_stays_in_the_same_turn(rig, router):
     first = user_item("read the parser", "m1")
     await send(rig, body(first))

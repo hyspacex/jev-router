@@ -180,6 +180,9 @@ class Conversation:
     pending_plan: dict[str, Any] = field(default_factory=dict)
     # Whether the previous response stream reached a terminal provider event.
     settled: bool = True
+    # The effort this hop expects the session to be running at. The router's
+    # ledger is the record; this is for the trace line.
+    effective_effort: str = ""
     # The provider's own last reported counts, for the context estimate.
     last_total_tokens: int = 0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -348,7 +351,7 @@ class Adapter:
             self.trace(
                 f"conv={conv.short} resumed session={conv.session_id} "
                 f"model={conv.wire_model} base={conv.base_effort} "
-                f"effective={conv.execution.get('effective_effort')} "
+                f"effective={conv.effective_effort} "
                 f"updates={len(conv.updates)}"
             )
             return
@@ -393,6 +396,9 @@ class Adapter:
     def _take_contract(self, conv: Conversation, contract: dict[str, Any]) -> None:
         conv.binding = str(contract.get("binding_revision") or "")
         conv.execution = dict(contract.get("execution") or {})
+        conv.effective_effort = str(
+            conv.execution.get("effective_effort") or conv.base_effort
+        )
 
     async def _restore_updates(self, conv: Conversation) -> None:
         """Rebuild the update ledger from the router's own record.
@@ -508,18 +514,18 @@ class Adapter:
         conv.requests += 1
         headers = self.forward_headers(request, conv, request_id, turn_id, plan)
         action = str(plan.get("action") or ("continuation" if not fresh_user else "-"))
-        effective = str(
-            plan.get("next_effective_effort")
-            or conv.execution.get("effective_effort")
-            or conv.base_effort
-        )
+        # What this request is expected to run at. The router's ledger is the
+        # authority on what it did run at; this is the trace, not the record.
+        effective = str(plan.get("next_effective_effort") or conv.effective_effort)
         self.trace(
             f"conv={conv.short} turn={turn_id or '-'} action={action} "
             f"base={conv.base_effort} effective={effective} "
             f"plan={plan.get('plan_id') or '-'} req={request_id} "
             f"items={len(P.input_items(forwarded))} updates={len(conv.updates)}"
         )
-        return await self.forward(conv, forwarded, headers, pending, turn_id)
+        return await self.forward(
+            conv, forwarded, headers, pending, turn_id, expected=effective
+        )
 
     def _check_placeable(self, conv: Conversation, items: list[Any]) -> None:
         """Every earlier update still has an index in this history to go to.
@@ -718,6 +724,7 @@ class Adapter:
         headers: dict[str, str],
         pending: Update | None,
         turn_id: str,
+        expected: str = "",
     ) -> Response:
         content = json.dumps(body).encode()
         started = time.perf_counter()
@@ -758,6 +765,12 @@ class Adapter:
             conv.updates.sort(key=lambda u: u.position)
         conv.pending_plan = {}
         conv.settled = False
+        # The router says what effort it forwarded this at. Its word, not this
+        # hop's arithmetic, and the reply's own `reasoning.effort` is the base
+        # effort and is never read as this.
+        conv.effective_effort = (
+            response.headers.get("x-router-effective-effort") or expected or conv.effective_effort
+        )
 
         observer = P.Observer(
             sse="text/event-stream" in response.headers.get("content-type", "")
