@@ -7,9 +7,16 @@ effort** of the model the session is already bound to. Nothing else moves. Not
 the model, not the provider, not the account, not the negotiated limits, and
 not the request-level base effort.
 
-It is an experiment. It is off in the shipped `router.yaml`, no deployment in
-this repository is qualified for it, and nothing about it has been measured.
-`evals/EXPERIMENTS.md` says so in more detail.
+It is an experiment. It is off in the shipped `router.yaml` and no deployment
+in that file is qualified for it. Nothing about whether it is *worth* doing
+has been measured: no quality comparison against a fixed effort exists, at any
+rung. `evals/EXPERIMENTS.md` says so in more detail.
+
+One deployment has had a provisional protocol test —
+[`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md`](qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md),
+for short personal test sessions on one proxy on one day. It is used by the
+test config that `examples/make-adaptive-astra.py` builds, and by nothing
+else. See "Trying it with Codex" below.
 
 ## The supported deployment matrix
 
@@ -23,6 +30,12 @@ model name is not a qualification, and a suffix-style proxy path that accepts
 `(high)` is not evidence that the endpoint preserves native configuration
 updates. Fill a row in only after `evals/qualify_effort.py` has run against
 that exact path and its report is checked in.
+
+The 2026-09-19 CLIProxyAPI report is deliberately **not** a row here.
+`qualify_effort.py` did not run, its Q07 evidence is four samples of the
+arm that matters, and its own verdict says provisional. A row in this table
+is a standing claim about a shipped deployment; that report is permission for
+one person to try something for an afternoon.
 
 ## The three modes
 
@@ -262,6 +275,122 @@ For `request_parameter` the request carries the planned effective effort in
 `reasoning.effort` and the history carries no item. Results from that strategy
 are labelled with the profile's configured `cache_behavior` and are **never**
 reported as native cache preservation, whatever a report says.
+
+## Trying it with Codex
+
+Codex cannot speak any of the above. It does not resolve a binding, it does
+not report a turn boundary, and it has never heard of a plan. So there is a
+small client adapter in front of the router that does all of that on its
+behalf:
+
+```
+codex exec  ->  adapter :18320  ->  jev-router :18318  ->  the proxy
+```
+
+`src/jev_router/adapter.py` is a **client**, not routing policy. It chooses
+nothing: every item it inserts came out of a `/router/turn-plan` answer, every
+refusal the router gives it goes straight back to Codex, and it never retries
+on another model. It identifies the conversation from Codex's own
+`session-id` header (or `prompt_cache_key`), never from message text, and it
+refuses a request that carries no such identifier. It keeps its state in
+memory and writes nothing to disk.
+
+It is experimental, and so is everything it points at. Read the qualification
+report for the deployment before doing this.
+
+**1. Build a test config.** `router.yaml` stays as it ships, with the
+experiment off and nothing verified.
+
+```sh
+uv run python examples/make-adaptive-astra.py \
+    --out /tmp/astra.yaml --sqlite /tmp/astra.db --port 18318
+uv run jev-router -c /tmp/astra.yaml check-config
+```
+
+**2. Start the router**, against the proxy, with a throwaway credential.
+
+```sh
+export JEV_ROUTER_ADMIN_TOKEN=$(openssl rand -hex 16)
+JEV_ROUTER_UPSTREAM=http://127.0.0.1:8317 \
+    uv run jev-router -c /tmp/astra.yaml serve --port 18318
+```
+
+**3. Start the adapter.** `--upstream-key-file` is optional: the adapter
+forwards whatever `Authorization` the client sent, and only puts the key from
+that file in its place when the client sent the placeholder token. The value
+is never logged or stored.
+
+```sh
+uv run jev-router adapter \
+    --router http://127.0.0.1:18318 --alias astra-adaptive --port 18320 \
+    --upstream-key-file ~/.config/proxy.key
+```
+
+**4. Point Codex at it**, with `-c` overrides rather than an edit to
+`~/.codex/config.toml`:
+
+```sh
+export JEV_CODEX_KEY=placeholder
+codex exec \
+  -c 'model_providers.jev={name="jev",base_url="http://127.0.0.1:18320/v1",wire_api="responses",env_key="JEV_CODEX_KEY",requires_openai_auth=false}' \
+  -c 'model_provider="jev"' -c 'model="gpt-6-astra"' \
+  -c 'model_reasoning_effort="low"' -c 'sandbox_mode="read-only"' \
+  --skip-git-repo-check \
+  "In one sentence: what is the difference between a tuple and a list?"
+```
+
+Carry the same conversation on with `resume`, which keeps Codex's session id
+and so keeps the router binding:
+
+```sh
+codex exec resume --last \
+  -c 'model_providers.jev={name="jev",base_url="http://127.0.0.1:18320/v1",wire_api="responses",env_key="JEV_CODEX_KEY",requires_openai_auth=false}' \
+  -c 'model_provider="jev"' -c 'model="gpt-6-astra"' \
+  -c 'model_reasoning_effort="low"' -c 'sandbox_mode="read-only"' \
+  --skip-git-repo-check \
+  "Now derive the recurrence rigorously and compute f(12)."
+```
+
+`model_reasoning_effort` is the base effort, and the adapter holds the request
+field there whatever happens. The effective effort moves through the update
+items and is read from the ledger, never from the reply.
+
+**5. Watch it.** The adapter prints one line per request, identifiers and
+counts only:
+
+```
+[adapter] conv=01a0bbde turn=turn-0002 action=change_effort base=low effective=medium plan=a2a452b6264d req=... items=10 updates=0
+[adapter] conv=01a0bbde turn=turn-0002 status=completed response=resp_... reasoning_tokens=126 input_tokens=19351 cached_input_tokens=19072 output_tokens=518 ms=17190
+```
+
+```sh
+uv run jev-router -c /tmp/astra.yaml sessions list
+uv run jev-router -c /tmp/astra.yaml sessions show <session-id>
+uv run jev-router -c /tmp/astra.yaml decisions -n 20
+```
+
+### What Codex's wire behaviour means for this
+
+Measured against 0.155.1, and worth knowing before reading a result:
+
+- It sends `store: false` and the **whole input** on every request, so this is
+  always a full-history replay and never a `previous_response_id` chain. The
+  chain path is untested on this route.
+- Its transcript is its own. It has no idea the adapter inserted an item, so
+  it never sends one back, and the adapter re-inserts every earlier update at
+  its recorded index on every request. An adapter restart rebuilds those
+  positions from the router's own ledger.
+- It sends `session-id`, `thread-id` and `prompt_cache_key`, all the same
+  value, and `codex exec resume` keeps it. That is the conversation identity.
+- It sends an `x-codex-beta-features: remote_compaction_v2` header. The
+  adapter drops it: provider-side compaction would rewrite a history the
+  ledger has to be able to find again.
+- Its `GET /v1/models` expects a Codex-shaped body and logs
+  `failed to refresh available models` against the router's OpenAI-shaped one.
+  It is noise; the conversation works.
+- A tool continuation arrives as another `POST /v1/responses` whose input ends
+  in a tool result rather than a user message. That is how the adapter tells a
+  continuation from a new turn.
 
 ## Compaction
 
