@@ -165,11 +165,48 @@ CREATE TABLE IF NOT EXISTS sessions (
     reserve_tokens INTEGER,
     quota_status TEXT,
     blocked_reason TEXT,
+    adaptation_mode TEXT,
+    expected_effort TEXT,
+    confirmed_effort TEXT,
+    effort_lineage TEXT,
     created REAL NOT NULL,
     last_seen REAL,
     closed_at REAL
 );
 CREATE INDEX IF NOT EXISTS sessions_state ON sessions (state);
+CREATE TABLE IF NOT EXISTS turn_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    mode TEXT,
+    action TEXT,
+    status TEXT NOT NULL,
+    from_effort TEXT,
+    to_effort TEXT,
+    base_effort TEXT,
+    recommendation TEXT,
+    expected_effort TEXT,
+    confirmed_effort TEXT,
+    history_mode TEXT,
+    anchor_position INTEGER,
+    anchor_prefix_hash TEXT,
+    parent_response_id TEXT,
+    response_id TEXT,
+    request_fingerprint TEXT,
+    request_id TEXT,
+    decision_id TEXT,
+    reason TEXT,
+    facts TEXT,
+    jev_ms REAL,
+    plan_ms REAL,
+    created REAL NOT NULL,
+    updated REAL,
+    UNIQUE (session_id, plan_id)
+);
+CREATE INDEX IF NOT EXISTS turn_plans_session ON turn_plans (session_id, id);
+CREATE INDEX IF NOT EXISTS turn_plans_turn ON turn_plans (session_id, turn_id);
 CREATE TABLE IF NOT EXISTS session_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
@@ -223,8 +260,27 @@ SEMANTIC_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
-# The decision-log events a session produces. `effort_plan` belongs to the
-# effort experiment and nothing writes it yet.
+# What the between-turn effort experiment adds. `turn_plans` is created by the
+# schema above, so only the columns this release adds to a table an older
+# database already has appear here. Same contract again: nullable, additive,
+# never dropped, and a database written before the experiment keeps working
+# with NULL in all of them, which reads as "this session predates it".
+EFFORT_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "sessions": [
+        # The mode agreed at resolve. A session resolved before the feature
+        # was enabled never gains it, so this is stored, not recomputed.
+        ("adaptation_mode", "TEXT"),
+        # Kept apart on purpose: expected is what the last plan asked for,
+        # confirmed is what a provider completion actually carried.
+        ("expected_effort", "TEXT"),
+        ("confirmed_effort", "TEXT"),
+        # Set when lineage or usage could not be read. Further transitions
+        # stop until it is reconciled.
+        ("effort_lineage", "TEXT"),
+    ],
+}
+
+# The decision-log events a session produces.
 EVENT_ADMISSION = "admission"
 EVENT_EXECUTION = "execution"
 EVENT_EFFORT_PLAN = "effort_plan"
@@ -351,6 +407,92 @@ def parse_resolve(payload: Any) -> ResolveRequest:
         raise SessionError(INVALID_ROUTER_INPUT, _first_problem(exc)) from None
 
 
+# --- the turn-plan contract (spec 10.4) ---------------------------------
+
+
+class PreviousTurn(Strict):
+    """What the client says about the turn that just ended.
+
+    These are lifecycle facts only the harness can know. The router checks its
+    own in-flight state as well and refuses on either, but it cannot see the
+    client's tool loop, so this part is the client's word.
+    """
+
+    id: str = ""
+    settled: bool = False
+    pending_tool_calls: int = Field(default=0, ge=0)
+    active_requests: int = Field(default=0, ge=0)
+
+
+class TurnState(Strict):
+    """The bounded semantic packet for one turn. Processed, never stored."""
+
+    task_request: str = ""
+    current_user_request: str = ""
+    user_constraints: list[str] = Field(default_factory=list)
+    quoted_material: list[dict[str, Any]] = Field(default_factory=list)
+    observations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TurnContext(Strict):
+    estimated_total_tokens: int | None = Field(default=None, ge=0)
+    estimate_method: str = ""
+    history_mode: Literal["full_history", "previous_response_id"] = "full_history"
+
+
+class TurnPlanRequest(Strict):
+    schema_version: Literal["1"] = "1"
+    session_id: str = Field(min_length=8, max_length=200)
+    binding_revision: str = Field(min_length=1, max_length=200)
+    turn_id: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    previous_turn: PreviousTurn = Field(default_factory=PreviousTurn)
+    state: TurnState = Field(default_factory=TurnState)
+    context: TurnContext = Field(default_factory=TurnContext)
+
+    def evidence_fingerprint(self) -> str:
+        """What decides the plan, and nothing that does not.
+
+        The request id is left out, so a retry with a fresh id is a retry. The
+        previous turn's reported lifecycle is left out too: it gates whether a
+        plan may be made at all, and a client that settles a turn between two
+        otherwise identical calls has not changed the evidence.
+        """
+        return fingerprint(
+            {
+                "turn_id": self.turn_id,
+                "state": self.state.model_dump(),
+                "context": self.context.model_dump(),
+            }
+        )
+
+
+def parse_turn_plan(payload: Any) -> TurnPlanRequest:
+    if not isinstance(payload, dict):
+        raise SessionError(INVALID_ROUTER_INPUT, "body must be a JSON object")
+    try:
+        return TurnPlanRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise SessionError(INVALID_ROUTER_INPUT, _first_problem(exc)) from None
+
+
+class ReconcileRequest(Strict):
+    """What a client says it found out about an ambiguous update."""
+
+    schema_version: Literal["1"] = "1"
+    outcome: Literal["applied", "not_applied"]
+    note: str = Field(default="", max_length=500)
+
+
+def parse_reconcile(payload: Any) -> ReconcileRequest:
+    if not isinstance(payload, dict):
+        raise SessionError(INVALID_ROUTER_INPUT, "body must be a JSON object")
+    try:
+        return ReconcileRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise SessionError(INVALID_ROUTER_INPUT, _first_problem(exc)) from None
+
+
 def _first_problem(exc: ValidationError) -> str:
     err = exc.errors()[0]
     loc = ".".join(str(p) for p in err["loc"]) or "(root)"
@@ -390,6 +532,7 @@ class Sessions:
             self._conn.executescript(SESSION_SCHEMA)
             self.migrated = migrate(self._conn, ADDED_COLUMNS)
             self.migrated_semantic = migrate(self._conn, SEMANTIC_COLUMNS)
+            self.migrated_effort = migrate(self._conn, EFFORT_COLUMNS)
             self._conn.commit()
         if guard and self.cfg.enabled:
             self._take_guard()
@@ -623,6 +766,96 @@ class Sessions:
             )
             self._conn.commit()
 
+    # --- the effort update ledger (spec 10.6) ---------------------------
+
+    def plans(self, session_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """This session's turn plans, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM turn_plans WHERE session_id = ?"
+                " ORDER BY id DESC LIMIT ?",
+                (session_id, limit),
+            ).fetchall()
+        return [_plan_row(row) for row in reversed(rows)]
+
+    def get_plan(
+        self, session_id: str, plan_id: str = "", turn_id: str = ""
+    ) -> dict[str, Any] | None:
+        """One plan, by its own id or by the turn it belongs to."""
+        if plan_id:
+            sql, args = "plan_id = ?", (session_id, plan_id)
+        elif turn_id:
+            sql, args = "turn_id = ?", (session_id, turn_id)
+        else:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT * FROM turn_plans WHERE session_id = ? AND {sql}"
+                " ORDER BY id DESC LIMIT 1",
+                args,
+            ).fetchone()
+        return _plan_row(row) if row else None
+
+    def plan_by_id(self, plan_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM turn_plans WHERE plan_id = ? ORDER BY id DESC LIMIT 1",
+                (plan_id,),
+            ).fetchone()
+        return _plan_row(row) if row else None
+
+    def next_sequence(self, session_id: str) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) FROM turn_plans WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return int(row[0]) + 1 if row else 1
+
+    def record_plan(self, session_id: str, plan: dict[str, Any]) -> dict[str, Any]:
+        """Write one plan row. Hashes and identifiers only, never a transcript."""
+        now = self.clock()
+        fields = {"session_id": session_id, "created": now, "updated": now, **plan}
+        if isinstance(fields.get("facts"), (dict, list)):
+            fields["facts"] = json.dumps(fields["facts"], default=str)
+        names = ", ".join(fields)
+        marks = ", ".join("?" for _ in fields)
+        with self._lock:
+            self._conn.execute(
+                f"INSERT OR IGNORE INTO turn_plans ({names}) VALUES ({marks})",
+                tuple(fields.values()),
+            )
+            self._conn.commit()
+        return self.get_plan(session_id, plan_id=str(plan["plan_id"])) or {}
+
+    def update_plan(self, plan_id: str, **fields: Any) -> None:
+        fields = {k: v for k, v in fields.items() if v is not None}
+        if not fields:
+            return
+        fields["updated"] = self.clock()
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE turn_plans SET {sets} WHERE plan_id = ?",
+                (*fields.values(), plan_id),
+            )
+            self._conn.commit()
+
+    def applied_updates(self, session_id: str) -> list[dict[str, Any]]:
+        """Every effort update this session's history is supposed to carry.
+
+        A change that reached the provider is part of the transcript whatever
+        happened afterwards, so accepted, confirmed and ambiguous rows all
+        count. A plan that was never sent, or definitively refused before
+        acceptance, is not in the history and is not expected back.
+        """
+        return [
+            row
+            for row in self.plans(session_id, limit=500)
+            if row.get("action") == "change_effort"
+            and row.get("status") in ("accepted", "confirmed", "outcome_unknown")
+        ]
+
     # --- decision log ---------------------------------------------------
 
     def annotate_decision(
@@ -745,8 +978,15 @@ class Sessions:
             requests = self._conn.execute(
                 "DELETE FROM session_requests WHERE created < ?", (cutoff,)
             ).rowcount
+            plans = self._conn.execute(
+                "DELETE FROM turn_plans WHERE created < ?", (cutoff,)
+            ).rowcount
             self._conn.commit()
-        return {"sessions": sessions, "session_requests": requests}
+        return {
+            "sessions": sessions,
+            "session_requests": requests,
+            "turn_plans": plans,
+        }
 
 
 def _dump(value: Any) -> str | None:
@@ -754,6 +994,16 @@ def _dump(value: Any) -> str | None:
     if not value:
         return None
     return json.dumps(value, default=str)
+
+
+def _plan_row(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    if item.get("facts"):
+        try:
+            item["facts"] = json.loads(item["facts"])
+        except (TypeError, ValueError):
+            pass
+    return item
 
 
 def _session_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -792,6 +1042,12 @@ def contract(row: dict[str, Any], quota_status: dict[str, str]) -> dict[str, Any
             "supports_vision": row["supports_vision"],
             "initial_effort": row["base_effort"],
             "effort_mode": row["effort_mode"] or "fixed",
+            # Base effort is what every request carries. Effective effort is
+            # what the session is actually running at, which only the
+            # experiment can move and only between turns.
+            "base_effort": row["base_effort"],
+            "effective_effort": row["effective_effort"] or row["base_effort"],
+            "adaptation": row.get("adaptation_mode") or "off",
         },
         "decision": {
             "rule": row["decision_rule"],
