@@ -280,3 +280,139 @@ def test_an_unknown_quota_source_is_reported(tmp_path):
                        "paramy": {**r["models"]["paramy"], "provider": "cloud"}},
         }))
     assert "unknown source 'telepathy'" in str(exc.value)
+
+
+# --- the between-turn effort experiment (spec 12, 10.3) ------------------
+
+
+def adaptive(raw, **fields):
+    """Point the shared test config at the experiment, questions and all."""
+    raw["questions"]["corrective_followup"] = {
+        "type": "noul",
+        "instructions": "Does the latest message name a defect in the earlier result?",
+    }
+    raw["questions"]["failure_mode"] = {
+        "type": "choice",
+        "instructions": "Why has the work not succeeded yet?",
+        "criteria": {"reasoning_problem": "The logic is wrong.", "unclear": "Cannot say."},
+    }
+    raw["session_routing"] = {"enabled": True}
+    raw["aliases"]["auto-session"] = {
+        "session_mode": "strict",
+        "adaptive_effort": True,
+        "state_builder": "summary_v1",
+        "questions": ["task", "difficulty", "harm_if_wrong"],
+        "rules": "policy",
+        "allowed_models": ["big"],
+    }
+    raw["experiments"] = {
+        "adaptive_effort": {
+            "mode": "shadow",
+            "qualified_profiles": ["big"],
+            "ladder": ["low", "medium", "high"],
+            **fields,
+        }
+    }
+
+
+def test_an_omitted_experiments_block_means_off():
+    cfg = load_config("router.yaml")
+    assert cfg.adaptive_effort().mode == "off"
+    assert cfg.adaptive_effort().qualified_profiles == []
+    # And no shipped model claims a between-turn strategy.
+    for mid, mcfg in cfg.models.items():
+        assert mcfg.effort_control.between_turn == "fixed", mid
+        assert mcfg.effort_control.qualification == "unverified", mid
+
+
+def test_shadow_mode_needs_nothing_verified(tmp_path):
+    cfg = load_raw(tmp_path, adaptive)
+    assert cfg.adaptive_effort().mode == "shadow"
+    assert cfg.effort_ladder("big") == ["low", "medium", "high"]
+
+
+def test_active_mode_is_refused_on_an_unverified_profile(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: adaptive(r, mode="active"))
+    text = str(exc.value)
+    assert "declares no between-turn strategy" in text
+    assert "still 'unverified'" in text
+
+
+def test_active_mode_is_refused_with_no_qualified_profile(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: adaptive(r, mode="active", qualified_profiles=[]))
+    assert "needs at least one profile in qualified_profiles" in str(exc.value)
+
+
+def test_active_mode_needs_a_qualification_report_that_exists(tmp_path):
+    def mutate(raw):
+        adaptive(raw, mode="active")
+        raw["models"]["big"]["effort_control"] = {
+            "between_turn": "native_configuration_update",
+            "qualification": "verified",
+            "qualification_ref": "docs/qualification/no-such-report.md",
+        }
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "does not name a file that exists" in str(exc.value)
+
+
+def test_active_mode_loads_with_a_real_report_beside_the_config(tmp_path):
+    (tmp_path / "report.md").write_text("# a dated deployment report\n")
+
+    def mutate(raw):
+        adaptive(raw, mode="active")
+        raw["models"]["big"]["effort_control"] = {
+            "between_turn": "native_configuration_update",
+            "qualification": "verified",
+            "qualification_ref": "report.md: verdict verified",
+        }
+
+    cfg = load_raw(tmp_path, mutate)
+    assert cfg.adaptive_effort().mode == "active"
+    assert cfg.models["big"].effort_control.between_turn == "native_configuration_update"
+
+
+def test_verified_without_a_reference_is_refused(tmp_path):
+    def mutate(raw):
+        adaptive(raw)
+        raw["models"]["big"]["effort_control"] = {"qualification": "verified"}
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "qualification_ref" in str(exc.value)
+
+
+def test_a_legacy_alias_cannot_opt_into_the_experiment(tmp_path):
+    def mutate(raw):
+        adaptive(raw)
+        raw["aliases"]["auto"]["adaptive_effort"] = True
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "needs a strict session" in str(exc.value)
+
+
+def test_a_ladder_rung_the_model_does_not_offer_is_reported(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: adaptive(r, ladders={"big": ["low", "none"]}))
+    assert "does not offer effort 'none'" in str(exc.value)
+
+
+def test_the_three_opt_ins_all_have_to_agree(tmp_path):
+    cfg = load_raw(tmp_path, adaptive)
+    strict = cfg.aliases["auto-session"]
+    legacy = cfg.aliases["auto"]
+    assert cfg.adaptation_mode(strict, turn_boundaries=True) == "shadow"
+    assert cfg.adaptation_mode(strict, turn_boundaries=False) == "off"
+    assert cfg.adaptation_mode(legacy, turn_boundaries=True) == "off"
+    cfg.experiments.adaptive_effort.mode = "off"
+    assert cfg.adaptation_mode(strict, turn_boundaries=True) == "off"
+
+
+def test_the_example_overlay_is_valid_yaml_and_stays_out_of_active():
+    raw = yaml.safe_load(open("examples/adaptive-effort.yaml").read())
+    assert raw["experiments"]["adaptive_effort"]["mode"] == "shadow"
+    assert raw["aliases"]["auto-session-adaptive"]["adaptive_effort"] is True

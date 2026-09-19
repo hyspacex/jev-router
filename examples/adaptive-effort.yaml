@@ -1,0 +1,85 @@
+# An opt-in overlay for the between-turn effort experiment.
+#
+# Merge the blocks below into your own router.yaml. Nothing here rewrites an
+# existing alias or provider path: every key is either new or a field that was
+# already off.
+#
+# Read docs/ADAPTIVE_EFFORT.md first. The short version:
+#
+#   - `shadow` is safe. It asks Jev at a turn boundary, records what it would
+#     have done, and sends exactly the fixed-effort request it would have sent
+#     anyway. Start here.
+#   - `active` changes the effective effort of the bound model. It needs a
+#     deployment somebody qualified, and config load refuses it otherwise.
+#   - No deployment is qualified today. The `active` section below is written
+#     out so the shape is clear; it will not load until the report it names
+#     exists and the endpoint has actually been tested.
+
+# --- shadow: measure it, send nothing different -------------------------
+
+experiments:
+  adaptive_effort:
+    mode: shadow
+    # A profile not listed here never adapts, in any mode.
+    qualified_profiles: [gpt-6-astra]
+    evaluate_on: new_user_turn
+    downgrade_confirmations: 2
+    on_unknown: keep
+    hysteresis: true
+    ladder: [low, medium, high]
+    ladders:
+      gpt-6-astra: [low, medium, high]
+    thresholds:
+      upgrade_difficulty: 1.8
+      upgrade_harm: 0.6
+      upgrade_p_hard: 0.4
+      corrective_followup: 0.6
+      downgrade_difficulty: 0.8
+      downgrade_harm: 0.2
+      quota_pressure_at: 0.6
+      context_safety_fraction: 0.8
+    questions: [difficulty, harm_if_wrong, corrective_followup]
+    shadow_questions: [failure_mode]
+
+aliases:
+  # A strict alias, because the experiment needs a session with turn
+  # boundaries. `adaptive_effort: true` is the alias half of the opt-in; the
+  # client supplies the other half with `turn_boundary_reporting: true` in its
+  # resolve payload. Both, or the session is resolved with adaptation `off`
+  # and stays that way for its whole life.
+  auto-session-adaptive:
+    description: One model for the session, with the between-turn effort experiment.
+    session_mode: strict
+    adaptive_effort: true
+    state_builder: continuation_aware_v1
+    questions: [task, difficulty, harm_if_wrong]
+    rules: policy
+    allowed_models: [gpt-6-astra]
+    admission_fallback: {route: frontier_medium}
+
+# --- active: only on a deployment that was tested ------------------------
+#
+# Uncomment this once the qualification has actually run. `mode: active` above
+# also has to change, and `uv run jev-router check-config` will refuse the
+# result until every field here is true:
+#
+#   - `between_turn` names the strategy that was tested. Use
+#     `native_configuration_update` only for an endpoint that really preserves
+#     the provider's update items and their history semantics.
+#   - `qualification: verified` needs a `qualification_ref` naming a file that
+#     exists. Copy docs/qualification/TEMPLATE.md, date it, fill it in and
+#     check it in.
+#   - `cache_behavior` is a separate measurement. Correct update syntax is not
+#     a cache result, and `request_parameter` never reports as cache
+#     preserving whatever the report says.
+#
+# models:
+#   gpt-6-astra:
+#     protocol: openai-responses
+#     max_output_tokens: 16384
+#     compatibility_revision: responses-astra-deployment-v1
+#     effort_control:
+#       between_turn: native_configuration_update
+#       qualification: verified
+#       cache_behavior: unverified
+#       qualification_ref: docs/qualification/2026-01-01-gpt-6-astra-responses.md

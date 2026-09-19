@@ -19,6 +19,7 @@ from pydantic import (
     Field,
     PrivateAttr,
     ValidationError,
+    field_validator,
     model_validator,
 )
 
@@ -228,6 +229,96 @@ class EffortControlCfg(Base):
         return self
 
 
+class EffortThresholds(Base):
+    """The numbers the between-turn effort policy compares against.
+
+    All of them are engineering starting points, not measured findings. They
+    are recorded on every plan so a replay can see what a decision was taken
+    under, and `evals/effort_replay.py` searches them offline.
+    """
+
+    # What makes the policy want more effort. Any one of these is enough.
+    upgrade_difficulty: float = 1.8
+    upgrade_harm: float = 0.6
+    upgrade_p_hard: float = 0.4
+    # A follow-up that names a defect in the earlier result argues for more.
+    corrective_followup: float = 0.6
+    # What makes it want less. All of them have to hold at once.
+    downgrade_difficulty: float = 0.8
+    downgrade_harm: float = 0.2
+    # Quota pressure at or above this resolves an otherwise-hold turn downward.
+    # It never moves a turn the evidence says is demanding, and never crosses
+    # a floor.
+    quota_pressure_at: float = Field(default=0.6, ge=0.0, le=1.0)
+    # How close to the negotiated window the experiment stops adapting.
+    context_safety_fraction: float = Field(default=0.8, gt=0.0, le=1.0)
+
+
+class AdaptiveEffortCfg(Base):
+    """The between-turn effort experiment (spec 10). Off unless asked for.
+
+    `off` is the default and an omitted `experiments:` block means `off`,
+    which is exactly how the router behaved before any of this existed: no
+    per-turn classifier call and no effort ever moves.
+
+    `shadow` computes a recommendation at an eligible boundary, records it,
+    and sends the fixed-effort request unchanged. `active` applies the change,
+    and only on a deployment somebody qualified: config load refuses it unless
+    every listed profile declares a tested between-turn strategy, carries
+    `qualification: verified`, and names a report file that exists.
+
+    Both an alias (`adaptive_effort: true`) and the client contract
+    (`turn_boundary_reporting: true` at resolve) have to opt in. A session
+    resolved before either was true never gains the feature: the mode it was
+    resolved under is stored on the session row.
+    """
+
+    mode: Literal["off", "shadow", "active"] = "off"
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _yaml_reads_off_as_false(cls, value: Any) -> Any:
+        """`mode: off` in YAML is the boolean false. Take it as the word."""
+        if value is False:
+            return "off"
+        if value is True:
+            raise ValueError("mode must be 'off', 'shadow' or 'active'; quote it")
+        return value
+
+    # Exact model keys. A profile not listed here never adapts.
+    qualified_profiles: list[str] = Field(default_factory=list)
+    evaluate_on: Literal["new_user_turn"] = "new_user_turn"
+    # Consecutive eligible-turn recommendations a downgrade needs.
+    downgrade_confirmations: int = Field(default=2, ge=1)
+    # What a Jev timeout, malformed output or missing evidence does.
+    on_unknown: Literal["keep"] = "keep"
+    # False compares the same signals with no confirmation counting, which is
+    # the simpler policy replay measures this one against.
+    hysteresis: bool = True
+    # The ladder the policy may move along, weakest first. One global default
+    # and an optional per-profile override.
+    ladder: list[str] = Field(default_factory=lambda: ["low", "medium", "high"])
+    ladders: dict[str, list[str]] = Field(default_factory=dict)
+    thresholds: EffortThresholds = Field(default_factory=EffortThresholds)
+    # What is asked at a turn boundary. These are turn questions, not the
+    # alias's admission questions.
+    questions: list[str] = Field(
+        default_factory=lambda: ["difficulty", "harm_if_wrong", "corrective_followup"]
+    )
+    # Asked in the same call, recorded, and never read by the policy. Only
+    # sent when the turn carries a grounded harness observation.
+    shadow_questions: list[str] = Field(default_factory=lambda: ["failure_mode"])
+
+    def ladder_for(self, model_key: str) -> list[str]:
+        return list(self.ladders.get(model_key) or self.ladder)
+
+
+class ExperimentsCfg(Base):
+    """Everything behind an experimental gate. Each one defaults to off."""
+
+    adaptive_effort: AdaptiveEffortCfg = Field(default_factory=AdaptiveEffortCfg)
+
+
 class ModelCfg(Base):
     upstream_id: str
     provider: str = ""
@@ -357,6 +448,11 @@ class AliasCfg(Base):
     # once and never moved. An omitted field means legacy.
     session_mode: Literal["legacy", "strict"] = "legacy"
     static_envelope: StaticEnvelopeCfg | None = None
+    # Opt in to the between-turn effort experiment. This alone does nothing:
+    # the experiment also has to be on in `experiments.adaptive_effort`, the
+    # client has to declare `turn_boundary_reporting`, and the bound profile
+    # has to be a qualified one.
+    adaptive_effort: bool = False
     # What a strict admission may use when Jev is down (spec 8.4). Without one
     # the admission returns NO_SAFE_ADMISSION rather than guessing, because a
     # strict binding taken under a fallback is as fixed as any other.
@@ -478,6 +574,7 @@ class RouterConfig(Base):
     session_routing: SessionRoutingCfg = Field(default_factory=SessionRoutingCfg)
     semantic_policy: SemanticPolicyCfg = Field(default_factory=SemanticPolicyCfg)
     quality_lanes: dict[str, QualityLaneCfg] = Field(default_factory=dict)
+    experiments: ExperimentsCfg = Field(default_factory=ExperimentsCfg)
 
     # Set by load_config; stored with every decision so a later tuning run
     # knows which router.yaml produced it.
@@ -517,6 +614,36 @@ class RouterConfig(Base):
             for qid in self.semantic_policy.shadow_questions
             if qid in self.questions and qid not in asking
         ]
+
+    def adaptive_effort(self) -> AdaptiveEffortCfg:
+        return self.experiments.adaptive_effort
+
+    def adaptation_mode(self, alias_cfg: AliasCfg, turn_boundaries: bool) -> str:
+        """The mode a session resolved now would be bound to.
+
+        Three opt-ins have to agree: the experiment itself, the alias, and the
+        client's declared ability to report turn boundaries. Any one of them
+        missing means `off`, which is what every session before this release
+        was resolved under.
+        """
+        cfg = self.experiments.adaptive_effort
+        if cfg.mode == "off" or not alias_cfg.adaptive_effort or not turn_boundaries:
+            return "off"
+        return cfg.mode
+
+    def effort_ladder(self, model_key: str) -> list[str]:
+        """The rungs this profile may move between, weakest first.
+
+        Intersected with what the model declares, so a ladder cannot name an
+        effort the deployment does not have.
+        """
+        mcfg = self.models.get(model_key)
+        if mcfg is None:
+            return []
+        wanted = self.experiments.adaptive_effort.ladder_for(model_key)
+        rank = {e: i for i, e in enumerate(self.settings.effort_order)}
+        rungs = [e for e in wanted if e in mcfg.efforts]
+        return sorted(rungs, key=lambda e: rank.get(e, len(rank)))
 
     def lane_for(self, rule_name: str, ruleset: Ruleset) -> QualityLaneCfg | None:
         """The lane a rule of this ruleset names, when it names one."""
@@ -772,6 +899,7 @@ class RouterConfig(Base):
 
         problems.extend(self._check_semantic_policy())
         problems.extend(self._check_lanes(check_pair, check_route))
+        problems.extend(self._check_adaptive_effort())
 
         for cid, ccfg in self.clients.items():
             if ccfg.min_effort and ccfg.min_effort not in order:
@@ -816,6 +944,107 @@ class RouterConfig(Base):
                     f"aliases.{alias}.questions: {', '.join(clash)} is a shadow "
                     "question; an alias that routes on it must not also be "
                     "measuring it"
+                )
+        return problems
+
+    def _check_adaptive_effort(self) -> list[str]:
+        """What the between-turn experiment needs before it may be switched on.
+
+        `shadow` only has to be well formed: it sends nothing different. For
+        `active` every listed profile has to declare a tested between-turn
+        strategy and carry a verified qualification, because an effort update
+        that the deployment silently ignores or that resets the conversation
+        is not something a router can detect after the fact.
+        """
+        cfg = self.experiments.adaptive_effort
+        problems: list[str] = []
+        order = self.settings.effort_order
+        where = "experiments.adaptive_effort"
+
+        if cfg.mode != "off":
+            # The defaults name the questions router.yaml ships for this
+            # experiment. A config that never turns it on is not asked to
+            # define them.
+            for qid in [*cfg.questions, *cfg.shadow_questions]:
+                if qid not in self.questions:
+                    problems.append(
+                        f"{where}: unknown question {qid!r} "
+                        f"(known: {', '.join(sorted(self.questions)) or 'none'})"
+                    )
+        both = sorted(set(cfg.questions) & set(cfg.shadow_questions))
+        if both:
+            problems.append(
+                f"{where}: {', '.join(both)} is both a turn question and a turn "
+                "shadow question; a question cannot be the answer and the "
+                "experiment at the same time"
+            )
+        for effort in cfg.ladder:
+            if effort not in order:
+                problems.append(
+                    f"{where}.ladder: {effort!r} is not in settings.effort_order"
+                )
+        for model, rungs in cfg.ladders.items():
+            if model not in self.models:
+                problems.append(f"{where}.ladders: unknown model {model!r}")
+                continue
+            for effort in rungs:
+                if effort not in order:
+                    problems.append(
+                        f"{where}.ladders.{model}: {effort!r} is not in "
+                        "settings.effort_order"
+                    )
+                elif effort not in self.models[model].efforts:
+                    problems.append(
+                        f"{where}.ladders.{model}: {model!r} does not offer "
+                        f"effort {effort!r}"
+                    )
+        for model in cfg.qualified_profiles:
+            if model not in self.models:
+                problems.append(
+                    f"{where}.qualified_profiles: unknown model {model!r}"
+                )
+
+        for alias, acfg in self.aliases.items():
+            if not acfg.adaptive_effort:
+                continue
+            if acfg.session_mode != "strict":
+                problems.append(
+                    f"aliases.{alias}.adaptive_effort: the between-turn experiment "
+                    "needs a strict session; a legacy alias has no turn boundary "
+                    "to change effort at"
+                )
+
+        if cfg.mode != "active":
+            return problems
+        if not cfg.qualified_profiles:
+            problems.append(
+                f"{where}: mode 'active' needs at least one profile in "
+                "qualified_profiles; nothing is qualified by default"
+            )
+        for model in cfg.qualified_profiles:
+            mcfg = self.models.get(model)
+            if mcfg is None:
+                continue
+            control = mcfg.effort_control
+            spot = f"models.{model}.effort_control"
+            if control.between_turn == "fixed":
+                problems.append(
+                    f"{spot}.between_turn: {model!r} is in "
+                    f"{where}.qualified_profiles but declares no between-turn "
+                    "strategy; only 'native_configuration_update' or "
+                    "'request_parameter' can be activated"
+                )
+            if control.qualification != "verified":
+                problems.append(
+                    f"{spot}.qualification: {model!r} is in "
+                    f"{where}.qualified_profiles and is still "
+                    f"{control.qualification!r}; run the qualification and "
+                    "record the report before activating it"
+                )
+            if len(self.effort_ladder(model)) < 2:
+                problems.append(
+                    f"{where}: {model!r} has fewer than two rungs on its effort "
+                    "ladder, so there is nothing to move between"
                 )
         return problems
 
@@ -1046,6 +1275,43 @@ def check_registry_names(cfg: RouterConfig) -> list[str]:
     if cfg.settings.fallback_decider and cfg.settings.fallback_decider not in DECIDERS:
         problems.append(
             f"settings.fallback_decider: unknown decider {cfg.settings.fallback_decider!r}"
+        )
+    problems.extend(check_qualification_reports(cfg))
+    return problems
+
+
+def check_qualification_reports(cfg: RouterConfig) -> list[str]:
+    """An active effort profile has to name a report file that is really there.
+
+    `qualification: verified` already needs a `qualification_ref`, but a
+    string is easy to write and hard to check later. Once a profile is
+    activated the reference has to resolve to a checked-in file, so "verified"
+    always has a dated report behind it that somebody can open.
+
+    Paths resolve against the directory holding router.yaml, then against the
+    working directory.
+    """
+    effort = cfg.experiments.adaptive_effort
+    if effort.mode != "active":
+        return []
+    bases = [Path.cwd()]
+    if cfg.config_path:
+        bases.insert(0, Path(cfg.config_path).resolve().parent)
+    problems: list[str] = []
+    for model in effort.qualified_profiles:
+        mcfg = cfg.models.get(model)
+        if mcfg is None or mcfg.effort_control.qualification != "verified":
+            continue
+        ref = (mcfg.effort_control.qualification_ref or "").strip()
+        # A reference may carry a heading after the path, as the lane
+        # references do. The path is the part before the first colon-space.
+        name = ref.split(": ", 1)[0].strip()
+        if name and any((base / name).is_file() for base in bases):
+            continue
+        problems.append(
+            f"models.{model}.effort_control.qualification_ref: {ref!r} does not "
+            "name a file that exists; an active effort profile needs a dated "
+            "deployment report checked in beside router.yaml"
         )
     return problems
 

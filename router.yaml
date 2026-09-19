@@ -337,6 +337,29 @@ semantic_policy:
   shadow_questions: [mechanical_transform, interacting_constraints, requirements_missing]
   distribution_policy: shadow
 
+# Experimental gates. Everything here is off in the shipped file.
+#
+# `adaptive_effort` is the between-turn effort experiment of spec 10: inside a
+# strict session, at a reported new-user-turn boundary, change the reasoning
+# effort of the bound model and nothing else. No model changes, no provider
+# changes, no limits change, and the request-level base effort stays where
+# admission put it.
+#
+# It stays off here because no deployment in this file is qualified for it. A
+# suffix-style proxy path is not evidence that an endpoint preserves native
+# configuration updates, so no model below claims `verified`, and `active` is
+# refused at config load until one does. See docs/ADAPTIVE_EFFORT.md and the
+# opt-in overlay in examples/adaptive-effort.yaml.
+experiments:
+  adaptive_effort:
+    mode: "off"
+    qualified_profiles: []
+    evaluate_on: new_user_turn
+    downgrade_confirmations: 2
+    on_unknown: keep
+    hysteresis: true
+    ladder: [low, medium, high]
+
 # Passed to Jev exactly as written. Wording is the main lever on accuracy:
 # be literal, be concrete, and make every score level a standalone situation.
 #
