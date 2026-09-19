@@ -428,12 +428,13 @@ class Observer:
             self._buffer.clear()
             if body:
                 self.feed_json(body)
-            elif not self.observation.status:
+            if not self.observation.status:
                 self.observation.parse_failed = True
             self._stopped = True
             return self.observation
-        if self._buffer and not self.observation.status:
-            # A reply that ended mid-event never told us how it ended.
+        if not self.observation.status:
+            # A reply that ended mid-event, or said nothing at all, never told
+            # us how it ended. Unknown is unknown.
             self.observation.parse_failed = True
         self._buffer.clear()
         self._stopped = True

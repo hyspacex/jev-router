@@ -48,7 +48,7 @@ sys.path.insert(0, str(EVALS_DIR))
 from jev_router.config import AdaptiveEffortCfg  # noqa: E402
 from jev_router.effort import CHANGE, Evidence, plan_turn  # noqa: E402
 from manifest import build_manifest, write_manifest  # noqa: E402
-from metrics import paired_bootstrap_p, rate as rate_of, wilson  # noqa: E402
+from metrics import paired_bootstrap_p, wilson  # noqa: E402
 
 DEFAULT_FIXTURES = EVALS_DIR / "effort_fixtures.yaml"
 LADDER = ["low", "medium", "high"]
