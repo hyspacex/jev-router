@@ -184,13 +184,28 @@ def validate_full_history(
     plan asks for, or None when the plan changes nothing.
     """
     found = update_positions(items)
+    claimed: set[int] = set()
+    after = -1  # the position the ledger has reached so far
     for row in ledger:
         at = row.get("anchor_position")
         if at is None:
-            return HistoryCheck.refused(
-                f"the update for turn {row.get('turn_id')!r} has no recorded "
-                "position, so a full replay cannot be checked against it"
-            )
+            # Nobody recorded where this update went: it was confirmed by
+            # hand after the request that carried it went quiet. Its position
+            # and the history before it cannot be checked, and saying so is
+            # not a reason to refuse every later request. What can honestly be
+            # checked is checked: the replay still has to carry an update
+            # asking for that effort, after the previous ledger row and not
+            # already claimed by another one.
+            at = _unanchored(items, found, claimed, after, row.get("to_effort"))
+            if at is None:
+                return HistoryCheck.refused(
+                    f"the reconciled update for turn {row.get('turn_id')!r} set "
+                    f"{row.get('to_effort')!r} and the replayed history carries "
+                    "no such update after the one before it"
+                )
+            claimed.add(at)
+            after = at
+            continue
         if at >= len(items) or not is_update(items[at]):
             return HistoryCheck.refused(
                 f"the update for turn {row.get('turn_id')!r} is missing from "
@@ -207,9 +222,10 @@ def validate_full_history(
                 f"the history before position {at} is not the history the "
                 f"update for turn {row.get('turn_id')!r} was accepted against"
             )
+        claimed.add(at)
+        after = max(after, at)
 
-    known = {row.get("anchor_position") for row in ledger}
-    fresh = [at for at in found if at not in known]
+    fresh = [at for at in found if at not in claimed]
     matched = tuple(str(row.get("plan_id")) for row in ledger)
 
     if expected is None:
@@ -238,6 +254,27 @@ def validate_full_history(
     return HistoryCheck(
         ok=True, position=at, prefix=prefix_hash(items, at), matched=matched
     )
+
+
+def _unanchored(
+    items: list[Any],
+    found: list[int],
+    claimed: set[int],
+    after: int,
+    effort: str | None,
+) -> int | None:
+    """Where an update with no recorded position could be, or nothing.
+
+    The earliest unclaimed update asking for that effort that comes after the
+    ledger row before it. Earliest, because the least this can assume about a
+    position nobody wrote down is the most conservative reading of the rest.
+    """
+    for at in found:
+        if at in claimed or at <= after:
+            continue
+        if update_effort(items[at]) == effort:
+            return at
+    return None
 
 
 def _placement(items: list[Any], at: int) -> str:
@@ -282,8 +319,14 @@ def validate_chain(
     found = update_positions(items)
     # An update the provider already has is on its side of the chain. The
     # delta carries what is new, so anything in it that the provider is
-    # already holding is a duplicate.
-    persisted = [row for row in ledger if row.get("response_id")]
+    # already holding is a duplicate. An update somebody reconciled as applied
+    # is one the provider has too, even though no response id was ever read
+    # for it.
+    persisted = [
+        row
+        for row in ledger
+        if row.get("response_id") or row.get("reconciled") == "applied"
+    ]
 
     if expected is None:
         if found:

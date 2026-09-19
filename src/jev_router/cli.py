@@ -764,6 +764,8 @@ def _quota_freshness(config: RouterConfig) -> dict[str, str]:
 
 def _reconcile(sessions: Any, row: dict[str, Any], args: argparse.Namespace) -> int:
     """Say what really happened to an effort update nobody could call settled."""
+    from .sessions import SessionError
+
     plan_id = args.plan
     if not plan_id:
         open_rows = [
@@ -781,14 +783,17 @@ def _reconcile(sessions: Any, row: dict[str, Any], args: argparse.Namespace) -> 
     if plan is None or plan["session_id"] != row["session_id"]:
         print(f"unknown plan {plan_id!r} for this session", file=sys.stderr)
         return 1
-    result = sessions.reconcile(plan, row, args.outcome)
+    try:
+        result = sessions.reconcile(plan, row, args.outcome)
+    except SessionError as exc:
+        # A plan that was never submitted, or one that already has its answer.
+        # Nothing was written; say so rather than pretending it moved.
+        print(exc.message, file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(result, indent=2, default=str))
         return 0
-    if result["already_settled"]:
-        print(f"{plan_id} was already {result['was']}; nothing moved")
-    else:
-        print(f"{plan_id}: {result['was']} -> {result['status']}")
+    print(f"{plan_id}: {result['was']} -> {result['status']}")
     print(
         f"  effort: base={result['base_effort'] or '-'} "
         f"effective={result['effective_effort'] or '-'} "

@@ -299,7 +299,31 @@ POST /router/turn-plan/a1b2c3d4e5f6/reconcile
 
 `applied` confirms the transition. `not_applied` puts the ledger back to the
 previous confirmed state and leaves the same plan retryable. Either way the
-lineage flag is cleared and the session may plan again.
+lineage flag is cleared.
+
+Only a plan the provider actually received can be spoken about this way:
+`accepted`, where 2xx headers came back, and `outcome_unknown`, where the
+request went out and nothing came back. Anything else is `SESSION_CONFLICT`
+(409) and writes nothing at all. A `planned` plan was never sent, so there is
+nothing at the provider to go and check and no hand-written `applied` could be
+true. A `confirmed` or `rejected` plan already has its answer, and a second
+one would rewrite a fact rather than supply a missing one.
+
+An `applied` reconciliation of a request that went quiet leaves a **hole**:
+the router never saw where the client put that update, or which response
+holds it. The session is not bricked by it.
+
+- Execution carries on. A full replay is still checked for everything that
+  can honestly be checked: the update has to be in the history, asking for
+  the recorded effort, after the update before it. Its exact position and the
+  prefix hash of the history in front of it cannot be checked, so they are
+  not.
+- A `previous_response_id` delta must still not resend it. The provider holds
+  it whether or not a response id was ever read for it.
+- Further effort **transitions** stop. The next plan comes back `blocked`,
+  naming the plan that left the hole, because a new update's own anchor would
+  be measured against a history with a gap in it. `keep` plans carry on as
+  usual, and the effort the reconciliation confirmed stays where it is.
 
 The same applies when the bounded SSE observer could not read a reply: lineage
 is marked unknown, further transitions stop, and the reply itself is untouched

@@ -38,6 +38,17 @@ STATUSES = (PLANNED, ACCEPTED, CONFIRMED, REJECTED, OUTCOME_UNKNOWN)
 # first one resolves. A `keep` plan is never in the way: nothing was moving.
 OPEN = (PLANNED, ACCEPTED, OUTCOME_UNKNOWN)
 
+# The statuses a hand reconciliation may speak about. Both of them mean the
+# update reached the provider: `accepted` returned 2xx headers, and
+# `outcome_unknown` was submitted and then went quiet. Somebody who can ask
+# the provider can say what became of either one.
+#
+# `planned` is not here. Nothing was ever sent, so there is nothing at the
+# provider to check and no hand-written `applied` can be true. `confirmed` and
+# `rejected` are not here either: they are settled, and a second answer would
+# rewrite a fact rather than supply a missing one.
+RECONCILABLE = (ACCEPTED, OUTCOME_UNKNOWN)
+
 # What a plan asks for.
 KEEP = "keep"
 CHANGE = "change_effort"
@@ -358,6 +369,31 @@ def open_change(rows: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
         if row.get("action") != CHANGE:
             continue
         if row.get("status") in OPEN:
+            return row
+    return None
+
+
+def reconciliation_hole(rows: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+    """An update the provider holds that the router never saw land.
+
+    An update gets its position, its prefix hash and its response id written
+    down when the router forwards the request that carried it and reads the
+    reply. A hand reconciliation of a request that went quiet has none of
+    that: somebody told us the provider applied an update, and nobody can say
+    where in the transcript the client put it or which response holds it.
+
+    That is a hole, not a corruption. The session keeps running on the same
+    model at the same effort, and a replay is still checked for everything
+    that can honestly be checked. What stops is the next effort transition,
+    because its own anchor would be measured against a history with a gap in
+    it, and in a chain against a lineage the ledger cannot see.
+    """
+    for row in sorted(rows, key=lambda r: r.get("sequence") or 0):
+        if row.get("action") != CHANGE:
+            continue
+        if row.get("reconciled") != "applied":
+            continue
+        if row.get("anchor_position") is None:
             return row
     return None
 

@@ -1048,6 +1048,20 @@ class Router:
             ),
             pressure=pressure,
         )
+        hole = E.reconciliation_hole(self.sessions.plans(req.session_id))
+        if hole is not None and plan.action == E.CHANGE:
+            # Somebody confirmed an earlier update by hand and nobody could
+            # record where it landed. Keeping the effort is still fine, and
+            # the session executes as before; a further transition is not,
+            # because its own anchor would be measured against a history the
+            # ledger has a gap in.
+            plan = E.blocked(
+                plan,
+                f"plan {hole['plan_id']} for turn {hole['turn_id']} was "
+                "reconciled by hand and the router never saw where its update "
+                "landed; a further effort change could not be checked against "
+                "the history, so this session keeps the effort it has",
+            )
         if mode == "shadow" and plan.action == E.CHANGE:
             # Shadow keeps the recommendation and sends nothing different.
             plan.action = E.KEEP

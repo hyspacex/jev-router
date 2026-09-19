@@ -32,6 +32,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from . import effort as E
 from .config import SessionRoutingCfg
 from .pins import Store, migrate
 
@@ -282,6 +283,14 @@ EFFORT_COLUMNS: dict[str, list[tuple[str, str]]] = {
         # `previous_response_id` chain is checked against it.
         ("last_response_id", "TEXT"),
     ],
+}
+
+# What this release adds. Same contract once more: nullable, additive, never
+# dropped. `turn_plans.reconciled` records that a person, not an observation,
+# said what became of an update; NULL means nobody ever had to, which is what
+# every row written before this release means.
+RECONCILE_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "turn_plans": [("reconciled", "TEXT")],
 }
 
 # The decision-log events a session produces.
@@ -537,6 +546,7 @@ class Sessions:
             self.migrated = migrate(self._conn, ADDED_COLUMNS)
             self.migrated_semantic = migrate(self._conn, SEMANTIC_COLUMNS)
             self.migrated_effort = migrate(self._conn, EFFORT_COLUMNS)
+            self.migrated_reconcile = migrate(self._conn, RECONCILE_COLUMNS)
             self._conn.commit()
         if guard and self.cfg.enabled:
             self._take_guard()
@@ -858,14 +868,37 @@ class Sessions:
         `not_applied` puts the ledger back to the previous confirmed state and
         leaves the same plan retryable. Either way the lineage flag is cleared
         and a competing transition is unblocked.
+
+        Only a plan the provider actually received may be spoken about, which
+        is `accepted` or `outcome_unknown` (see `effort.RECONCILABLE`). Any
+        other status is refused and nothing at all is written: a plan that was
+        never submitted has no provider-side fact to report, and a settled one
+        already has its answer.
         """
-        settled = plan["status"] in ("confirmed", "rejected")
+        if plan["status"] not in E.RECONCILABLE:
+            raise SessionError(
+                SESSION_CONFLICT,
+                f"plan {plan['plan_id']} is {plan['status']!r}; only an update "
+                f"the provider received ({' or '.join(E.RECONCILABLE)}) can be "
+                "reconciled by hand, and nothing was changed",
+                detail={
+                    "plan_id": plan["plan_id"],
+                    "turn_id": plan["turn_id"],
+                    "status": plan["status"],
+                },
+            )
         status = "confirmed" if outcome == "applied" else "rejected"
         effort = plan["to_effort"] if outcome == "applied" else None
-        if not settled:
-            self.update_plan(plan["plan_id"], status=status, confirmed_effort=effort)
+        self.update_plan(
+            plan["plan_id"],
+            status=status,
+            confirmed_effort=effort,
+            # Said by hand, not observed. A row that carries this and no
+            # anchor is a reconciliation hole: see `effort.reconciliation_hole`.
+            reconciled=outcome,
+        )
         current = self.get(row["session_id"]) or row
-        if not settled and plan["action"] == "change_effort":
+        if plan["action"] == "change_effort":
             keep = (
                 effort
                 if outcome == "applied"
@@ -890,7 +923,6 @@ class Sessions:
             "outcome": outcome,
             "was": plan["status"],
             "status": (self.plan_by_id(plan["plan_id"]) or plan)["status"],
-            "already_settled": settled,
             "base_effort": after.get("base_effort"),
             "effective_effort": after.get("effective_effort"),
             "confirmed_effort": after.get("confirmed_effort"),

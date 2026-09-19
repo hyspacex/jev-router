@@ -244,6 +244,13 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   `reasoning.effort` reports the base effort and is never read as the
   effective one. An ambiguous outcome blocks a competing transition until an
   explicit reconcile.
+- Reconciliation supplies a fact only a person can get, so it is legal only
+  from `accepted` or `outcome_unknown`: the provider had the request either
+  way. Any other status is a structured error that writes nothing. An
+  `applied` reconciliation with no recorded anchor is a hole: execution and
+  `keep` plans carry on, a replay is still checked for what it honestly can
+  be, a chain must not resend the update, and the next effort change is
+  blocked with the plan named.
 - The Responses observer is read-only and bounded. It yields every byte
   unchanged, never assembles output or reasoning text, and a parse failure
   marks lineage unknown rather than retrying or altering the reply.
