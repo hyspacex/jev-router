@@ -377,12 +377,14 @@ def advance(status: str, event: str) -> str:
     """
     if status not in STATUSES:
         return status
-    if status in (CONFIRMED, REJECTED):
+    if status == CONFIRMED:
         # Terminal. A confirmed transition is not un-confirmed by a later
-        # transport problem, and a rejected one is retried as a new attempt.
+        # transport problem.
         return status
     if event == "accepted":
-        return ACCEPTED if status == PLANNED else status
+        # A rejected plan is retryable: the client restores the matching
+        # history and sends the same plan again, and this is that retry.
+        return ACCEPTED if status in (PLANNED, REJECTED) else status
     if event == "completed":
         # Only an accepted submission can be confirmed. A plan that was never
         # sent cannot be completed by anything.
@@ -390,7 +392,7 @@ def advance(status: str, event: str) -> str:
     if event == "rejected":
         # Before acceptance only. Once the provider has the request, a
         # refusal downstream is ambiguous, not definitive.
-        return REJECTED if status == PLANNED else OUTCOME_UNKNOWN
+        return REJECTED if status in (PLANNED, REJECTED) else OUTCOME_UNKNOWN
     if event == "unknown":
         return OUTCOME_UNKNOWN
     return status

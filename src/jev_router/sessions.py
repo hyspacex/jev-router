@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     expected_effort TEXT,
     confirmed_effort TEXT,
     effort_lineage TEXT,
+    last_response_id TEXT,
     created REAL NOT NULL,
     last_seen REAL,
     closed_at REAL
@@ -277,6 +278,9 @@ EFFORT_COLUMNS: dict[str, list[tuple[str, str]]] = {
         # Set when lineage or usage could not be read. Further transitions
         # stop until it is reconciled.
         ("effort_lineage", "TEXT"),
+        # The newest response id this session is known to have accepted. A
+        # `previous_response_id` chain is checked against it.
+        ("last_response_id", "TEXT"),
     ],
 }
 

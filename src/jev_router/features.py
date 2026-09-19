@@ -124,12 +124,45 @@ def _tool_names(body: dict[str, Any]) -> list[str]:
     return names
 
 
+def responses_messages(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """A Responses `input` list, read as chat messages.
+
+    Only for the facts the router needs: who said what, whether there is an
+    image, and how much text there is. Nothing is converted and nothing is
+    sent anywhere in this shape; the body itself is forwarded untouched.
+    """
+    value = body.get("input")
+    if isinstance(value, str):
+        return [{"role": "user", "content": value}]
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or ("message" if item.get("role") else ""))
+        if kind in ("function_call", "custom_tool_call"):
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": f"{item.get('name', '')} {item.get('arguments', '')}",
+                }
+            )
+        elif kind in ("function_call_output", "custom_tool_call_output"):
+            out.append({"role": "tool", "content": str(item.get("output", ""))})
+        elif kind == "reasoning":
+            continue  # opaque provider state; never read, never counted as text
+        elif item.get("role"):
+            out.append({"role": str(item["role"]), "content": item.get("content")})
+    return out
+
+
 def extract_features(
     body: dict[str, Any],
     headers: dict[str, str] | None = None,
 ) -> Features:
     headers = {k.lower(): v for k, v in (headers or {}).items()}
-    messages_in = body.get("messages") or []
+    messages_in = body.get("messages") or responses_messages(body)
 
     messages: list[Message] = []
     system_chunks: list[str] = []
@@ -263,7 +296,7 @@ def estimate_input(
     if isinstance(body.get("instructions"), str):
         tokens += text_tokens(body["instructions"])
 
-    for raw in body.get("messages") or []:
+    for raw in body.get("messages") or responses_messages(body):
         if not isinstance(raw, dict):
             tokens += text_tokens(str(raw))
             continue

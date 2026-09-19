@@ -368,14 +368,25 @@ class Observer:
     raises, never retries and never alters the reply.
     """
 
-    def __init__(self, limit: int = OBSERVER_BUFFER_BYTES) -> None:
+    def __init__(self, sse: bool = True, limit: int = OBSERVER_BUFFER_BYTES) -> None:
         self.observation = Observation()
+        self.sse = sse
         self.limit = limit
         self._buffer = bytearray()
         self._stopped = False
 
     def feed(self, chunk: bytes) -> None:
         if self._stopped or not chunk:
+            return
+        if not self.sse:
+            # A non-streamed reply is one JSON document. Hold it, bounded,
+            # and read it once the body is complete.
+            if len(self._buffer) + len(chunk) > self.limit:
+                self._buffer.clear()
+                self.observation.parse_failed = True
+                self._stopped = True
+                return
+            self._buffer.extend(chunk)
             return
         try:
             self._buffer.extend(chunk)
@@ -412,6 +423,15 @@ class Observer:
             self._take(payload)
 
     def finish(self) -> Observation:
+        if not self.sse:
+            body = bytes(self._buffer)
+            self._buffer.clear()
+            if body:
+                self.feed_json(body)
+            elif not self.observation.status:
+                self.observation.parse_failed = True
+            self._stopped = True
+            return self.observation
         if self._buffer and not self.observation.status:
             # A reply that ended mid-event never told us how it ended.
             self.observation.parse_failed = True

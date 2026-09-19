@@ -348,6 +348,7 @@ def test_active_mode_is_refused_with_no_qualified_profile(tmp_path):
 def test_active_mode_needs_a_qualification_report_that_exists(tmp_path):
     def mutate(raw):
         adaptive(raw, mode="active")
+        raw["models"]["big"]["effort_style"] = "param"
         raw["models"]["big"]["effort_control"] = {
             "between_turn": "native_configuration_update",
             "qualification": "verified",
@@ -364,6 +365,7 @@ def test_active_mode_loads_with_a_real_report_beside_the_config(tmp_path):
 
     def mutate(raw):
         adaptive(raw, mode="active")
+        raw["models"]["big"]["effort_style"] = "param"
         raw["models"]["big"]["effort_control"] = {
             "between_turn": "native_configuration_update",
             "qualification": "verified",
@@ -393,6 +395,20 @@ def test_a_legacy_alias_cannot_opt_into_the_experiment(tmp_path):
     with pytest.raises(ConfigError) as exc:
         load_raw(tmp_path, mutate)
     assert "needs a strict session" in str(exc.value)
+
+
+def test_a_native_profile_cannot_encode_its_effort_in_the_model_name(tmp_path):
+    def mutate(raw):
+        adaptive(raw, mode="active")
+        raw["models"]["big"]["effort_control"] = {
+            "between_turn": "native_configuration_update",
+            "qualification": "verified",
+            "qualification_ref": "router.yaml",
+        }
+
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, mutate)
+    assert "encodes the effort in the model name" in str(exc.value)
 
 
 def test_a_ladder_rung_the_model_does_not_offer_is_reported(tmp_path):

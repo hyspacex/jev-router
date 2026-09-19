@@ -1041,6 +1041,17 @@ class RouterConfig(Base):
                     f"{control.qualification!r}; run the qualification and "
                     "record the report before activating it"
                 )
+            if (
+                control.between_turn == "native_configuration_update"
+                and mcfg.effort_style != "param"
+            ):
+                problems.append(
+                    f"models.{model}.effort_style: a native configuration update "
+                    "moves the effective effort while the request-level setting "
+                    f"stays put, and {mcfg.effort_style!r} encodes the effort in "
+                    "the model name; a native profile carries its base effort as "
+                    "a request field ('param')"
+                )
             if len(self.effort_ladder(model)) < 2:
                 problems.append(
                     f"{where}: {model!r} has fewer than two rungs on its effort "

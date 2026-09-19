@@ -110,7 +110,10 @@ def adaptive_config(tmp_path, *, mode: str = "active", **overrides: Any):
                 "supports_tools": True,
                 "supports_vision": False,
                 "efforts": ["low", "medium", "high", "xhigh"],
-                "effort_style": "suffix",
+                # The effort is a request field, not part of the model name.
+                # A native update moves the effective effort while the base
+                # field stays put, so the two cannot share one encoding.
+                "effort_style": "param",
                 "protocol": "openai-responses",
                 "max_output_tokens": 8192,
                 "compatibility_revision": "responses-astra-test-v1",
@@ -504,3 +507,308 @@ def upstream(response: httpx.Response | Exception | None = None):
 
 def models_sent(seen: list[dict[str, Any]]) -> list[str]:
     return [body.get("model") for body in seen]
+
+
+# --- a fake Responses upstream -------------------------------------------
+
+RESPONSES = f"{UPSTREAM}/v1/responses"
+COMPACT = f"{UPSTREAM}/v1/responses/compact"
+
+
+def response_payload(
+    response_id: str,
+    status: str = "completed",
+    *,
+    base_effort: str = "low",
+    tool_calls: bool = False,
+    text: str = "Done.",
+) -> dict[str, Any]:
+    """One terminal response object.
+
+    `reasoning.effort` reports the request's base effort, which is what the
+    real API does. Nothing may read it as the effective effort.
+    """
+    output: list[dict[str, Any]] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": text}],
+        }
+    ]
+    if tool_calls:
+        output.append(
+            {
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "read_file",
+                "arguments": '{"path":"csv.py"}',
+            }
+        )
+    return {
+        "id": response_id,
+        "object": "response",
+        "status": status,
+        "model": "vendor/astra",
+        "reasoning": {"effort": base_effort},
+        "output": output,
+        "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 64,
+            "total_tokens": 1264,
+            "input_tokens_details": {"cached_tokens": 900},
+            "output_tokens_details": {"reasoning_tokens": 40},
+        },
+    }
+
+
+def sse_bytes(payload: dict[str, Any]) -> bytes:
+    """A realistic event stream for one response, terminal event and all."""
+    created = {
+        "type": "response.created",
+        "response": {"id": payload["id"], "status": "in_progress"},
+    }
+    delta = {"type": "response.output_text.delta", "delta": "Do"}
+    delta2 = {"type": "response.output_text.delta", "delta": "ne."}
+    terminal = {"type": f"response.{payload['status']}", "response": payload}
+    blocks = []
+    for event, body in (
+        ("response.created", created),
+        ("response.output_text.delta", delta),
+        ("response.output_text.delta", delta2),
+        (terminal["type"], terminal),
+    ):
+        blocks.append(f"event: {event}\ndata: {json.dumps(body)}\n\n")
+    blocks.append("data: [DONE]\n\n")
+    return "".join(blocks).encode()
+
+
+class Seen(list):
+    """The bodies the upstream received, plus the raw bytes it sent back."""
+
+    raw: list[bytes]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.raw = []
+
+
+def responses_upstream(
+    *,
+    status: str = "completed",
+    tool_calls: bool = False,
+    sse: bool = True,
+    response: httpx.Response | Exception | None = None,
+    base_effort: str = "low",
+    body_override: bytes | None = None,
+):
+    """Record every forwarded body and answer with a realistic reply."""
+    seen = Seen()
+    raw = seen.raw
+    counter = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        if isinstance(response, Exception):
+            raise response
+        if response is not None:
+            return response
+        counter[0] += 1
+        payload = response_payload(
+            f"resp_{counter[0]:04d}",
+            status,
+            base_effort=base_effort,
+            tool_calls=tool_calls,
+        )
+        if body_override is not None:
+            raw.append(body_override)
+            return httpx.Response(
+                200,
+                content=body_override,
+                headers={"content-type": "text/event-stream"},
+            )
+        if not sse:
+            content = json.dumps(payload).encode()
+            raw.append(content)
+            return httpx.Response(
+                200, content=content, headers={"content-type": "application/json"}
+            )
+        content = sse_bytes(payload)
+        raw.append(content)
+        return httpx.Response(
+            200, content=content, headers={"content-type": "text/event-stream"}
+        )
+
+    respx.post(RESPONSES).mock(side_effect=handler)
+    return seen
+
+
+def user_item(text: str) -> dict[str, Any]:
+    return {"type": "message", "role": "user", "content": text}
+
+
+def read_sse(body: bytes) -> list[dict[str, Any]]:
+    """Every `data:` object in an event stream, in order."""
+    out: list[dict[str, Any]] = []
+    for block in body.decode().split("\n\n"):
+        for line in block.split("\n"):
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload in ("", "[DONE]"):
+                continue
+            out.append(json.loads(payload))
+    return out
+
+
+class ResponsesClient(Client):
+    """A scripted client that keeps its own transcript, as a harness does.
+
+    It supports both histories the experiment has to work with: a full replay
+    that resends every item, and a `previous_response_id` chain that sends
+    only what is new. The router never writes to this transcript; the client
+    records the item the plan hands it, in the place the plan says.
+    """
+
+    def __init__(
+        self,
+        service: Service,
+        *,
+        history_mode: str = "full_history",
+        alias: str = "auto-adaptive",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(service, alias=alias, **kwargs)
+        self.items: list[dict[str, Any]] = []
+        self.history_mode = history_mode
+        self.sent_upto = 0
+        self.parent = ""
+        self.turns = 0
+        self.last_response: dict[str, Any] = {}
+
+    # --- setting up -----------------------------------------------------
+
+    async def start(self, **overrides: Any) -> httpx.Response:
+        contract = {
+            "protocols": ["openai-responses"],
+            "turn_boundary_reporting": True,
+        }
+        contract.update(overrides.pop("client_contract", {}))
+        return await self.resolve(client_contract=contract, **overrides)
+
+    @property
+    def base_effort(self) -> str:
+        return self.execution.get("base_effort") or ""
+
+    @property
+    def effective_effort(self) -> str:
+        return self.execution.get("effective_effort") or self.base_effort
+
+    # --- one turn -------------------------------------------------------
+
+    def settled_previous(self) -> dict[str, Any]:
+        return {
+            "id": f"turn-{self.turns:04d}" if self.turns else "",
+            "settled": True,
+            "pending_tool_calls": 0,
+            "active_requests": 0,
+        }
+
+    async def plan(self, text: str, **overrides: Any) -> dict[str, Any]:
+        self.turns += 1
+        turn_id = overrides.pop("turn_id", f"turn-{self.turns:04d}")
+        overrides.setdefault("previous", self.settled_previous())
+        overrides.setdefault("context", {"history_mode": self.history_mode})
+        response = await self.turn_plan(turn_id, request=text, **overrides)
+        plan = response.json()
+        plan["_status"] = response.status_code
+        plan.setdefault("turn_id", turn_id)
+        return plan
+
+    def record(self, plan: dict[str, Any], text: str) -> None:
+        """Write the planned item down, then the new user message after it."""
+        update = plan.get("update") or {}
+        if plan.get("action") == "change_effort" and "item" in update:
+            self.items.append(update["item"])
+        self.items.append(user_item(text))
+
+    def request_body(self, **extra: Any) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": self.wire_model(),
+            "reasoning": {"effort": self.base_effort},
+        }
+        if self.history_mode == "previous_response_id" and self.parent:
+            body["previous_response_id"] = self.parent
+            body["input"] = list(self.items[self.sent_upto :])
+        else:
+            body["input"] = list(self.items)
+        body.update(extra)
+        return body
+
+    async def send(
+        self,
+        plan: dict[str, Any] | None = None,
+        *,
+        turn_id: str = "",
+        request_id: str | None = None,
+        headers: dict[str, str] | None = None,
+        **extra: Any,
+    ) -> httpx.Response:
+        body = self.request_body(**extra)
+        sent = self.execution_headers(request_id)
+        turn = turn_id or (plan or {}).get("turn_id") or ""
+        if turn:
+            sent["x-router-turn"] = turn
+        if plan and plan.get("plan_id"):
+            sent["x-router-turn-plan"] = plan["plan_id"]
+        sent.update(headers or {})
+        response = await self.service.client.post(
+            "/v1/responses", json=body, headers=sent
+        )
+        if response.status_code == 200:
+            self._absorb(response)
+        return response
+
+    def _absorb(self, response: httpx.Response) -> None:
+        """Take the reply into the transcript, as a real client would."""
+        self.sent_upto = len(self.items)
+        try:
+            events = (
+                read_sse(response.content)
+                if "text/event-stream" in response.headers.get("content-type", "")
+                else [json.loads(response.content or b"{}")]
+            )
+        except ValueError:
+            # A reply this client cannot read is a reply it learns nothing
+            # from. The router is in the same position, which is the point.
+            return
+        for event in events:
+            payload = event.get("response") if isinstance(event, dict) else None
+            payload = payload if isinstance(payload, dict) else event
+            if not isinstance(payload, dict) or payload.get("object") != "response":
+                if not (isinstance(payload, dict) and payload.get("id", "").startswith("resp_")):
+                    continue
+            if payload.get("status") in ("completed", "incomplete"):
+                self.last_response = payload
+                self.parent = str(payload.get("id") or self.parent)
+                for item in payload.get("output") or []:
+                    self.items.append(item)
+                self.sent_upto = len(self.items)
+
+    async def turn(self, text: str, **overrides: Any) -> tuple[dict, httpx.Response]:
+        """Plan a turn, record what it says, and send it."""
+        plan = await self.plan(text, **overrides)
+        if plan["_status"] != 200:
+            return plan, None  # type: ignore[return-value]
+        self.record(plan, text)
+        return plan, await self.send(plan)
+
+    async def continuation(self, output: str = "def parse(line): ...") -> httpx.Response:
+        """Carry the same turn on after a tool result. No new plan."""
+        self.items.append(
+            {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": output,
+            }
+        )
+        return await self.send(turn_id=f"turn-{self.turns:04d}")

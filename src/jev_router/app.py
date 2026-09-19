@@ -233,6 +233,7 @@ class Router:
         *,
         started: float | None = None,
         on_finish: Callable[[str], None] | None = None,
+        observer: P.Observer | None = None,
     ) -> AsyncIterator[bytes]:
         capture = (
             capture_row
@@ -257,6 +258,10 @@ class Router:
                         buffer = (
                             None  # never keep a truncated body or an oversized chunk
                         )
+                if observer is not None:
+                    # Read-only. Whatever it makes of the chunk, the chunk
+                    # below is the one the upstream sent, byte for byte.
+                    observer.feed(chunk)
                 yield chunk
             state = "completed"
         except (asyncio.CancelledError, GeneratorExit):
@@ -277,6 +282,8 @@ class Router:
                         bytes(buffer),
                         upstream_response.headers.get("content-encoding", ""),
                     )
+            if observer is not None:
+                observer.finish()
             if on_finish is not None:
                 # Transport completion is its own fact, separate from the 2xx
                 # headers that accepted the request.
@@ -407,6 +414,7 @@ class Router:
         *,
         started: float | None = None,
         on_finish: Callable[[str], None] | None = None,
+        observer: P.Observer | None = None,
     ) -> Response:
         if decision_row:
             self.store.update_decision(
@@ -430,7 +438,11 @@ class Router:
         )
         response = StreamingResponse(
             self._stream(
-                upstream_response, decision_row, started=started, on_finish=on_finish
+                upstream_response,
+                decision_row,
+                started=started,
+                on_finish=on_finish,
+                observer=observer,
             ),
             status_code=upstream_response.status_code,
             background=BackgroundTask(upstream_response.aclose),
@@ -987,7 +999,7 @@ class Router:
                 detail={"binding_revision": row["binding_revision"]},
             )
 
-        mode = row.get("adaptation_mode") or "off"
+        mode = self.session_adaptation(row)
         current = row["effective_effort"] or row["base_effort"]
         evidence_fingerprint = req.evidence_fingerprint()
 
@@ -1285,7 +1297,29 @@ class Router:
 
     # --- managed execution -----------------------------------------------
 
-    async def managed_execution(self, request: Request, raw: bytes) -> Response:
+    def session_adaptation(self, row: dict[str, Any]) -> str:
+        """The mode this session runs under now.
+
+        The session's own mode was agreed at resolve and is never raised
+        afterwards. Config can only lower it: switching the experiment off, or
+        taking the opt-in off the alias, stops new decisions at once. It does
+        not erase the ledger and it does not reset the effective effort, which
+        is what makes a rollback safe.
+        """
+        stored = row.get("adaptation_mode") or "off"
+        if stored == "off":
+            return "off"
+        alias_cfg = self.config.aliases.get(row["alias"] or "")
+        if alias_cfg is None:
+            return "off"
+        live = self.config.adaptation_mode(alias_cfg, turn_boundaries=True)
+        if live == "off":
+            return "off"
+        return "shadow" if live == "shadow" else stored
+
+    async def managed_execution(
+        self, request: Request, raw: bytes, protocol: str = P.CHAT
+    ) -> Response:
         """Execute one request against a binding. One entry, no substitution."""
         owner = self.session_owner(request)
         session_id = request.headers.get("x-router-session", "")
@@ -1329,16 +1363,17 @@ class Router:
                 "the acknowledged binding is not the one this session holds",
                 detail={"binding_revision": row["binding_revision"]},
             )
-        if row["protocol"] != "openai-chat":
+        if row["protocol"] != protocol:
             raise SessionError(
                 S.UNSUPPORTED_PROFILE,
-                f"strict forwarding is qualified for openai-chat only, and this "
-                f"binding speaks {row['protocol']}",
+                f"this endpoint executes {protocol} bindings and this binding "
+                f"speaks {row['protocol']}; the router does not convert formats",
             )
         mcfg = self.revalidate_profile(row)
         _check_model_name(body["model"], row)
         features = extract_features(body, dict(request.headers))
         check = _execution_budget(row, mcfg, features, body)
+        pending, anchor = self.check_effort_contract(request, body, row, mcfg)
 
         if not self.sessions.claim(session_id):
             raise SessionError(
@@ -1375,10 +1410,235 @@ class Router:
             self.sessions.release(session_id)
 
         try:
-            return await self.forward_session(request, body, row, row_id, finish)
+            return await self.forward_session(
+                request, body, row, row_id, finish, pending=pending, anchor=anchor
+            )
         except BaseException:
             finish("unknown")
+            if pending is not None:
+                self.advance_plan(pending, row, "unknown")
             raise
+
+    # --- the effort contract on an execution request ----------------------
+
+    def check_effort_contract(
+        self,
+        request: Request,
+        body: dict[str, Any],
+        row: dict[str, Any],
+        mcfg: Any,
+    ) -> tuple[dict[str, Any] | None, Any]:
+        """Validate the effort history before a byte is forwarded.
+
+        Returns the plan this request carries out, if any, and where its
+        update sits. The router never inserts the item: the client owns the
+        transcript, the router owns the plan, and this is where the two are
+        checked against each other.
+
+        It runs for any session that was resolved under the experiment, even
+        after the experiment has been switched off, because a full replay that
+        drops an update already in the provider's history would corrupt it.
+        """
+        if (row.get("adaptation_mode") or "off") == "off":
+            return None, None
+        if row["protocol"] != P.RESPONSES:
+            return None, None
+
+        session_id = row["session_id"]
+        strategy = mcfg.effort_control.between_turn
+        turn_id = request.headers.get("x-router-turn", "")
+        plan_id = request.headers.get("x-router-turn-plan", "")
+        pending = None
+        expected: str | None = None
+
+        if plan_id:
+            pending = self.sessions.plan_by_id(plan_id)
+            if pending is None or pending["session_id"] != session_id:
+                raise SessionError(
+                    S.SESSION_CONFLICT,
+                    f"X-Router-Turn-Plan {plan_id!r} is not a plan this session holds",
+                )
+            if turn_id and pending["turn_id"] != turn_id:
+                raise SessionError(
+                    S.SESSION_CONFLICT,
+                    "X-Router-Turn and X-Router-Turn-Plan name different turns",
+                )
+            retryable = (E.PLANNED, E.REJECTED)
+            if pending["status"] in retryable:
+                # Planned, or definitively refused before acceptance and now
+                # being sent again with the history restored. A `keep` plan is
+                # still this turn's plan; it simply asks for no item.
+                if pending["action"] == E.CHANGE:
+                    expected = pending["to_effort"]
+            else:
+                # The plan for this turn was already carried out. This is a
+                # continuation of the same turn: it keeps the effective
+                # effort and adds no fresh item.
+                pending = None
+
+        problem = P.check_compaction(body)
+        if problem:
+            raise SessionError(S.UNSUPPORTED_PROFILE, problem)
+
+        if strategy == "request_parameter":
+            wanted = expected or row["effective_effort"] or row["base_effort"]
+            reasoning = body.get("reasoning")
+            sent = reasoning.get("effort") if isinstance(reasoning, dict) else None
+            if sent != wanted:
+                raise SessionError(
+                    S.EFFORT_HISTORY_MISMATCH,
+                    f"this strategy sets reasoning.effort to the planned effective "
+                    f"effort {wanted!r}, and the request carries {sent!r}",
+                )
+            return pending, None
+
+        problem = P.check_base_effort(body, row["base_effort"])
+        if problem:
+            raise SessionError(S.EFFORT_HISTORY_MISMATCH, problem)
+
+        items = P.input_items(body)
+        ledger = self.sessions.applied_updates(session_id)
+        if body.get("previous_response_id"):
+            lineage = {row.get("last_response_id") or ""} | {
+                plan.get("response_id") or "" for plan in self.sessions.plans(session_id)
+            }
+            check = P.validate_chain(
+                items,
+                ledger,
+                previous_response_id=str(body["previous_response_id"]),
+                expected=expected,
+                lineage={item for item in lineage if item},
+            )
+        else:
+            check = P.validate_full_history(items, ledger, expected=expected)
+        if not check.ok:
+            raise SessionError(S.EFFORT_HISTORY_MISMATCH, check.reason)
+        return pending, check
+
+    def advance_plan(
+        self,
+        plan: dict[str, Any],
+        row: dict[str, Any],
+        event: str,
+        observation: Any = None,
+    ) -> None:
+        """Move one ledger row, and the session's efforts, on one fact.
+
+        Acceptance is transport acceptance. Only a valid successful provider
+        completion confirms an effort transition, and only a confirmed
+        transition moves the session's effective and confirmed effort.
+        """
+        try:
+            fresh = self.sessions.plan_by_id(plan["plan_id"]) or plan
+            status = E.advance(fresh["status"], event)
+            fields: dict[str, Any] = {"status": status}
+            if observation is not None:
+                if observation.response_id:
+                    fields["response_id"] = observation.response_id
+                if observation.parse_failed:
+                    # Lineage is unknown, so the transition cannot be called
+                    # confirmed and nothing further may move until somebody
+                    # reconciles it.
+                    status = E.advance(fresh["status"], "unknown")
+                    fields["status"] = status
+            if status == E.CONFIRMED and fresh["action"] == E.CHANGE:
+                fields["confirmed_effort"] = fresh["to_effort"]
+            self.sessions.update_plan(plan["plan_id"], **fields)
+            if status != E.CONFIRMED or fresh["action"] != E.CHANGE:
+                return
+            current = self.sessions.get(row["session_id"]) or row
+            self.sessions.update(
+                row["session_id"],
+                current["version"],
+                effective_effort=fresh["to_effort"],
+                confirmed_effort=fresh["to_effort"],
+                expected_effort=fresh["to_effort"],
+            )
+            log.info(
+                "effort confirmed session=%s plan=%s %s -> %s",
+                row["session_id"],
+                plan["plan_id"],
+                fresh["from_effort"],
+                fresh["to_effort"],
+            )
+        except Exception:  # noqa: BLE001 - ledger bookkeeping may never fail a reply
+            log.exception("could not advance the effort ledger")
+
+    def reconcile(
+        self, plan: dict[str, Any], row: dict[str, Any], outcome: str
+    ) -> dict[str, Any]:
+        """Close an ambiguous update by hand, in one direction or the other.
+
+        `applied` confirms the transition that was already expected.
+        `not_applied` puts the ledger back to the previous confirmed state and
+        leaves the same plan retryable. Either way a competing transition is
+        unblocked afterwards, and the lineage flag is cleared.
+        """
+        settled = plan["status"] in (E.CONFIRMED, E.REJECTED)
+        if outcome == "applied":
+            status, effort = E.CONFIRMED, plan["to_effort"]
+        else:
+            status, effort = E.REJECTED, None
+        if not settled:
+            self.sessions.update_plan(
+                plan["plan_id"],
+                status=status,
+                confirmed_effort=effort,
+            )
+        current = self.sessions.get(row["session_id"]) or row
+        if not settled and plan["action"] == E.CHANGE:
+            keep = (
+                effort
+                if outcome == "applied"
+                else (current.get("confirmed_effort") or current["base_effort"])
+            )
+            self.sessions.update(
+                row["session_id"],
+                current["version"],
+                effective_effort=keep,
+                confirmed_effort=keep,
+                expected_effort=keep,
+            )
+        after = self.sessions.get(row["session_id"]) or current
+        if after.get("effort_lineage") == "unknown":
+            self.sessions.update(
+                row["session_id"], after["version"], effort_lineage="known"
+            )
+            after = self.sessions.get(row["session_id"]) or after
+        log.info(
+            "reconciled plan=%s outcome=%s effective=%s",
+            plan["plan_id"],
+            outcome,
+            after.get("effective_effort"),
+        )
+        return {
+            "schema_version": "1",
+            "session_id": row["session_id"],
+            "plan_id": plan["plan_id"],
+            "turn_id": plan["turn_id"],
+            "outcome": outcome,
+            "was": plan["status"],
+            "status": (self.sessions.plan_by_id(plan["plan_id"]) or plan)["status"],
+            "already_settled": settled,
+            "base_effort": after.get("base_effort"),
+            "effective_effort": after.get("effective_effort"),
+            "confirmed_effort": after.get("confirmed_effort"),
+            "effort_lineage": after.get("effort_lineage") or "known",
+        }
+
+    def record_observation(self, row: dict[str, Any], observation: Any) -> None:
+        """Keep the lineage a chain request will be checked against."""
+        try:
+            current = self.sessions.get(row["session_id"]) or row
+            fields: dict[str, Any] = {}
+            if observation.response_id:
+                fields["last_response_id"] = observation.response_id
+            if observation.parse_failed:
+                fields["effort_lineage"] = "unknown"
+            if fields:
+                self.sessions.update(row["session_id"], current["version"], **fields)
+        except Exception:  # noqa: BLE001 - telemetry may never fail a reply
+            log.exception("could not record the response lineage")
 
     def revalidate_profile(self, row: dict[str, Any]) -> Any:
         """The same profile, still configured the way it was negotiated.
@@ -1480,6 +1740,9 @@ class Router:
         row: dict[str, Any],
         decision_row: int,
         finish: Callable[..., None],
+        *,
+        pending: dict[str, Any] | None = None,
+        anchor: Any = None,
     ) -> Response:
         """The one-entry execution plan.
 
@@ -1492,7 +1755,14 @@ class Router:
             effort=row["base_effort"],
             provider=row["provider"] or self.config.provider_of(row["model_key"]),
         )
-        content = self._alias_body(body, entry)
+        if row["protocol"] == P.RESPONSES:
+            # The Responses body is forwarded as it arrived apart from the
+            # model field. Its effort lives in the request's own `reasoning`
+            # block and in the update items, both of which are the client's to
+            # write and this hop's to check, never to edit.
+            content = _responses_body(body, self.config, entry)
+        else:
+            content = self._alias_body(body, entry)
         headers_out = [
             *self._forward_headers(request),
             (b"content-length", str(len(content)).encode()),
@@ -1521,6 +1791,10 @@ class Router:
                 accepted=False,
                 stream_state="rejected" if settled else "unknown",
             )
+            if pending is not None:
+                self.advance_plan(
+                    pending, row, "rejected" if settled else "unknown"
+                )
             finish("rejected" if settled else "unknown", 502)
             return JSONResponse(
                 {
@@ -1550,6 +1824,10 @@ class Router:
         if not accepted:
             # A rejected first inference leaves the prepared contract exactly
             # as it was disclosed. Nothing is re-chosen.
+            if pending is not None:
+                # Definitively refused before acceptance. The previous
+                # confirmed state stands and the same plan can be retried.
+                self.advance_plan(pending, row, "rejected")
             finish("rejected", status)
         else:
             if row["state"] == "prepared":
@@ -1560,10 +1838,43 @@ class Router:
                 "accepted",
                 upstream_status=status,
             )
+            if pending is not None:
+                # 2xx headers are transport acceptance and nothing more. The
+                # anchor is recorded now so a later full replay can be checked
+                # against the history this update was accepted against.
+                self.advance_plan(pending, row, "accepted")
+                self.sessions.update_plan(
+                    pending["plan_id"],
+                    anchor_position=getattr(anchor, "position", None),
+                    anchor_prefix_hash=getattr(anchor, "prefix", "") or None,
+                    parent_response_id=body.get("previous_response_id"),
+                )
+
+        observer = (
+            P.Observer(
+                sse="text/event-stream"
+                in upstream_response.headers.get("content-type", "")
+            )
+            if accepted and row["protocol"] == P.RESPONSES
+            else None
+        )
 
         def on_finish(state: str) -> None:
             if not accepted:
                 return
+            if observer is not None:
+                seen = observer.observation
+                self.record_observation(row, seen)
+                if pending is not None:
+                    # Only a terminal `response.completed` confirms it. A
+                    # clean socket EOF is not a provider completion, and a
+                    # completion carrying tool calls is still a completion.
+                    self.advance_plan(
+                        pending,
+                        row,
+                        "completed" if seen.completed and state == "completed" else "unknown",
+                        observation=seen,
+                    )
             finish(
                 {"completed": "completed", "failed": "stream_failed"}.get(
                     state, "unknown"
@@ -1579,6 +1890,11 @@ class Router:
             "X-Router-Session-State": "active" if accepted else row["state"],
             "X-Router-Decision": row["decision_id"] or "",
         }
+        effective = row["effective_effort"] or row["base_effort"]
+        if (row.get("adaptation_mode") or "off") != "off":
+            headers["X-Router-Effective-Effort"] = (
+                pending["to_effort"] if pending else (effective or "")
+            )
         return self._respond(
             upstream_response,
             headers,
@@ -1586,6 +1902,7 @@ class Router:
             decision_row,
             started=started,
             on_finish=on_finish,
+            observer=observer,
         )
 
 
@@ -1854,6 +2171,22 @@ def _execution_budget(
     return check
 
 
+def _responses_body(
+    body: dict[str, Any], config: RouterConfig, entry: PlanEntry
+) -> bytes:
+    """The Responses body, with only the model field normalised.
+
+    `apply_effort` would add the base effort to the body or the model name.
+    Here the request already carries its own `reasoning` block, written by the
+    client and checked before this point, so the effort is left exactly as it
+    arrived. Nothing else is read, moved or removed.
+    """
+    upstream_id, _extra = apply_effort(config, entry.model, entry.effort)
+    payload = dict(body)
+    payload["model"] = upstream_id
+    return json.dumps(payload).encode()
+
+
 def _check_model_name(sent: str, row: dict[str, Any]) -> None:
     """The concrete model must be the one this binding resolved to."""
     names = {row["wire_model"], row["model_key"], row["upstream_id"]}
@@ -2001,6 +2334,48 @@ def _pressure_header(decision: Decision) -> str:
         for name, value in sorted(decision.pressures.items())
         if value
     )
+
+
+async def responses(request: Request) -> Response:
+    """The Responses endpoint.
+
+    A managed request executes against a binding whose profile really speaks
+    this protocol; anything else is refused rather than converted. An
+    unmanaged request takes the passthrough path it always took.
+    """
+    router: Router = request.app.state.router
+    raw = await request.body()
+    if _managed(request):
+        return await router.managed_execution(request, raw, protocol=P.RESPONSES)
+    return await _forward_unmanaged(router, request, raw)
+
+
+async def compact_responses(request: Request) -> Response:
+    """Standalone compaction. Refused for a session running the experiment.
+
+    The ledger has to be able to find every update again at the position it
+    was accepted at. A compaction the router did not perform and cannot see
+    makes that impossible, so this is refused rather than allowed to corrupt
+    the history (spec 10.3).
+    """
+    router: Router = request.app.state.router
+    raw = await request.body()
+    if _managed(request):
+        owner = router.session_owner(request)
+        session_id = request.headers.get("x-router-session", "")
+        row = router.live_session(session_id, owner) if session_id else None
+        if row is not None and (row.get("adaptation_mode") or "off") != "off":
+            raise SessionError(
+                S.UNSUPPORTED_PROFILE,
+                "standalone compaction is not supported while the between-turn "
+                "effort experiment is on for this session; its history has to "
+                "stay findable by the update ledger",
+            )
+        raise SessionError(
+            S.UNSUPPORTED_PROFILE,
+            "a managed session executes on /v1/chat/completions or /v1/responses",
+        )
+    return await _forward_unmanaged(router, request, raw)
 
 
 async def list_models(request: Request) -> Response:
@@ -2193,6 +2568,30 @@ async def turn_plan(request: Request) -> Response:
     return JSONResponse(await router.turn_plan(request, payload))
 
 
+async def reconcile_turn_plan(request: Request) -> Response:
+    """Say what really happened to an update whose outcome was unknown.
+
+    The router cannot find this out for itself: a disconnected response may
+    have run. Somebody who can check the provider says `applied` or
+    `not_applied`, and only then does the ledger move again.
+    """
+    router: Router = request.app.state.router
+    owner = router.session_owner(request)
+    try:
+        payload = json.loads(await request.body())
+    except ValueError:
+        raise SessionError(S.INVALID_ROUTER_INPUT, "body must be JSON") from None
+    item = S.parse_reconcile(payload)
+    plan_id = request.path_params["plan_id"]
+    plan = router.sessions.plan_by_id(plan_id)
+    if plan is None:
+        raise SessionError(S.SESSION_UNKNOWN, f"unknown plan id {plan_id!r}")
+    row = router.sessions.get(plan["session_id"], owner)
+    if row is None:
+        raise SessionError(S.SESSION_UNKNOWN, "this plan belongs to another owner")
+    return JSONResponse(router.reconcile(plan, row, item.outcome))
+
+
 async def close_session(request: Request) -> Response:
     """End a session deliberately. The row stays as a tombstone."""
     router: Router = request.app.state.router
@@ -2259,7 +2658,8 @@ def session_report(router: Router, row: dict[str, Any]) -> dict[str, Any]:
         # are apart.
         "expected_effort": row.get("expected_effort") or row["base_effort"],
         "confirmed_effort": row.get("confirmed_effort") or row["base_effort"],
-        "adaptation": row.get("adaptation_mode") or "off",
+        "adaptation": router.session_adaptation(row),
+        "adaptation_agreed": row.get("adaptation_mode") or "off",
         "effort_lineage": row.get("effort_lineage") or "known",
         "turn_plans": router.sessions.plans(row["session_id"], limit=10),
         "decision_id": row["decision_id"],
@@ -2297,25 +2697,31 @@ async def passthrough(request: Request) -> Response:
         except ValueError:
             small = False
         if small:
-            raw = await request.body()
-            alias = _alias_in_body(router.config, raw)
-            if alias:
-                return JSONResponse(
-                    {
-                        "error": {
-                            "message": (
-                                f"model {alias!r} is a jev-router alias and only works on "
-                                f"/v1/chat/completions; name a real model on this endpoint"
-                            ),
-                            "type": "invalid_request_error",
-                            "param": "model",
-                        }
-                    },
-                    status_code=400,
-                )
-            return await router.forward(request, raw)
+            return await _forward_unmanaged(router, request, await request.body())
         return await router.forward(request, request.stream())
     return await router.forward(request, None)
+
+
+async def _forward_unmanaged(
+    router: Router, request: Request, raw: bytes
+) -> Response:
+    """Forward a body that has already been read, alias check and all."""
+    alias = _alias_in_body(router.config, raw)
+    if alias:
+        return JSONResponse(
+            {
+                "error": {
+                    "message": (
+                        f"model {alias!r} is a jev-router alias and only works on "
+                        f"/v1/chat/completions; name a real model on this endpoint"
+                    ),
+                    "type": "invalid_request_error",
+                    "param": "model",
+                }
+            },
+            status_code=400,
+        )
+    return await router.forward(request, raw)
 
 
 def _alias_in_body(config: RouterConfig, raw: bytes) -> str | None:
@@ -2346,6 +2752,8 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
     methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     routes = [
         Route("/v1/chat/completions", chat_completions, methods=["POST"]),
+        Route("/v1/responses", responses, methods=["POST"]),
+        Route("/v1/responses/compact", compact_responses, methods=["POST"]),
         Route("/v1/models", list_models, methods=["GET"]),
         Route("/router/health", health, methods=["GET"]),
         Route("/router/providers", providers, methods=["GET"]),
@@ -2355,6 +2763,11 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/router/feedback", list_feedback, methods=["GET"]),
         Route("/router/resolve", resolve_session, methods=["POST"]),
         Route("/router/turn-plan", turn_plan, methods=["POST"]),
+        Route(
+            "/router/turn-plan/{plan_id}/reconcile",
+            reconcile_turn_plan,
+            methods=["POST"],
+        ),
         Route("/router/sessions", list_sessions, methods=["GET"]),
         Route("/router/sessions/{session_id}", show_session, methods=["GET"]),
         Route("/router/sessions/{session_id}/close", close_session, methods=["POST"]),
