@@ -137,6 +137,7 @@ once.
 | Path | Behaviour |
 | --- | --- |
 | `POST /v1/chat/completions` | aliases are routed, everything else is forwarded unchanged |
+| `POST /v1/responses` | a managed session executes against a Responses binding; everything else is forwarded unchanged |
 | `GET /v1/models` | the upstream list plus one entry per alias |
 | `GET /router/health` | mode, upstream, aliases, models, decider, whether a Jev key is set, uptime |
 | `GET /router/providers` | circuit breaker state and the pressure per provider |
@@ -144,6 +145,12 @@ once.
 | `GET /router/decisions?limit=N` | recent decisions as JSON |
 | `POST /router/feedback` | record what you thought of a decision |
 | `GET /router/feedback?limit=N` | recent feedback, joined to its decision |
+| `POST /router/resolve` | resolve or resume a strict session binding |
+| `GET /router/sessions` | strict session bindings, newest first |
+| `GET /router/sessions/{id}` | one binding: identity, limits, efforts and state |
+| `POST /router/sessions/{id}/close` | end a session deliberately |
+| `POST /router/turn-plan` | an effort-only decision for a new user turn (experimental) |
+| `POST /router/turn-plan/{id}/reconcile` | say what happened to an ambiguous effort update |
 | anything else | streamed through to the upstream, method and path unchanged |
 
 An alias name on any other POST endpoint returns 400 with a message saying so.

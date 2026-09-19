@@ -17,8 +17,11 @@ resolves one execution profile once and keeps it:
   it, when you prune it, or when a prepared contract is never used.
 - A request that no longer fits is refused with a machine-readable reason.
   The router does not compact, widen the window or pick a bigger model.
-- Effort is fixed. The between-turn effort experiment is not part of this
-  release; `effort_mode` is always `fixed` and `adaptation` is always `off`.
+- Effort is fixed by default. Changing it between turns is a separate,
+  opt-in experiment that never changes the model; see
+  [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md). With it off, `effort_mode` is
+  `fixed` and `adaptation` is `off`, which is what every session gets unless
+  three separate opt-ins agree.
 
 Legacy behaviour is untouched. An alias with no `session_mode` is legacy, and
 a request with no `X-Router-Session` header takes exactly the path it took
@@ -284,8 +287,8 @@ Every error is a structured body with a stable machine code:
 | `UNSUPPORTED_PROFILE` | 422 | Unsupported protocol or endpoint, tools or images the profile cannot take, or the session service switched off. |
 | `REQUEST_ALREADY_COMPLETED` | 409 | A completed request id was sent again. |
 | `EXECUTION_OUTCOME_UNKNOWN` | 409 | The previous attempt at that id cannot be called settled. |
-| `TURN_NOT_SETTLED` | 409 | Reserved for the effort experiment. |
-| `EFFORT_HISTORY_MISMATCH` | 409 | Reserved for the effort experiment. |
+| `TURN_NOT_SETTLED` | 409 | An effort plan was asked for while the previous turn was still running. |
+| `EFFORT_HISTORY_MISMATCH` | 409 | A required effort update was dropped, moved, duplicated, or the base setting was changed. |
 
 None of these is ever converted into a cheaper request. An authorization, a
 context or a protocol error is reported and stops there.
@@ -419,14 +422,22 @@ behind the choice, the quota freshness at admission and now, and the
 adaptation mode. It distinguishes "model unchanged" from "model changed", and
 none of it is ever injected into a prompt.
 
+## Beside this contract
+
+- **Between-turn effort changes.** `POST /router/turn-plan`, the `turn_plans`
+  ledger and the `effort_control` block are an opt-in experiment that changes
+  the effort of the bound model and nothing else. It is off in the shipped
+  configuration and no deployment is qualified for it. See
+  [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md).
+- **Strict forwarding over the Responses protocol.** A managed request on
+  `/v1/responses` executes against a binding whose profile really speaks that
+  protocol. A mismatch either way is `UNSUPPORTED_PROFILE`; the router never
+  converts one format into the other. Non-session passthrough is unchanged.
+
 ## Not in this release
 
-- Between-turn effort changes. `POST /router/turn-plan`, the `turn_plans`
-  table and everything in the `effort_control` block beyond `fixed` are
-  declarations for a later experiment, not behaviour.
-- Strict forwarding over the Responses protocol. A binding whose profile
-  declares `openai-responses` answers `UNSUPPORTED_PROFILE` rather than
-  converting formats. Non-session Responses passthrough is unchanged.
+- Format conversion of any kind, a compactor, a cooldown daemon, a learner, or
+  a WebSocket transport.
 - Multi-process deployment. One service process per database: a second strict
   service opened on the same file in one process is refused, because their
   in-flight claims would not see each other.

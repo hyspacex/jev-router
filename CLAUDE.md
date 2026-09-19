@@ -19,6 +19,7 @@ uv run jev-router sessions list               # strict session bindings
 uv run jev-router sessions show <id>
 uv run jev-router decisions -n 20             # active vs shadow answers, lane, quota
 uv run jev-router decisions replay <id>       # re-run the selection from the row
+uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
 ```
 
 Eval scripts all spend real API quota. `run_eval.py` and `tune.py` need
@@ -52,6 +53,10 @@ uv run python evals/quota_sim.py --demo        # simulated, never an observed de
 uv run python evals/run_sessions.py --list
 uv run python evals/run_sessions.py --dry-run
 uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
+uv run python evals/run_sessions.py --arms fixed_effort_vs_adaptive \
+    --allow-adaptive-effort                    # needs a qualified profile
+uv run python evals/effort_replay.py           # offline, synthetic fixtures
+uv run python evals/qualify_effort.py --profile <key> --plan
 ```
 
 ## Architecture
@@ -61,7 +66,8 @@ uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
 - `config.py` — pydantic models for `router.yaml`, cross-field validation, the
   `JEV_ROUTER_UPSTREAM` override, the config hash stored with every decision.
 - `features.py` — turns a chat-completions body into counts and flags. Pure.
-- `state.py` — state builders, the registry, the paste/continuation split.
+- `state.py` — state builders, the registry, the paste/continuation split, and
+  `turn_state_v1`, which bounds a client-supplied turn packet.
 - `policy.py` — confidence gate, rule matching, route resolution, quota
   threshold shifts, route reordering, caps, floors, capability filters, effort
   clamping. Also `select`, the one admission function of spec 8.1, the quality
@@ -86,7 +92,14 @@ uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
   execution claim, the startup guard, the binding digest, the resolve request
   schema and the 13 error codes. Legacy pins are never read or written here.
   Also the decision-log columns the semantic packet and the quality guard add,
-  in a map of their own.
+  in a map of their own, and the `turn_plans` ledger with the session columns
+  the effort experiment adds, in another.
+- `effort.py` — the between-turn turn-plan policy and the ledger's status
+  transitions. Pure: a ladder in, a rung out. It never chooses a model.
+- `protocols.py` — the experimental Responses contract: the
+  `configuration_update` item, full-replay and chain validation against the
+  ledger, the compaction restriction, and the bounded read-only SSE observer.
+  Not a converter.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
@@ -104,7 +117,14 @@ Strict sessions (`session_mode: strict`, `docs/R2_SPEC.md`, `docs/SESSION_ROUTIN
 take a second path: `app.resolve` → `features.extract_features` →
 `deciders.jev` → `policy.select` → `policy.context_budget` → a `prepared`
 row in `sessions.py`. Execution goes through `app.managed_execution`, which is
-recognised before the "a concrete model means passthrough" branch.
+recognised before the "a concrete model means passthrough" branch, on
+`/v1/chat/completions` or `/v1/responses` according to the bound protocol.
+
+The between-turn effort experiment (`docs/ADAPTIVE_EFFORT.md`) adds a third:
+`app.turn_plan` → `state.turn_state_v1` → `deciders.jev.classify` →
+`effort.plan_turn` → a `turn_plans` row. The client records the item the plan
+gives it, `protocols.py` checks the history against the ledger before
+forwarding, and `protocols.Observer` taps the reply to confirm it.
 
 - `deciders/jev.py` also holds the optional AutoMix-style draft step. It is off
   unless an alias sets `draft.enabled`, it fails open, and a pinned turn never
@@ -133,6 +153,10 @@ recognised before the "a concrete model means passthrough" branch.
 - `session_tasks/` + `run_sessions.py` + `session_client.py` — eight pilot
   coding sessions across the six families of spec 13.5, in disposable
   directories with a scrubbed environment and hard caps.
+- `effort_replay.py` + `effort_fixtures.yaml` — the between-turn policies
+  compared offline over synthetic turn sequences, resampled by session.
+- `qualify_effort.py` — the live qualification of one exact deployment. It
+  plans by default; its allowlist is empty and it has never been run.
 - `REPORT_TEMPLATE.md` — keeps policy replay, live qualification, coding
   outcomes and subscription observations apart.
 - `outcome_specs.yaml` + `checks.py` + `run_outcomes.py` — grade real replies,
@@ -151,8 +175,8 @@ recognised before the "a concrete model means passthrough" branch.
 - Extend through `router.yaml` and the registries. A provider, model, question,
   route, rule, ruleset, alias or client floor is config. Only a new state
   builder, decider or quota source needs Python.
-- `policy.py` and `features.py` stay pure. No I/O, no randomness, no clock.
-  Quota pressure arrives as an argument, never as a lookup.
+- `policy.py`, `features.py` and `effort.py` stay pure. No I/O, no randomness,
+  no clock. Quota pressure arrives as an argument, never as a lookup.
 - Never log or store message text, prompts or API keys. The conversation key
   hashes the `Authorization` header. `settings.log_state` is for debugging only.
 - A Jev failure must never fail a request. Every path through `deciders/jev.py`
@@ -193,6 +217,38 @@ recognised before the "a concrete model means passthrough" branch.
   failure and unknown. A repeated id never calls the provider again, and a
   record whose outcome is unknown is never pruned.
 
+- The between-turn effort experiment is off unless three opt-ins agree: the
+  mode, `adaptive_effort: true` on a strict alias, and the client's
+  `turn_boundary_reporting`. The mode is agreed at resolve and stored on the
+  session row; a session never gains it later, and switching it off stops new
+  decisions without erasing the effort or the ledger. `active` needs a
+  profile with a tested strategy, `qualification: verified` and a
+  `qualification_ref` naming a file that exists. Never mark a real model in
+  `router.yaml` verified.
+- An effort change keeps the model, the provider, the negotiated limits and
+  the base effort. It happens at most once per user turn, at a reported
+  boundary, and never inside a tool loop. Upward acts at once; downward needs
+  N consecutive recommendations. A short "continue" is not downgrade
+  evidence, an environment or missing-information failure is not by itself a
+  reason to raise, and a classifier failure keeps the current effort rather
+  than guessing a cheaper one. Quota may only resolve an undecided turn
+  downward, above every floor.
+- The router owns the plan; the client owns the transcript. The router never
+  inserts an update item and a client-authored one is refused. Every applied
+  update has to come back at its recorded position with a matching prefix
+  hash, and the base setting never moves. Automatic compaction and truncation
+  are refused for these sessions.
+- 2xx headers are transport acceptance. Only a valid provider completion
+  confirms an effort transition, and only a confirmed one moves the effective
+  effort; expected and confirmed are separate columns. A reply's
+  `reasoning.effort` reports the base effort and is never read as the
+  effective one. An ambiguous outcome blocks a competing transition until an
+  explicit reconcile.
+- The Responses observer is read-only and bounded. It yields every byte
+  unchanged, never assembles output or reasoning text, and a parse failure
+  marks lineage unknown rather than retrying or altering the reply.
+- A `request_parameter` result is labelled with its configured
+  `cache_behavior` and is never reported as native cache preservation.
 - A shadow question is measured and never read. It rides in the same batched
   call, is validated on its own, and a malformed one is dropped and counted.
   It may not weaken the validation of the active answers, and it may not reach
