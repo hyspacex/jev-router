@@ -92,11 +92,22 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
         "distribution_policy": "active",
     },
     "fixed_effort_vs_adaptive": {
-        "purpose": "same model, fixed effort against adaptive effort. "
-        "Milestone C owns this one; it is listed so the table is complete.",
+        "purpose": "same model, fixed effort against adaptive effort. The "
+        "model is held fixed; only the effort varies, so a result here is "
+        "never a cross-model gain.",
+        "alias": "auto-session",
         "model": "gpt-6-astra",
         "effort": "medium",
-        "requires": "adaptive effort, which is not implemented",
+        "adaptive_effort": True,
+        # The arm exists and the runner will run it, but only when somebody
+        # says so twice: --allow-adaptive-effort on the command line, and a
+        # deployment that has actually been qualified. Nothing in this
+        # repository is qualified, so the live half of this arm is not
+        # implemented and `evals/effort_replay.py` is where the comparison
+        # happens offline in the meantime.
+        "requires": "--allow-adaptive-effort and a qualified profile; no "
+        "deployment is qualified here, so the live arm is not implemented",
+        "opt_in_flag": "allow_adaptive_effort",
     },
 }
 
@@ -723,7 +734,12 @@ async def main_async(args: argparse.Namespace) -> int:
         print(f"unknown arms: {', '.join(unknown)}", file=sys.stderr)
         print(f"known: {', '.join(POLICY_ARMS)}", file=sys.stderr)
         return 2
-    blocked = [a for a in arms if POLICY_ARMS[a].get("requires")]
+    blocked = [
+        a
+        for a in arms
+        if POLICY_ARMS[a].get("requires")
+        and not getattr(args, POLICY_ARMS[a].get("opt_in_flag") or "", False)
+    ]
     if blocked:
         for arm in blocked:
             print(
@@ -807,6 +823,13 @@ def main() -> int:
                    help="hard cap in seconds per session")
     p.add_argument("--router", default="http://127.0.0.1:8318")
     p.add_argument("--timeout", type=float, default=300.0)
+    p.add_argument(
+        "--allow-adaptive-effort",
+        action="store_true",
+        help="run the fixed_effort_vs_adaptive arm. It needs a profile that has "
+             "passed evals/qualify_effort.py; without one the router resolves "
+             "its sessions with adaptation off and the arm measures nothing.",
+    )
     p.add_argument("--list", action="store_true", help="list the tasks and stop")
     p.add_argument("--dry-run", action="store_true",
                    help="show what would run without a single call")

@@ -1,0 +1,151 @@
+# Synthetic turn sequences for evals/effort_replay.py.
+#
+# Every session here was written by hand to exercise one shape of a coding
+# session. None of it is recorded work, none of it was measured, and the
+# `wants` label on each turn is the author's opinion of what that turn needs,
+# not an observation of any model. `provenance: synthetic` is checked by the
+# replay script, which refuses anything else: a fixture built from real work
+# belongs in its own git-ignored file.
+#
+# The numbers are on the scales the router uses: `difficulty` is a Score over
+# the four-level rubric, `harm_if_wrong` and `corrective_followup` are Nouls
+# from 0 to 1, and `pressure` is quota pressure from 0 to 1.
+
+sessions:
+  - id: steady-mechanical
+    description: A whole session of small, bounded edits.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t2, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
+      - {id: t3, difficulty: 0.1, harm_if_wrong: 0.05, wants: low}
+      - {id: t4, difficulty: 0.3, harm_if_wrong: 0.10, wants: low}
+
+  - id: routine-then-hard
+    description: Easy work, then a diagnosis nobody expected.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t2, difficulty: 1.9, harm_if_wrong: 0.30, wants: medium}
+      - {id: t3, difficulty: 2.4, harm_if_wrong: 0.40, p_hard: 0.6, wants: high}
+      - {id: t4, difficulty: 2.2, harm_if_wrong: 0.35, p_hard: 0.5, wants: high}
+
+  - id: hard-then-routine
+    description: A demanding start, then tidying up after it.
+    provenance: synthetic
+    base: medium
+    turns:
+      - {id: t1, difficulty: 2.1, harm_if_wrong: 0.30, wants: high}
+      - {id: t2, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t3, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t4, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
+
+  - id: short-continues
+    description: >
+      The user keeps saying "go on". A short continue says nothing about the
+      next step, so dropping effort on it is a guess.
+    provenance: synthetic
+    base: medium
+    turns:
+      - {id: t1, difficulty: 1.9, harm_if_wrong: 0.20, wants: medium}
+      - {id: t2, difficulty: 0.1, harm_if_wrong: 0.05, short_continuation: true, wants: medium}
+      - {id: t3, difficulty: 0.1, harm_if_wrong: 0.05, short_continuation: true, wants: medium}
+      - {id: t4, difficulty: 2.0, harm_if_wrong: 0.30, wants: high}
+
+  - id: corrective-loop
+    description: A defect reported, fixed, and reported again.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.8, harm_if_wrong: 0.10, wants: low}
+      - {id: t2, difficulty: 0.9, harm_if_wrong: 0.20, corrective_followup: 0.9, wants: medium}
+      - {id: t3, difficulty: 1.0, harm_if_wrong: 0.20, corrective_followup: 0.9,
+         failure_mode: reasoning_problem, wants: high}
+      - {id: t4, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
+
+  - id: environment-failure
+    description: >
+      The work is blocked by a missing credential. More reasoning is not the
+      remedy, so the turns that report it should not raise effort.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.4, harm_if_wrong: 0.10, wants: low}
+      - {id: t2, difficulty: 0.5, harm_if_wrong: 0.10, corrective_followup: 0.9,
+         failure_mode: environment_problem, wants: low}
+      - {id: t3, difficulty: 0.4, harm_if_wrong: 0.10, corrective_followup: 0.8,
+         failure_mode: environment_problem, wants: low}
+      - {id: t4, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
+
+  - id: missing-requirement
+    description: The request leaves the wanted behaviour unspecified.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 1.0, harm_if_wrong: 0.20, wants: low}
+      - {id: t2, difficulty: 1.1, harm_if_wrong: 0.20, corrective_followup: 0.7,
+         failure_mode: missing_information, wants: low}
+      - {id: t3, difficulty: 1.9, harm_if_wrong: 0.30, wants: medium}
+
+  - id: high-consequence-floor
+    description: >
+      Work with a floor under it. Nothing the evidence says may take the
+      session below the rung the floor names.
+    provenance: synthetic
+    base: medium
+    floor: medium
+    turns:
+      - {id: t1, difficulty: 0.2, harm_if_wrong: 0.05, wants: medium}
+      - {id: t2, difficulty: 0.2, harm_if_wrong: 0.05, wants: medium}
+      - {id: t3, difficulty: 0.1, harm_if_wrong: 0.05, wants: medium}
+      - {id: t4, difficulty: 2.2, harm_if_wrong: 0.60, wants: high}
+
+  - id: scarce-provider
+    description: >
+      Ordinary work while the provider is scarce. Pressure may resolve a turn
+      the evidence leaves undecided, and no more than that.
+    provenance: synthetic
+    base: medium
+    turns:
+      - {id: t1, difficulty: 1.2, harm_if_wrong: 0.20, pressure: 0.9, wants: low}
+      - {id: t2, difficulty: 1.2, harm_if_wrong: 0.20, pressure: 0.9, wants: low}
+      - {id: t3, difficulty: 2.0, harm_if_wrong: 0.30, pressure: 0.9, wants: medium}
+      - {id: t4, difficulty: 2.0, harm_if_wrong: 0.30, pressure: 0.9, wants: high}
+
+  - id: classifier-outage
+    description: >
+      Jev is unreachable for part of the session. The effort has to stay where
+      it was, not fall back to something cheap.
+    provenance: synthetic
+    base: medium
+    turns:
+      - {id: t1, difficulty: 2.0, harm_if_wrong: 0.30, wants: high}
+      - {id: t2, error: "jev timed out", wants: high}
+      - {id: t3, error: "jev returned 529", wants: high}
+      - {id: t4, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+
+  - id: mixed-long-session
+    description: A long session that moves up and down more than once.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t2, difficulty: 1.9, harm_if_wrong: 0.20, wants: medium}
+      - {id: t3, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t4, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+      - {id: t5, difficulty: 2.3, harm_if_wrong: 0.40, p_hard: 0.5, wants: high}
+      - {id: t6, difficulty: 2.1, harm_if_wrong: 0.30, wants: high}
+      - {id: t7, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}
+      - {id: t8, difficulty: 0.2, harm_if_wrong: 0.05, wants: low}
+
+  - id: consequence-spike
+    description: One turn where a mistake would be expensive, then calm again.
+    provenance: synthetic
+    base: low
+    turns:
+      - {id: t1, difficulty: 0.4, harm_if_wrong: 0.10, wants: low}
+      - {id: t2, difficulty: 0.5, harm_if_wrong: 0.90, wants: medium}
+      - {id: t3, difficulty: 0.4, harm_if_wrong: 0.10, wants: low}
+      - {id: t4, difficulty: 0.3, harm_if_wrong: 0.05, wants: low}

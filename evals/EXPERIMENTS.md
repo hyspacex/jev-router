@@ -972,3 +972,86 @@ What is now runnable:
 A feature that cannot show a downstream benefit at a fixed model pool and a
 fixed workload comes out of the packet. Low inference cost is not a reason to
 keep an unused signal.
+
+## Milestone C: the between-turn effort experiment
+
+**Nothing about this has been measured.** No number in this section comes from
+a live run, no deployment has been qualified, and the shipped `router.yaml`
+has `experiments.adaptive_effort.mode: "off"` with an empty
+`qualified_profiles` list. What exists is the machinery and the offline
+comparison, and both say so.
+
+### What was added
+
+- **`effort.py`**, the turn-plan policy. Pure: a ladder in, a rung out. It
+  never selects a model, and the turn boundary asks `deciders.jev.classify`
+  rather than `decide`, so there is no cross-model choice for it to replace.
+- **`POST /router/turn-plan`** and the `turn_plans` ledger, with `planned`,
+  `accepted`, `confirmed`, `rejected` and `outcome_unknown` kept apart.
+- **`protocols.py`**, which validates a Responses request against the ledger
+  before forwarding it and taps the reply for its id, terminal status and
+  usage without touching a byte.
+- **`evals/effort_replay.py`** and `evals/effort_fixtures.yaml`.
+- **`evals/qualify_effort.py`**, the live qualification, which has never been
+  run against anything. Its planning mode is the only mode this repository has
+  used, and its allowlist is empty.
+
+### The offline replay
+
+`uv run python evals/effort_replay.py` over 12 synthetic sessions and 51
+turns. The sessions were written by hand to exercise the shapes the policy has
+to handle, and the per-turn `wants` labels are the fixture author's opinion of
+what each turn needs. They are not observations of any model.
+
+| arm | adequate | under-served | mean rungs over | effort changes |
+| --- | --- | ---: | ---: | ---: |
+| `fixed_low` | 30/51 [0.45, 0.71] | 0.41 | 0.00 | 0 |
+| `fixed_medium` | 39/51 [0.63, 0.86] | 0.24 | 0.53 | 0 |
+| `fixed_high` | 51/51 [0.93, 1.00] | 0.00 | 1.29 | 0 |
+| `simple_rule` | 45/51 [0.77, 0.94] | 0.12 | 0.20 | 18 |
+| `jev_hysteresis` | 50/51 [0.90, 1.00] | 0.02 | 0.33 | 20 |
+| `jev_no_hysteresis` | 50/51 [0.90, 1.00] | 0.02 | 0.14 | 24 |
+
+Paired by session, `jev_hysteresis` separates from `fixed_low` and
+`fixed_medium` (p = 0.000 in both directions) and does not separate from
+`fixed_high` (p = 0.602), `simple_rule` (p = 0.220) or `jev_no_hysteresis`
+(p = 1.000).
+
+**Read that as almost nothing.** The labels and the policy were written by the
+same person on the same day, so the policy agreeing with the labels is closer
+to a unit test than to evidence. Twelve synthetic sessions cannot separate two
+policies that are close. The one thing the table does show is the shape of the
+trade: `fixed_high` is adequate everywhere and spends 1.29 rungs per turn over
+what the labels ask for, and the adaptive arms reach the same adequacy at a
+quarter of that. Whether that is true of a real model on real work is exactly
+what has not been measured.
+
+Hysteresis costs four effort changes across the twelve sessions and buys no
+adequacy in this fixture set. That is a reason to keep comparing it, not a
+reason to drop it: the thing hysteresis is for — not flapping between rungs on
+a noisy classifier — is not in these fixtures, because the fixtures have no
+noise in them.
+
+### What has to happen before any of this is promoted
+
+1. Qualify one exact deployment with `evals/qualify_effort.py`: model,
+   endpoint, proxy and adapter revision together. Fill in the Q01-Q10 table of
+   `docs/qualification/TEMPLATE.md` and check the report in. Q07 is the one
+   that matters most: an endpoint that silently drops an unknown item also
+   returns 200.
+2. Run in `shadow` on real work first, and compare the recommendations against
+   what a person would have chosen. Shadow costs one Jev call per turn
+   boundary and changes nothing, so the overhead is measurable on its own.
+3. Only then run `fixed_effort_vs_adaptive` in `evals/run_sessions.py` with
+   `--allow-adaptive-effort`, against the matched-quality fixed effort, not
+   only the most expensive one. Counterbalance the order and keep the cache
+   namespaces apart so one arm does not warm the other's.
+4. Report cached and uncached input, reasoning tokens, Jev overhead, first
+   visible output, completion time and adapter errors. A cache hit is not
+   guaranteed because the update syntax is correct, and a valid protocol test
+   is not a cache measurement.
+5. Predeclare the tolerable quality loss before the larger trial. An interval
+   too wide to assess it is inconclusive, not a pass.
+
+Remain in `shadow` while the evidence is inconclusive. A `request_parameter`
+result is never reported as native cache preservation whatever it shows.
