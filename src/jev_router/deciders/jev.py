@@ -19,9 +19,15 @@ from ..policy import (
     evaluate,
     finalize,
 )
+from ..semantic import (
+    SemanticResult,
+    active_questions,
+    packet_version,
+    shadow_questions,
+)
 from ..state import build_state
 from .base import Decider, Decision, build_decider, pressure_source, register_decider
-from .validation import validate_response
+from .validation import validate_response, validate_shadow
 
 log = logging.getLogger("jev_router.jev")
 
@@ -94,77 +100,158 @@ class JevDecider:
             log.info("draft step skipped: %s", _short_error(exc))
             return ""
 
-    async def decide(self, features: Features, alias_cfg: AliasCfg) -> Decision:
+    async def classify(
+        self, features: Features, alias_cfg: AliasCfg
+    ) -> SemanticResult:
+        """Ask Jev what this turn is. No model is chosen here.
+
+        This is the boundary that keeps turn assessment from reselecting a
+        model by accident: it builds the packet, makes one call, validates the
+        active answers exactly as it always has, and validates the shadow
+        answers separately. A malformed shadow answer is dropped and counted;
+        it can neither weaken the active validation nor reach the policy.
+        """
         settings = self.config.settings
         state: Any = None
         started = time.perf_counter()
+        active_ids = active_questions(self.config, alias_cfg)
+        shadow_ids = shadow_questions(self.config, alias_cfg)
+
+        def versions(builder: str) -> tuple[str, str]:
+            return (
+                packet_version(self.config, active_ids, builder),
+                packet_version(self.config, shadow_ids, builder) if shadow_ids else "",
+            )
+
+        active_version, shadow_version = versions(alias_cfg.state_builder)
         try:
             state = build_state(alias_cfg.state_builder, features, self.config)
             draft = await self.draft(features, alias_cfg)
             if draft and isinstance(state, dict) and alias_cfg.draft is not None:
                 state[alias_cfg.draft.state_field] = draft
-            questions = {qid: self.config.question(qid) for qid in alias_cfg.questions}
+            questions = {qid: self.config.question(qid) for qid in active_ids}
+            shadow = {qid: self.config.question(qid) for qid in shadow_ids}
+            blank = SemanticResult(
+                state=state,
+                state_builder=alias_cfg.state_builder,
+                packet_version=active_version,
+                shadow_packet_version=shadow_version,
+            )
             if not self.api_key:
-                return await self._fallback(
-                    features, alias_cfg, state, "no Jev API key set"
-                )
+                blank.error = "no Jev API key set"
+                return blank
             if not questions:
-                return await self._fallback(
-                    features, alias_cfg, state, "alias asks no questions"
-                )
-            payload = {
-                "model": settings.jev_model,
-                "state": state,
-                "questions": questions,
-            }
+                blank.error = "alias asks no questions"
+                return blank
             resp = await self.client.post(
                 settings.jev_url,
-                json=payload,
+                json={
+                    "model": settings.jev_model,
+                    "state": state,
+                    # One batched call. The shadow questions ride along so the
+                    # experiment costs one round trip, not two.
+                    "questions": {**questions, **shadow},
+                },
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=settings.jev_timeout_ms / 1000,
             )
             resp.raise_for_status()
-            answers, input_tokens = validate_response(resp.json(), questions)
-            pressures = self.pressures()
-            result = evaluate(self.config, alias_cfg, answers, features, pressures)
-            elapsed = (time.perf_counter() - started) * 1000
-            return Decision(
-                model=result.model,
-                effort=result.effort,
-                rule=result.rule,
-                reason=result.reason,
+            data = resp.json()
+            answers, input_tokens = validate_response(data, questions)
+            shadow_answers, invalid = validate_shadow(data, shadow)
+            if invalid:
+                log.info("dropped %d malformed shadow answer(s)", len(invalid))
+            return SemanticResult(
                 answers=answers,
-                jev_ms=elapsed,
-                jev_input_tokens=input_tokens,
-                fallback=False,
+                shadow=shadow_answers,
+                invalid_shadow=invalid,
                 state=state,
                 state_builder=alias_cfg.state_builder,
-                notes=result.notes,
-                decider=self.name,
-                route=result.route,
-                plan=result.plan,
-                pressures=dict(pressures),
-                shifts=result.shifts,
-                reordered=result.reordered,
-                pressure_changed_the_outcome=result.pressure_changed_the_outcome,
+                packet_version=active_version,
+                shadow_packet_version=shadow_version,
+                jev_ms=(time.perf_counter() - started) * 1000,
+                jev_input_tokens=input_tokens,
             )
-        except RoutingError as exc:
-            return Decision(
-                model="",
-                effort=None,
-                rule="routing_error",
-                reason=str(exc),
-                fallback=True,
-                routing_error=str(exc),
-                decider=self.name,
-            )
+        except RoutingError:
+            raise
         except Exception as exc:  # timeout, 429, 529, bad JSON, anything
             elapsed = (time.perf_counter() - started) * 1000
             reason = _short_error(exc)
             log.warning("jev call failed after %.0f ms: %s", elapsed, reason)
-            return await self._fallback(
-                features, alias_cfg, state, reason, jev_ms=elapsed
+            return SemanticResult(
+                state=state,
+                state_builder=alias_cfg.state_builder,
+                packet_version=active_version,
+                shadow_packet_version=shadow_version,
+                jev_ms=elapsed,
+                error=reason,
             )
+
+    async def decide(self, features: Features, alias_cfg: AliasCfg) -> Decision:
+        """Classify the turn, then run the cross-model policy over the answers."""
+        def refused(message: str) -> Decision:
+            return Decision(
+                model="",
+                effort=None,
+                rule="routing_error",
+                reason=message,
+                fallback=True,
+                routing_error=message,
+                decider=self.name,
+            )
+
+        try:
+            semantics = await self.classify(features, alias_cfg)
+        except RoutingError as exc:
+            return refused(str(exc))
+        if not semantics.ok:
+            decision = await self._fallback(
+                features,
+                alias_cfg,
+                semantics.state,
+                semantics.error,
+                jev_ms=semantics.jev_ms,
+            )
+            decision.packet_version = semantics.packet_version
+            return decision
+        try:
+            pressures = self.pressures()
+            result = evaluate(
+                self.config, alias_cfg, semantics.answers, features, pressures
+            )
+        except RoutingError as exc:
+            return refused(str(exc))
+        except Exception as exc:  # the policy itself broke; never fail the request
+            reason = f"policy error: {type(exc).__name__}"
+            log.warning("policy evaluation failed: %s", reason)
+            return await self._fallback(
+                features, alias_cfg, semantics.state, reason, jev_ms=semantics.jev_ms
+            )
+        return Decision(
+            model=result.model,
+            effort=result.effort,
+            rule=result.rule,
+            reason=result.reason,
+            answers=semantics.answers,
+            shadow_answers=semantics.shadow,
+            invalid_shadow=semantics.invalid_shadow,
+            packet_version=semantics.packet_version,
+            shadow_packet_version=semantics.shadow_packet_version,
+            jev_ms=semantics.jev_ms,
+            jev_input_tokens=semantics.jev_input_tokens,
+            fallback=False,
+            state=semantics.state,
+            state_builder=semantics.state_builder,
+            notes=result.notes,
+            decider=self.name,
+            route=result.route,
+            plan=result.plan,
+            pressures=dict(pressures),
+            shifts=result.shifts,
+            reordered=result.reordered,
+            pressure_changed_the_outcome=result.pressure_changed_the_outcome,
+            experiments=result.experiments,
+        )
 
     async def _fallback(
         self,

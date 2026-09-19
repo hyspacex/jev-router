@@ -13,7 +13,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from ..config import AliasCfg, RouterConfig
 from ..features import Features
-from ..policy import PlanEntry, Shift
+from ..policy import ExperimentalRoute, PlanEntry, Shift
 
 
 @dataclass
@@ -39,6 +39,20 @@ class Decision:
     shifts: list[Shift] = field(default_factory=list)
     reordered: bool = False
     pressure_changed_the_outcome: bool = False
+    # The measured-only half of the packet. Values only, never text, and no
+    # path from here to a route.
+    shadow_answers: dict[str, Any] = field(default_factory=dict)
+    invalid_shadow: list[str] = field(default_factory=list)
+    packet_version: str = ""
+    shadow_packet_version: str = ""
+    # What an experimental policy would have chosen, recorded either way.
+    experiments: list[ExperimentalRoute] = field(default_factory=list)
+    # Filled in once a quality lane is configured for the matched rule.
+    lane: str = ""
+    qualification_ref: str = ""
+    counterfactual: tuple[str, str | None] | None = None
+    exclusions: list[dict[str, Any]] = field(default_factory=list)
+    evidence: str = "weak"
 
     def entries(self) -> list[PlanEntry]:
         """The plan, or just this decision when there is no plan."""
