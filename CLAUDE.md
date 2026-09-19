@@ -297,7 +297,10 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   `ADDED_COLUMNS` in `pins.py`, or to one of the maps in `sessions.py` for a
   later column; never drop or rewrite one. Each release keeps its own map so
   its migration list says exactly what it added. A database from an older
-  version must keep working.
+  version must keep working. A new index is created with `IF NOT EXISTS` and,
+  when it is unique, outside the schema script, so a file that already holds
+  rows it would refuse still opens: log what was found, leave the rows alone,
+  carry on without it.
 - `tune.py` proposes a diff and never writes `router.yaml`. It replays a
   decision at the pressure it was taken under, so a deliberate quota saving is
   not scored as a classifier error.

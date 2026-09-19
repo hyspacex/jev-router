@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -35,6 +36,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from . import effort as E
 from .config import SessionRoutingCfg
 from .pins import Store, migrate
+
+log = logging.getLogger("jev_router")
 
 # --- the state machine ---------------------------------------------------
 
@@ -223,6 +226,18 @@ CREATE TABLE IF NOT EXISTS session_requests (
 );
 CREATE INDEX IF NOT EXISTS session_requests_session ON session_requests (session_id, id);
 """
+
+# One plan per session and turn, enforced by the database rather than by the
+# order two requests happened to arrive in (F07, spec 9.1). It is created
+# apart from the schema above because a database written before this release
+# may already hold two plans for one turn. Refusing to open such a file would
+# be worse than opening it without the index: the router keeps its in-process
+# guard either way, logs what it found, and carries `unique_turn_plans` for
+# anything that wants to ask.
+TURN_PLAN_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS turn_plans_one_per_turn"
+    " ON turn_plans (session_id, turn_id)"
+)
 
 # Columns this release adds to tables an older database already has. Same
 # contract as `pins.ADDED_COLUMNS`: every one is nullable, nothing is ever
@@ -547,11 +562,37 @@ class Sessions:
             self.migrated_semantic = migrate(self._conn, SEMANTIC_COLUMNS)
             self.migrated_effort = migrate(self._conn, EFFORT_COLUMNS)
             self.migrated_reconcile = migrate(self._conn, RECONCILE_COLUMNS)
+            self.unique_turn_plans = self._take_turn_plan_index()
             self._conn.commit()
         if guard and self.cfg.enabled:
             self._take_guard()
 
     # --- lifecycle -----------------------------------------------------
+
+    def _take_turn_plan_index(self) -> bool:
+        """One plan per session and turn, if this database can hold that.
+
+        An older database may already have two plans for one turn, written
+        before anything stopped it. Those rows are not rewritten and not
+        dropped: the index is simply not created, and this returns False so
+        `check-config` and the logs can say so. The router carries on either
+        way, and the in-process guard keeps doing its part.
+        """
+        try:
+            self._conn.execute(TURN_PLAN_UNIQUE)
+            return True
+        except sqlite3.IntegrityError:
+            duplicates = self._conn.execute(
+                "SELECT COUNT(*) FROM (SELECT session_id, turn_id FROM turn_plans"
+                " GROUP BY session_id, turn_id HAVING COUNT(*) > 1)"
+            ).fetchone()
+            log.warning(
+                "this database already holds %s turn(s) with more than one plan, "
+                "so the one-plan-per-turn index was not created; the rows are "
+                "left exactly as they are",
+                duplicates[0] if duplicates else "some",
+            )
+            return False
 
     def _take_guard(self) -> None:
         path = str(self.store.path)
@@ -827,7 +868,14 @@ class Sessions:
         return int(row[0]) + 1 if row else 1
 
     def record_plan(self, session_id: str, plan: dict[str, Any]) -> dict[str, Any]:
-        """Write one plan row. Hashes and identifiers only, never a transcript."""
+        """Write one plan row, or return the one that got to this turn first.
+
+        Hashes and identifiers only, never a transcript. Two concurrent plans
+        for one turn both come back with the same row and only one of them
+        wrote it, the same way `create` settles two concurrent admissions. A
+        caller that needs to know which it was compares the `plan_id` it
+        offered with the `plan_id` it got back.
+        """
         now = self.clock()
         fields = {"session_id": session_id, "created": now, "updated": now, **plan}
         if isinstance(fields.get("facts"), (dict, list)):
@@ -835,12 +883,20 @@ class Sessions:
         names = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
         with self._lock:
-            self._conn.execute(
+            cur = self._conn.execute(
                 f"INSERT OR IGNORE INTO turn_plans ({names}) VALUES ({marks})",
                 tuple(fields.values()),
             )
             self._conn.commit()
-        return self.get_plan(session_id, plan_id=str(plan["plan_id"])) or {}
+            created = cur.rowcount == 1
+        if created:
+            return self.get_plan(session_id, plan_id=str(plan["plan_id"])) or {}
+        # Somebody else holds this turn. Read theirs, never write over it.
+        return (
+            self.get_plan(session_id, turn_id=str(plan["turn_id"]))
+            or self.get_plan(session_id, plan_id=str(plan["plan_id"]))
+            or {}
+        )
 
     def update_plan(self, plan_id: str, **fields: Any) -> None:
         fields = {k: v for k, v in fields.items() if v is not None}

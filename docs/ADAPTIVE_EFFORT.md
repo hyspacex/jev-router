@@ -220,6 +220,18 @@ pending is `SESSION_CONFLICT` (409). An unsettled previous turn is
 `TURN_NOT_SETTLED` (409). An earlier update whose outcome is unknown is
 `EXECUTION_OUTCOME_UNKNOWN` (409) until it is reconciled.
 
+That holds for two requests arriving at once as well as one after the other
+(F07). A unique index on `(session_id, turn_id)` means the database, not the
+arrival order, decides which plan a turn has; the loser rereads the winner's
+plan and is given that, or `SESSION_CONFLICT` if its evidence differed. An
+in-process waiting room per session and turn means the loser usually never
+reaches Jev at all. It holds no database transaction across that call: it is
+there to save a classifier call, not to be the guarantee.
+
+A database written before the index may already hold two plans for one turn.
+Those rows are left exactly as they are, the index is not created, and the
+router logs what it found and carries on.
+
 ## What the client must do
 
 The router owns the plan. The client owns the transcript. There is exactly one

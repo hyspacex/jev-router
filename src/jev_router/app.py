@@ -16,7 +16,7 @@ import os
 import time
 import zlib
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, NoReturn
 
 import httpx
@@ -111,6 +111,14 @@ class ServedOutcome:
     accepted: bool
 
 
+@dataclass
+class _TurnGuard:
+    """One in-process waiting room per session and turn."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    waiting: int = 0
+
+
 class Router:
     def __init__(self, config: RouterConfig, store: Store | None = None) -> None:
         self.config = config
@@ -139,6 +147,9 @@ class Router:
             "pressures": self.pressures,
         }
         self.decider = build_decider(config.settings.decider, config, deps)
+        # One waiting room per session and turn, so two concurrent plan
+        # requests for one turn do not each buy a classifier call.
+        self._turn_locks: dict[tuple[str, str], _TurnGuard] = {}
         self._alias_deciders: dict[str, Any] = {}
         for alias, acfg in config.aliases.items():
             if acfg.decider:
@@ -1005,22 +1016,11 @@ class Router:
             )
 
         mode = self.session_adaptation(row)
-        current = row["effective_effort"] or row["base_effort"]
         evidence_fingerprint = req.evidence_fingerprint()
 
         stored = self.sessions.get_plan(req.session_id, turn_id=req.turn_id)
         if stored is not None:
-            # Repeating a plan request returns the decision that was already
-            # made, with no second classifier call. The same turn id carrying
-            # different evidence is a conflict, not a second plan: one change
-            # per user turn.
-            if stored["request_fingerprint"] != evidence_fingerprint:
-                raise SessionError(
-                    S.SESSION_CONFLICT,
-                    "this turn id was already planned with different evidence",
-                    detail={"turn_id": req.turn_id, "plan_id": stored["plan_id"]},
-                )
-            return _plan_response(stored, row, mode)
+            return _stored_plan(stored, row, mode, req, evidence_fingerprint)
 
         if mode == "off":
             # No per-turn classifier call at all. This is what a client that
@@ -1030,6 +1030,48 @@ class Router:
                 req, row, mode, "the between-turn effort experiment is off for this session"
             )
 
+        async with self._turn_guard(req.session_id, req.turn_id):
+            # Whoever was ahead of us has finished by now, so ask again before
+            # paying for a classifier call of our own.
+            stored = self.sessions.get_plan(req.session_id, turn_id=req.turn_id)
+            if stored is not None:
+                row = self.live_session(req.session_id, owner)
+                return _stored_plan(stored, row, mode, req, evidence_fingerprint)
+            return await self._decide_turn(req, row, mode, evidence_fingerprint)
+
+    @contextlib.asynccontextmanager
+    async def _turn_guard(self, session_id: str, turn_id: str) -> AsyncIterator[None]:
+        """One plan decision per session and turn at a time, in this process.
+
+        Held across the Jev call on purpose, and holding no database
+        transaction: the point is that a second caller waits for the first
+        one's answer instead of buying a second classifier call for the same
+        turn. It is not the correctness guarantee. The unique index on
+        (session_id, turn_id) is, and it holds whether or not two callers ever
+        met in one process.
+        """
+        key = (session_id, turn_id)
+        entry = self._turn_locks.get(key)
+        if entry is None:
+            entry = self._turn_locks[key] = _TurnGuard()
+        entry.waiting += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.waiting -= 1
+            if entry.waiting <= 0:
+                self._turn_locks.pop(key, None)
+
+    async def _decide_turn(
+        self,
+        req: S.TurnPlanRequest,
+        row: dict[str, Any],
+        mode: str,
+        evidence_fingerprint: str,
+    ) -> dict[str, Any]:
+        """One turn's effort decision, made once and written down once."""
+        current = row["effective_effort"] or row["base_effort"]
         self._require_settled_turn(req)
         blocked_because = self._adaptation_blocked(req, row)
         if blocked_because:
@@ -1078,10 +1120,11 @@ class Router:
             plan.action = E.KEEP
             plan.to_effort = plan.from_effort
 
+        plan_id = new_decision_id()
         stored = self.sessions.record_plan(
             req.session_id,
             {
-                "plan_id": new_decision_id(),
+                "plan_id": plan_id,
                 "turn_id": req.turn_id,
                 "sequence": self.sessions.next_sequence(req.session_id),
                 "mode": mode,
@@ -1106,6 +1149,11 @@ class Router:
                 "plan_ms": (time.perf_counter() - started) * 1000,
             },
         )
+        if stored.get("plan_id") != plan_id:
+            # Another request planned this turn first. Its plan is the one
+            # this turn has; ours is discarded, never written on top (F07).
+            return _stored_plan(stored, row, mode, req, evidence_fingerprint)
+
         self._log_effort_plan(row, req, stored, plan, semantics)
         if plan.action == E.CHANGE:
             self.sessions.update(
@@ -1997,6 +2045,28 @@ def _shadow_counterfactual(
         "changed": (hypothetical.action, hypothetical.to_effort)
         != (plan.action, plan.to_effort),
     }
+
+
+def _stored_plan(
+    stored: dict[str, Any],
+    row: dict[str, Any],
+    mode: str,
+    req: S.TurnPlanRequest,
+    evidence_fingerprint: str,
+) -> dict[str, Any]:
+    """The plan this turn already has (F07).
+
+    Repeating a plan request returns the decision that was already made, with
+    no second classifier call. The same turn id carrying different evidence is
+    a conflict, not a second plan: one change per user turn.
+    """
+    if stored["request_fingerprint"] != evidence_fingerprint:
+        raise SessionError(
+            S.SESSION_CONFLICT,
+            "this turn id was already planned with different evidence",
+            detail={"turn_id": req.turn_id, "plan_id": stored["plan_id"]},
+        )
+    return _plan_response(stored, row, mode)
 
 
 def _plan_response(
