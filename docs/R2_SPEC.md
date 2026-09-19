@@ -501,6 +501,8 @@ The first active experiment supports HTTP Responses only. No WebSocket implement
 
 For early native experiments, use bounded sessions that do not require compaction. Stop further adaptive execution before the agreed context safety limit. Later support for the provider's explicit compaction-trigger flow requires separate fixtures for post-compaction reapplication; the router must not build its own compactor.
 
+**Owner decision, 2026-09-19.** That later support is now in: a compaction the client asks for passes through, opens a compaction epoch, and the next eligible user turn may reapply the effort. The router still builds no compactor, never reads inside a provider compaction item and never changes model, and automatic compaction and truncation are still refused. `docs/ADAPTIVE_EFFORT.md` has what was measured on the wire and what the router does with it.
+
 ### 10.4 Proposed `POST /router/turn-plan`
 
 This endpoint is experimental; stable clients never need it. It asks the router to prepare an effort-only decision for a new user turn. It does not execute tools or an inference request.
@@ -548,7 +550,7 @@ Use current-turn demand plus task constraints and any relevant prior unresolved 
 
 Start with these conservative mechanics, all configurable and recorded:
 
-- Upward recommendation may act at the next eligible boundary when sufficiently supported.
+- Upward recommendation may act at the next eligible boundary when sufficiently supported. **Owner decision, 2026-09-19:** it goes straight to the rung the evidence asks for rather than one rung per turn, so `low` may become `high` in a single move. The mapping is configurable and `upward: step` restores the climb. See `docs/ADAPTIVE_EFFORT.md`, "Owner decisions".
 - Downward changes require low-risk evidence and two consecutive eligible-turn recommendations for the lower effort.
 - Never change effort more than once per new user turn; never alternate within a tool loop.
 - Keep explicit user/client minimum effort and protected-work floors.
@@ -725,7 +727,7 @@ Keep the baseline regression suite, including compressed JSON/SSE, headers, malf
 | F14 | Classifier timeout/malformed output keeps current effort, not a lower heuristic effort. |
 | F15 | Downshift confirmation and protected floors behave across resume and counterfactual pressure changes. |
 | F16 | Disabling adaptation preserves already applied items and effective effort. |
-| F17 | Automatic compaction/truncation and standalone compaction are rejected for the initial native experiment. |
+| F17 | Automatic compaction/truncation and standalone compaction are rejected for the initial native experiment. **Superseded in part by an owner decision of 2026-09-19:** a compaction the client asks for is supported and opens a compaction epoch; automatic compaction and `truncation: auto` are still rejected. See `docs/ADAPTIVE_EFFORT.md`, "Owner decisions". |
 | F18 | Approaching context limit stops the bounded experiment without changing model or erasing updates. |
 | F19 | Bounded SSE observation preserves raw bytes; parser failure marks telemetry/lineage unknown. |
 | F20 | A parameter-change laboratory result is not reported as native cache-preserving behavior. |
