@@ -260,6 +260,16 @@ estimate is marked uncertain and admission also requires five per cent of
 headroom. Send the accumulated usage figure if you have one; a short delta is
 not the context.
 
+On execution, the same `O` is revalidated against what the request itself asks
+for in `max_tokens`, `max_completion_tokens` or `max_output_tokens`. Above the
+negotiated ceiling is `CONTEXT_BUDGET_EXCEEDED`, naming both numbers, and the
+binding is kept: advertised limits and effective limits agree or it is an
+error, never a hidden substitution (I06). The router does not rewrite your
+body to make it fit. At or below the ceiling the request is forwarded exactly
+as it arrived, and the budget still reserves the larger of the two figures,
+because the negotiated ceiling is reserved for this session whether or not
+this request uses all of it.
+
 Growth is your side of the contract. The harness compacts against the window
 it was given. When a request no longer fits, the router answers
 `CONTEXT_BUDGET_EXCEEDED` and keeps the binding; it does not widen the window
@@ -283,7 +293,7 @@ Every error is a structured body with a stable machine code:
 | `SESSION_CLOSED` | 410 | Closed, pruned, or a prepared contract that expired. |
 | `PROFILE_CHANGED` | 409 | The profile was revoked or its configured limits fell below the contract. The session is `blocked` and the binding is kept. |
 | `NO_SAFE_ADMISSION` | 422 | No qualified candidate, or no classifier answer and no configured fallback. |
-| `CONTEXT_BUDGET_EXCEEDED` | 422 | `I + O + S` does not fit `C`. |
+| `CONTEXT_BUDGET_EXCEEDED` | 422 | `I + O + S` does not fit `C`, or the request asks for more output than the negotiated ceiling. |
 | `UNSUPPORTED_PROFILE` | 422 | Unsupported protocol or endpoint, tools or images the profile cannot take, or the session service switched off. |
 | `REQUEST_ALREADY_COMPLETED` | 409 | A completed request id was sent again. |
 | `EXECUTION_OUTCOME_UNKNOWN` | 409 | The previous attempt at that id cannot be called settled. |

@@ -2234,6 +2234,18 @@ def _admission_budget(
     )
 
 
+def _requested_output(body: dict[str, Any]) -> int | None:
+    """The largest output allowance this body asks for, whatever it calls it."""
+    asks = []
+    for name in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        value = body.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if value > 0:
+            asks.append(int(value))
+    return max(asks) if asks else None
+
+
 def _execution_budget(
     row: dict[str, Any], mcfg: Any, features: Features, body: dict[str, Any]
 ) -> Any:
@@ -2246,11 +2258,33 @@ def _execution_budget(
         raise SessionError(
             S.UNSUPPORTED_PROFILE, "the bound profile does not read images"
         )
+    negotiated = row["max_output_tokens"]
+    asked = _requested_output(body)
+    if negotiated and asked and asked > negotiated:
+        # I06: the client's own ceiling and the effective one agree, or this
+        # is an error. Forwarding the body and hoping the provider clamps it
+        # would be a hidden substitution, and rewriting the body would be the
+        # router deciding how much of its own answer the client wanted.
+        raise SessionError(
+            S.CONTEXT_BUDGET_EXCEEDED,
+            f"this request asks for {asked} output tokens and the negotiated "
+            f"ceiling for this binding is {negotiated}; lower the request or "
+            "resolve a session with a larger ceiling",
+            detail={
+                "requested_output_tokens": asked,
+                "max_output_tokens": negotiated,
+                "binding_revision": row["binding_revision"],
+            },
+        )
     estimate = estimate_input(body)
     check = context_budget(
         context_window=row["context_window"],
         input_tokens=estimate.tokens,
-        output_tokens=row["max_output_tokens"]
+        # The larger of the two honest figures. The negotiated ceiling is
+        # reserved for this session whether or not this request uses all of
+        # it; without one, what the request asked for is the only figure
+        # anybody has stated.
+        output_tokens=max(negotiated or 0, asked or 0)
         or features.max_tokens
         or DEFAULT_OUTPUT_TOKENS,
         estimate_method=estimate.method,
