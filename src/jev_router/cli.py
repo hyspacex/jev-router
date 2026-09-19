@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -23,7 +24,7 @@ def _load(path: str) -> RouterConfig:
         return load_config(path)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(2) from None
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -38,6 +39,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    host = args.host or config.settings.host
+    try:
+        local = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        local = host == "localhost"
+    if not local:
+        logging.warning(
+            "Non-loopback bind: protect the model API with trusted ingress/Tailscale ACLs; "
+            "router endpoints require %s via X-Router-Admin-Token",
+            config.settings.admin_token_env,
+        )
     app = create_app(config)
     uvicorn.run(
         app,
@@ -45,6 +57,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         port=args.port or config.settings.port,
         log_level=args.log_level,
         access_log=False,
+        proxy_headers=False,  # loopback admin access uses the direct peer, not X-Forwarded-For
     )
     return 0
 
@@ -75,7 +88,9 @@ def cmd_check_config(args: argparse.Namespace) -> int:
         )
         print(f"  route {name}: {rungs}")
     key = os.environ.get(config.settings.jev_api_key_env)
-    print(f"  {config.settings.jev_api_key_env}: {'set' if key else 'NOT SET (will fail open)'}")
+    print(
+        f"  {config.settings.jev_api_key_env}: {'set' if key else 'NOT SET (will fail open)'}"
+    )
     for alias, acfg in config.aliases.items():
         ruleset = config.ruleset_for(acfg)
         print(
@@ -178,7 +193,11 @@ def cmd_explain(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    body = json.loads(Path(args.request).read_text())
+    try:
+        body = json.loads(Path(args.request).read_text())
+    except (OSError, ValueError) as exc:
+        print(f"cannot read request: {type(exc).__name__}", file=sys.stderr)
+        return 2
     headers = body.pop("_headers", {}) if isinstance(body, dict) else {}
     features = extract_features(body, headers)
 
@@ -213,7 +232,9 @@ def cmd_explain(args: argparse.Namespace) -> int:
     print(json.dumps(state, indent=2, default=str))
 
     async def run() -> Any:
-        async with httpx.AsyncClient(timeout=config.settings.jev_timeout_ms / 1000) as client:
+        async with httpx.AsyncClient(
+            timeout=config.settings.jev_timeout_ms / 1000
+        ) as client:
             decider = build_decider(
                 alias_cfg.decider or config.settings.decider,
                 config,
@@ -222,8 +243,15 @@ def cmd_explain(args: argparse.Namespace) -> int:
             return await decider.decide(features, alias_cfg)
 
     decision = asyncio.run(run())
+    if decision.routing_error:
+        print(f"routing error: {decision.routing_error}", file=sys.stderr)
+        return 2
     print("\njev answers:")
-    print(json.dumps(decision.answers, indent=2, default=str) if decision.answers else "  (none)")
+    print(
+        json.dumps(decision.answers, indent=2, default=str)
+        if decision.answers
+        else "  (none)"
+    )
     if pressures:
         print("\npressure:")
         for name, value in sorted(pressures.items()):
@@ -277,7 +305,9 @@ def cmd_decisions(args: argparse.Namespace) -> int:
             if not isinstance(ans, dict):
                 continue
             if ans.get("type") == "choice":
-                bits.append(f"{qid}={ans.get('choice')}({ans.get('confidence', 0):.2f})")
+                bits.append(
+                    f"{qid}={ans.get('choice')}({ans.get('confidence', 0):.2f})"
+                )
             elif ans.get("type") == "score":
                 bits.append(f"{qid}={ans.get('score', 0):.2f}")
             elif ans.get("type") == "noul":
@@ -300,9 +330,13 @@ def cmd_decisions(args: argparse.Namespace) -> int:
         for mark in marks:
             better = ""
             if mark.get("better_model"):
-                better = f" -> {mark['better_model']}({mark.get('better_effort') or '-'})"
+                better = (
+                    f" -> {mark['better_model']}({mark.get('better_effort') or '-'})"
+                )
             note = f" {mark['note']!r}" if mark.get("note") else ""
-            print(f"    feedback: {mark['verdict']}{better}{note} ({mark.get('source')})")
+            print(
+                f"    feedback: {mark['verdict']}{better}{note} ({mark.get('source')})"
+            )
     return 0
 
 
@@ -354,9 +388,26 @@ def cmd_feedback(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prune(args: argparse.Namespace) -> int:
+    from .pins import Store
+
+    if args.older_than_days < 1:
+        print("--older-than-days must be at least 1", file=sys.stderr)
+        return 2
+    config = _load(args.config)
+    store = Store(config.settings.db_path)
+    try:
+        print(json.dumps(store.prune(args.older_than_days * 86400)))
+    finally:
+        store.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jev-router", description=__doc__)
-    parser.add_argument("-c", "--config", default=DEFAULT_CONFIG, help="path to router.yaml")
+    parser.add_argument(
+        "-c", "--config", default=DEFAULT_CONFIG, help="path to router.yaml"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_serve = sub.add_parser("serve", help="run the HTTP shim")
@@ -366,13 +417,23 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--log-level", default="info")
     p_serve.set_defaults(func=cmd_serve)
 
-    p_check = sub.add_parser("check-config", help="validate router.yaml and print a summary")
+    p_prune = sub.add_parser(
+        "prune", help="delete old decisions, feedback and pins (irreversible)"
+    )
+    p_prune.add_argument("--older-than-days", type=int, required=True)
+    p_prune.set_defaults(func=cmd_prune)
+
+    p_check = sub.add_parser(
+        "check-config", help="validate router.yaml and print a summary"
+    )
     p_check.set_defaults(func=cmd_check_config)
 
     p_explain = sub.add_parser(
         "explain", help="show features, state, Jev answers and the chosen model"
     )
-    p_explain.add_argument("request", help="a JSON file holding a chat-completions body")
+    p_explain.add_argument(
+        "request", help="a JSON file holding a chat-completions body"
+    )
     p_explain.add_argument("--alias", help="treat the request as this alias")
     p_explain.add_argument(
         "--pressure",
@@ -382,7 +443,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_explain.set_defaults(func=cmd_explain)
 
-    p_quota = sub.add_parser("quota", help="show quota snapshots and pressure per provider")
+    p_quota = sub.add_parser(
+        "quota", help="show quota snapshots and pressure per provider"
+    )
     p_quota.add_argument(
         "--poll", action="store_true", help="run each enabled source once first"
     )
@@ -404,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fb.set_defaults(func=cmd_feedback)
 
     args = parser.parse_args(argv)
-    return int(args.func(args))
+    return args.func(args)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@ import json
 import httpx
 import pytest
 import respx
-
 from conftest import UPSTREAM, make_config
+
 from jev_router.app import create_app
 from jev_router.pins import Store
 
@@ -262,7 +262,8 @@ async def test_shadow_mode_logs_the_decision_but_sends_the_default(tmp_path, mon
     assert json.loads(route.calls[0].request.content)["model"] == "vendor/big(medium)"
     assert resp.headers["X-Router-Shadow-Model"] == "small"
     rows = store.recent_decisions(5)
-    assert rows[0]["model"] == "small"  # what it would have picked
+    assert rows[0]["model"] == "big"  # actual execution, including shadow mode
+    assert rows[0]["intended_model"] == "small"  # classifier recommendation
     assert rows[0]["mode"] == "shadow"
     assert store.get_pin(rows[0]["conversation_key"], 3600) is None
 

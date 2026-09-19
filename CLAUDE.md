@@ -8,7 +8,7 @@ is, then choosing a model and a reasoning effort from rules in `router.yaml`.
 
 ```sh
 uv sync
-uv run pytest -q                              # 222 tests, no network
+uv run pytest -q                              # offline tests, no provider calls
 uv run pytest tests/test_policy.py::test_name -x
 uv run jev-router check-config                # validate router.yaml
 uv run jev-router serve --mode shadow
@@ -60,7 +60,9 @@ uv run python evals/run_eval.py --variants router_yaml --public evals/cases_publ
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
-- `cli.py` — serve, check-config, explain, quota, decisions, feedback.
+- `security.py` — router-endpoint authentication, request-size and concurrency limits.
+- `deciders/validation.py` — validates provider answer shape and numeric bounds.
+- `cli.py` — serve, check-config, explain, quota, decisions, feedback, prune.
 
 Request flow: `app.chat_completions` → `features.extract_features` →
 `pins.conversation_key` and a pin lookup → `deciders.jev` → `state.build_state`
@@ -115,9 +117,16 @@ walks the route's entries and applies `policy.apply_effort` to each.
   by `max_shift`, monotone in pressure, and one-directional. A `protected`
   rule ignores them. Only an `equivalent: true` entry may be promoted ahead of
   a route's primary.
-- Never reroute a pinned conversation. The one exception is context overflow,
-  which moves up once and takes a new decision id. Quota never touches a pin,
-  and a pinned turn has no fallback plan.
+- Revalidate every pin against current alias/client permitted models, effort
+  bounds, tools, vision and context. Only hard infeasibility permits replacing
+  a pin, with a new decision id; search all eligible models, not just larger
+  windows. Quota and transient failures never move a valid pin, and a pinned
+  turn has no fallback plan. Keys are scoped by authorization, alias and client.
+- Commit new/replacement pins only after upstream 2xx headers, never at candidate
+  selection or from temporary decider fallbacks. A later stream failure is
+  recorded separately and never switches models. Valid reused pins keep their TTL.
+- Empty allowed intersections or impossible effort/capability/context constraints
+  return a routing error; failure recovery must not silently discard constraints.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
   on non-streamed replies, and must yield chunks unchanged. An upstream
   fallback is chosen on the response status, before anything is streamed;

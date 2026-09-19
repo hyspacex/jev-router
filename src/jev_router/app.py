@@ -7,12 +7,16 @@ unmodified.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
 import os
 import time
-from typing import Any, AsyncIterator
+import zlib
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from starlette.applications import Starlette
@@ -24,13 +28,24 @@ from starlette.routing import Route
 from .config import RouterConfig
 from .deciders import build_decider
 from .deciders.base import Decision
-from .feedback import FeedbackError, validate as validate_feedback
 from .features import Features, extract_features
+from .feedback import FeedbackError
+from .feedback import validate as validate_feedback
 from .pins import Store, conversation_key, new_decision_id
-from .policy import PlanEntry, apply_effort, clamp_effort, fits, next_model_that_fits
+from .policy import (
+    PlanEntry,
+    RoutingError,
+    apply_effort,
+    constrained_effort,
+    eligible_models,
+    guard_candidate,
+    next_model_that_fits,
+    validate_entry,
+)
 from .policy import finalize as policy_finalize
 from .providers import ProviderBreakers, merge_pressures
 from .quota import QuotaMonitor
+from .security import Ingress
 
 log = logging.getLogger("jev_router")
 
@@ -46,8 +61,8 @@ HOP_BY_HOP = {
     "upgrade",
 }
 # Recomputed or owned by this hop.
-DROP_REQUEST_HEADERS = HOP_BY_HOP | {"host", "content-length", "accept-encoding"}
-DROP_RESPONSE_HEADERS = HOP_BY_HOP | {"content-length", "content-encoding"}
+DROP_REQUEST_HEADERS = HOP_BY_HOP | {"host", "content-length", "x-router-admin-token"}
+DROP_RESPONSE_HEADERS = HOP_BY_HOP | {"content-length"}
 
 PEEK_LIMIT = 512 * 1024  # bodies larger than this are streamed without inspection
 
@@ -55,6 +70,16 @@ PEEK_LIMIT = 512 * 1024  # bodies larger than this are streamed without inspecti
 def _is_retryable_status(status: int) -> bool:
     """A status that says "try somewhere else", not "your request is wrong"."""
     return status == 429 or status >= 500
+
+
+@dataclass(frozen=True)
+class ServedOutcome:
+    intended: PlanEntry
+    entry: PlanEntry
+    index: int
+    reason: str
+    status: int
+    accepted: bool
 
 
 class Router:
@@ -66,7 +91,13 @@ class Router:
             config.settings.upstream_read_timeout_s,
             connect=config.settings.upstream_connect_timeout_s,
         )
-        self.upstream = httpx.AsyncClient(timeout=timeout, follow_redirects=False)
+        self.upstream = httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+            limits=httpx.Limits(
+                max_connections=config.settings.max_concurrent_requests
+            ),
+        )
         self.jev_client = httpx.AsyncClient(
             timeout=config.settings.jev_timeout_ms / 1000,
             limits=httpx.Limits(max_keepalive_connections=4),
@@ -111,11 +142,17 @@ class Router:
         return url
 
     def _forward_headers(self, request: Request) -> list[tuple[bytes, bytes]]:
-        return [
+        connection = {
+            v.strip().lower() for v in request.headers.get("connection", "").split(",")
+        }
+        headers = [
             (k, v)
             for k, v in request.headers.raw
-            if k.decode("latin-1").lower() not in DROP_REQUEST_HEADERS
+            if k.decode("latin-1").lower() not in DROP_REQUEST_HEADERS | connection
         ]
+        if not any(k.lower() == b"accept-encoding" for k, _ in headers):
+            headers.append((b"accept-encoding", b"identity"))
+        return headers
 
     async def forward(
         self,
@@ -140,49 +177,70 @@ class Router:
             if decision_row:
                 self.store.update_decision(decision_row, upstream_status=502)
             return JSONResponse(
-                {"error": {"message": f"upstream request failed: {exc}", "type": "router"}},
+                {
+                    "error": {
+                        "message": f"upstream request failed: {exc}",
+                        "type": "router",
+                    }
+                },
                 status_code=502,
             )
 
-        if decision_row:
-            self.store.update_decision(
-                decision_row, upstream_status=upstream_response.status_code
-            )
-
-        out_headers = {
-            k: v
-            for k, v in upstream_response.headers.items()
-            if k.lower() not in DROP_RESPONSE_HEADERS
-        }
-        out_headers.update(extra_response_headers or {})
-
-        capture = (
-            decision_row is not None
-            and "text/event-stream" not in upstream_response.headers.get("content-type", "")
-        )
-        body_iter = self._stream(upstream_response, decision_row if capture else None)
-        return StreamingResponse(
-            body_iter,
-            status_code=upstream_response.status_code,
-            headers=out_headers,
-            background=BackgroundTask(upstream_response.aclose),
+        return self._respond(
+            upstream_response, extra_response_headers or {}, 0, decision_row
         )
 
     async def _stream(
-        self, upstream_response: httpx.Response, capture_row: int | None
+        self,
+        upstream_response: httpx.Response,
+        capture_row: int | None,
+        *,
+        started: float | None = None,
     ) -> AsyncIterator[bytes]:
-        buffer = bytearray() if capture_row else None
+        capture = (
+            capture_row
+            and "text/event-stream"
+            not in upstream_response.headers.get("content-type", "")
+        )
+        buffer = bytearray() if capture else None
         limit = self.config.settings.capture_usage_max_bytes
+        started = started if started is not None else time.perf_counter()
+        first_byte = None
+        count = 0
+        state = "failed"
         try:
             async for chunk in upstream_response.aiter_raw():
-                if buffer is not None and len(buffer) < limit:
-                    buffer.extend(chunk)
+                if chunk and first_byte is None:
+                    first_byte = (time.perf_counter() - started) * 1000
+                count += len(chunk)
+                if buffer is not None:
+                    if len(buffer) + len(chunk) <= limit:
+                        buffer.extend(chunk)
+                    else:
+                        buffer = (
+                            None  # never keep a truncated body or an oversized chunk
+                        )
                 yield chunk
+            state = "completed"
+        except (asyncio.CancelledError, GeneratorExit):
+            state = "disconnected"
+            raise
         finally:
-            # Runs on a client disconnect too, which cancels the upstream read.
+            if capture_row:
+                self.store.update_decision(
+                    capture_row,
+                    stream_state=state,
+                    first_byte_ms=first_byte,
+                    response_ms=(time.perf_counter() - started) * 1000,
+                    response_bytes=count,
+                )
+                if state == "completed" and buffer is not None:
+                    self._record_usage(
+                        capture_row,
+                        bytes(buffer),
+                        upstream_response.headers.get("content-encoding", ""),
+                    )
             await upstream_response.aclose()
-            if buffer is not None and capture_row:
-                self._record_usage(capture_row, bytes(buffer))
 
     # --- forwarding an alias, with fallbacks ---------------------------
 
@@ -193,7 +251,10 @@ class Router:
         plan: list[PlanEntry],
         headers: dict[str, str],
         decision_row: int | None = None,
-    ) -> tuple[Response, int, str, PlanEntry]:
+        *,
+        alias: str,
+        features: Features,
+    ) -> tuple[Response, ServedOutcome]:
         """Try the plan in order. Return the response and which entry served it.
 
         An entry is skipped when its provider's breaker is open. An entry is
@@ -205,6 +266,11 @@ class Router:
         base_headers = self._forward_headers(request)
         url = self._upstream_url(request)
         failures: list[str] = []
+        started = time.perf_counter()
+        for candidate in plan:
+            validate_entry(self.config, self.config.aliases[alias], features, candidate)
+        if not plan:
+            raise RoutingError("no eligible execution entries")
 
         for index, entry in enumerate(plan):
             provider = entry.provider or self.config.provider_of(entry.model)
@@ -220,12 +286,17 @@ class Router:
                 log.info("no healthy provider left, trying %s anyway", entry.model)
 
             content = self._alias_body(body, entry)
-            headers_out = [*base_headers, (b"content-length", str(len(content)).encode())]
+            headers_out = [
+                *base_headers,
+                (b"content-length", str(len(content)).encode()),
+            ]
             upstream_request = self.upstream.build_request(
                 request.method, url, headers=headers_out, content=content
             )
             try:
-                upstream_response = await self.upstream.send(upstream_request, stream=True)
+                upstream_response = await self.upstream.send(
+                    upstream_request, stream=True
+                )
             except httpx.HTTPError as exc:
                 self.breakers.record_failure(provider, type(exc).__name__)
                 failures.append(f"{entry.model}: {type(exc).__name__}")
@@ -234,14 +305,22 @@ class Router:
                 if decision_row:
                     self.store.update_decision(decision_row, upstream_status=502)
                 error = JSONResponse(
-                    {"error": {"message": f"upstream request failed: {exc}",
-                               "type": "router"}},
+                    {
+                        "error": {
+                            "message": f"upstream request failed: {exc}",
+                            "type": "router",
+                        }
+                    },
                     status_code=502,
                 )
-                return error, index, "; ".join(failures), entry
+                return error, ServedOutcome(
+                    plan[0], entry, index, "; ".join(failures), 502, False
+                )
 
             if _is_retryable_status(upstream_response.status_code):
-                self.breakers.record_failure(provider, f"HTTP {upstream_response.status_code}")
+                self.breakers.record_failure(
+                    provider, f"HTTP {upstream_response.status_code}"
+                )
                 failures.append(f"{entry.model}: HTTP {upstream_response.status_code}")
                 if not last_rung:
                     await upstream_response.aclose()
@@ -251,19 +330,24 @@ class Router:
             else:
                 self.breakers.record_success(provider)
 
-            return self._respond(upstream_response, headers, index, decision_row), index, why, entry
+            outcome = ServedOutcome(
+                plan[0],
+                entry,
+                index,
+                why,
+                upstream_response.status_code,
+                200 <= upstream_response.status_code < 300,
+            )
+            actual_headers = dict(headers)
+            wire_model, _ = apply_effort(self.config, entry.model, entry.effort)
+            actual_headers.update(
+                {"X-Router-Model": wire_model, "X-Router-Effort": entry.effort or ""}
+            )
+            return self._respond(
+                upstream_response, actual_headers, index, decision_row, started=started
+            ), outcome
 
-        # Unreachable with a non-empty plan, and a plan is never empty. Never
-        # leave a caller without a response all the same.
-        return (
-            JSONResponse(
-                {"error": {"message": "no route could be tried", "type": "router"}},
-                status_code=502,
-            ),
-            0,
-            "; ".join(failures),
-            plan[0],
-        )
+        raise RoutingError("no eligible execution entries")
 
     def _alias_body(self, body: dict[str, Any], entry: PlanEntry) -> bytes:
         upstream_model, extra = apply_effort(self.config, entry.model, entry.effort)
@@ -279,34 +363,58 @@ class Router:
         headers: dict[str, str],
         index: int,
         decision_row: int | None,
+        *,
+        started: float | None = None,
     ) -> Response:
         if decision_row:
             self.store.update_decision(
                 decision_row, upstream_status=upstream_response.status_code
             )
-        out_headers = {
-            k: v
-            for k, v in upstream_response.headers.items()
-            if k.lower() not in DROP_RESPONSE_HEADERS
+        connection = {
+            v.strip().lower()
+            for v in upstream_response.headers.get("connection", "").split(",")
         }
-        out_headers.update(headers)
+        extra = {k.lower(): v for k, v in headers.items()}
         if index:
-            out_headers["X-Router-Fallback"] = str(index)
-        capture = (
-            decision_row is not None
-            and "text/event-stream" not in upstream_response.headers.get("content-type", "")
+            extra["x-router-fallback"] = str(index)
+        raw_headers = [
+            (k.lower(), v)
+            for k, v in upstream_response.headers.raw
+            if k.decode("latin-1").lower()
+            not in DROP_RESPONSE_HEADERS | connection | extra.keys()
+        ]
+        raw_headers.extend(
+            (k.encode("latin-1"), v.encode("latin-1")) for k, v in extra.items()
         )
-        return StreamingResponse(
-            self._stream(upstream_response, decision_row if capture else None),
+        response = StreamingResponse(
+            self._stream(upstream_response, decision_row, started=started),
             status_code=upstream_response.status_code,
-            headers=out_headers,
             background=BackgroundTask(upstream_response.aclose),
         )
+        response.raw_headers = raw_headers
+        return response
 
-    def _record_usage(self, row_id: int, body: bytes) -> None:
+    def _record_usage(self, row_id: int, body: bytes, encoding: str = "") -> None:
         try:
+            for coding in reversed(
+                [e.strip().lower() for e in encoding.split(",") if e.strip()]
+            ):
+                if coding == "identity":
+                    continue
+                if coding not in ("gzip", "deflate"):
+                    return
+                decoder = zlib.decompressobj(31 if coding == "gzip" else 15)
+                body = decoder.decompress(
+                    body, self.config.settings.capture_usage_max_bytes + 1
+                )
+                if (
+                    len(body) > self.config.settings.capture_usage_max_bytes
+                    or not decoder.eof
+                    or decoder.unused_data
+                ):
+                    return
             usage = json.loads(body).get("usage")
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, zlib.error):
             return
         if isinstance(usage, dict):
             self.store.update_decision(row_id, upstream_usage=usage)
@@ -321,30 +429,42 @@ class Router:
         settings = self.config.settings
         alias_cfg = self.config.aliases[alias]
         key = conversation_key(
-            features.auth_header, features.system_prompt, features.first_user_message
+            features.auth_header,
+            features.system_prompt,
+            features.first_user_message,
+            alias=alias,
+            client=features.client,
         )
         pin = self.store.get_pin(key, settings.pin_ttl_seconds)
         pinned = False
         decision_id = new_decision_id()
 
-        if pin and pin["model"] in self.config.models:
+        eligible = eligible_models(self.config, alias_cfg, features)
+        if pin:
             model, effort, rule = pin["model"], pin["effort"], "pin"
             reason = "pinned conversation"
-            # Turns of one pinned conversation share the id of the decision
-            # that created the pin, so feedback lands on that decision.
             decision_id = pin["decision_id"] or decision_id
-            if not fits(self.config, model, features):
-                allowed = alias_cfg.allowed_models or list(self.config.models)
-                bigger = next_model_that_fits(self.config, model, features, allowed)
-                if bigger:
-                    effort = clamp_effort(self.config, bigger, effort)
-                    decision_id = new_decision_id()  # a different route, a new decision
-                    self.store.set_pin(key, bigger, effort, decision_id)
-                    reason = f"{model} no longer fits this conversation, moved to {bigger}"
-                    model, rule = bigger, "repin_context"
-                else:
-                    reason = f"{model} no longer fits and nothing larger is available"
-                    rule = "pin_overflow"
+            if model not in eligible:
+                replacement = next_model_that_fits(
+                    self.config, model, features, eligible
+                )
+                if replacement is None:
+                    raise RoutingError(
+                        "pinned model is incompatible and no replacement is eligible"
+                    )
+                old = self.config.models.get(model)
+                rule = (
+                    "repin_context"
+                    if old and features.budget_tokens > old.context_window
+                    else "repin_constraints"
+                )
+                reason = f"{model} is no longer eligible, using {replacement}"
+                model = replacement
+            effort = constrained_effort(self.config, alias_cfg, features, model, effort)
+            if (model, effort) != (pin["model"], pin["effort"]):
+                decision_id = new_decision_id()
+                if rule == "pin":
+                    rule = "repin_constraints"
             decision = Decision(
                 model=model,
                 effort=effort,
@@ -357,8 +477,11 @@ class Router:
             pinned = True
         else:
             decision = await self.decider_for(alias).decide(features, alias_cfg)
-            if not decision.fallback and settings.mode == "active":
-                self.store.set_pin(key, decision.model, decision.effort, decision_id)
+            if decision.routing_error:
+                raise RoutingError(decision.routing_error)
+            decision.model, decision.effort = guard_candidate(
+                self.config, alias_cfg, features, decision.model, decision.effort
+            )
 
         row = self.store.log_decision(
             decision_id=decision_id,
@@ -398,8 +521,8 @@ class Router:
 
         A pinned conversation gets exactly one. Moving it to another model on
         a transient 429 would throw away the prompt cache and the style the
-        conversation was pinned for, and the pin rule has one exception
-        already (context overflow), which is enough.
+        conversation was pinned for. Only hard infeasibility permits a
+        replacement; quota and transient failures never do.
         """
         head = PlanEntry(
             model=chosen_model,
@@ -448,7 +571,9 @@ async def chat_completions(request: Request) -> Response:
 
     alias = model
     features = extract_features(body, dict(request.headers))
-    decision, pinned, row, decision_id, key = await router.route_alias(alias, body, features)
+    decision, pinned, row, decision_id, key = await router.route_alias(
+        alias, body, features
+    )
     chosen_model, chosen_effort = router.effective_route(decision, alias, features)
 
     plan = router.plan_for(decision, chosen_model, chosen_effort, pinned)
@@ -482,42 +607,52 @@ async def chat_completions(request: Request) -> Response:
         decision.fallback,
         None if decision.jev_ms is None else round(decision.jev_ms),
         _pressure_header(decision) or "-",
-        ",".join(f"{s.question}{s.op}{s.base:g}->{s.effective:g}" for s in decision.shifts)
+        ",".join(
+            f"{s.question}{s.op}{s.base:g}->{s.effective:g}" for s in decision.shifts
+        )
         or "-",
         decision.reordered,
     )
 
-    response, index, why, served = await router.forward_alias(
-        request, body, plan, headers, decision_row=row
+    response, outcome = await router.forward_alias(
+        request,
+        body,
+        plan,
+        headers,
+        decision_row=row,
+        alias=alias,
+        features=features,
     )
-
-    if index:
-        log.warning(
-            "served by fallback %d (%s at %s) after: %s",
-            index,
-            served.model,
-            served.effort or "-",
-            why or "no reason recorded",
+    router.store.update_decision(
+        row,
+        model=outcome.entry.model,
+        effort=outcome.entry.effort,
+        intended_model=decision.model,
+        intended_effort=decision.effort or "",
+        upstream_status=outcome.status,
+        accepted=outcome.accepted,
+        fallback_index=outcome.index,
+        fallback_reason=outcome.reason,
+        stream_state="accepted" if outcome.accepted else "rejected",
+    )
+    # A valid reused pin keeps its original expiry, even during transient failures.
+    if (
+        outcome.accepted
+        and not decision.fallback
+        and router.config.settings.mode == "active"
+        and (not pinned or decision.rule != "pin")
+    ):
+        router.store.set_pin(
+            key, outcome.entry.model, outcome.entry.effort, decision_id
         )
-        router.store.update_decision(
-            row,
-            model=served.model,
-            effort=served.effort,
-            intended_model=plan[0].model,
-            intended_effort=plan[0].effort or "",
-            fallback_index=index,
-            fallback_reason=why,
-        )
-        # The conversation follows the model that answered, so the rest of it
-        # keeps one model and one prompt cache.
-        if not pinned and router.config.settings.mode == "active":
-            router.store.set_pin(key, served.model, served.effort, decision_id)
     return response
 
 
 def _pressure_header(decision: Decision) -> str:
     return ",".join(
-        f"{name}={value:.2f}" for name, value in sorted(decision.pressures.items()) if value
+        f"{name}={value:.2f}"
+        for name, value in sorted(decision.pressures.items())
+        if value
     )
 
 
@@ -526,7 +661,7 @@ async def list_models(request: Request) -> Response:
     headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in DROP_REQUEST_HEADERS
+        if k.lower() not in DROP_REQUEST_HEADERS | {"accept-encoding"}
     }
     base = router.config.settings.upstream_base_url.rstrip("/")
     try:
@@ -558,7 +693,7 @@ async def list_models(request: Request) -> Response:
                     "id": alias,
                     "object": "model",
                     "owned_by": "jev-router",
-                    "created": int(router.started),
+                    "created": round(router.started),
                     "description": acfg.description,
                 }
             )
@@ -608,7 +743,9 @@ async def quota(request: Request) -> Response:
         name: round(router.breakers.pressure(name), 4)
         for name in router.config.provider_names()
     }
-    report["effective_pressure"] = {k: round(v, 4) for k, v in router.pressures().items()}
+    report["effective_pressure"] = {
+        k: round(v, 4) for k, v in router.pressures().items()
+    }
     return JSONResponse(report)
 
 
@@ -627,9 +764,13 @@ async def post_feedback(request: Request) -> Response:
     try:
         payload = json.loads(await request.body())
     except ValueError:
-        return JSONResponse({"error": {"message": "body must be JSON"}}, status_code=400)
+        return JSONResponse(
+            {"error": {"message": "body must be JSON"}}, status_code=400
+        )
     if not isinstance(payload, dict):
-        return JSONResponse({"error": {"message": "body must be an object"}}, status_code=400)
+        return JSONResponse(
+            {"error": {"message": "body must be an object"}}, status_code=400
+        )
 
     try:
         item = validate_feedback(router.config, payload)
@@ -642,11 +783,13 @@ async def post_feedback(request: Request) -> Response:
         decision_id = router.store.last_decision_id(client or None) or ""
         if not decision_id:
             return JSONResponse(
-                {"error": {"message": "no decisions have been logged yet"}}, status_code=404
+                {"error": {"message": "no decisions have been logged yet"}},
+                status_code=404,
             )
     elif router.store.get_decision(decision_id) is None:
         return JSONResponse(
-            {"error": {"message": f"unknown decision_id {decision_id!r}"}}, status_code=404
+            {"error": {"message": f"unknown decision_id {decision_id!r}"}},
+            status_code=404,
         )
 
     row_id = router.store.add_feedback(
@@ -688,7 +831,10 @@ async def passthrough(request: Request) -> Response:
     router: Router = request.app.state.router
     if request.method in ("POST", "PUT", "PATCH"):
         length = request.headers.get("content-length")
-        small = length is not None and length.isdigit() and int(length) <= PEEK_LIMIT
+        try:
+            small = length is not None and 0 <= int(length) <= PEEK_LIMIT
+        except ValueError:
+            small = False
         if small:
             raw = await request.body()
             alias = _alias_in_body(router.config, raw)
@@ -748,6 +894,17 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/router/feedback", list_feedback, methods=["GET"]),
         Route("/{path:path}", passthrough, methods=methods),
     ]
-    app = Starlette(routes=routes, lifespan=_lifespan)
+
+    async def routing_error(_request: Request, exc: Exception) -> Response:
+        return JSONResponse(
+            {"error": {"type": "routing_error", "message": str(exc)}}, status_code=422
+        )
+
+    app = Starlette(
+        routes=routes,
+        lifespan=_lifespan,
+        exception_handlers={RoutingError: routing_error},
+    )
+    app.add_middleware(Ingress, settings=config.settings)
     app.state.router = Router(config, store)
     return app

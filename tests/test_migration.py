@@ -179,6 +179,11 @@ NEW_COLUMNS = {
     "pressures",
     "shifted",
     "reordered",
+    "accepted",
+    "stream_state",
+    "first_byte_ms",
+    "response_ms",
+    "response_bytes",
 }
 
 
@@ -230,6 +235,7 @@ def test_the_rows_in_an_old_database_still_read_back(tmp_path):
     store = Store(old_database(tmp_path / "old.db"))
     try:
         row = store.get_decision("old1")
+        assert row is not None
         assert row["model"] == "gpt-6-astra"
         assert row["answers"]["difficulty"]["score"] == 2.0
         # A decision taken before quota existed has no pressure recorded,
@@ -238,7 +244,8 @@ def test_the_rows_in_an_old_database_still_read_back(tmp_path):
         assert row["fallback_index"] is None
         assert row["reordered"] is False
         assert store.recent_feedback(5)[0]["verdict"] == "right"
-        assert store.get_pin("convkey", ttl_seconds=10**12)["model"] == "gpt-6-astra"
+        pin = store.get_pin("convkey", ttl_seconds=10**12)
+        assert pin is not None and pin["model"] == "gpt-6-astra"
     finally:
         store.close()
 
@@ -259,6 +266,7 @@ def test_an_old_database_takes_new_rows_and_new_updates(tmp_path):
             intended_effort="high", fallback_index=1, fallback_reason="big: HTTP 429",
         )
         row = store.get_decision("new1")
+        assert row is not None
         assert row["model"] == "small"
         assert row["intended_model"] == "big"
         assert row["fallback_index"] == 1
@@ -287,6 +295,6 @@ def test_a_fresh_database_needs_no_migration(tmp_path):
     store = Store(tmp_path / "fresh.db")
     try:
         assert store.migrated == []
-        assert NEW_COLUMNS <= columns(tmp_path / "fresh.db", "decisions")
+        assert columns(tmp_path / "fresh.db", "decisions") >= NEW_COLUMNS
     finally:
         store.close()

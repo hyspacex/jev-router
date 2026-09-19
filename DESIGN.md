@@ -64,11 +64,11 @@ against CLIProxyAPI, but nothing in it is specific to that proxy.
 
 ## Request flow for an alias
 
-1. Compute a conversation key: a hash of the hashed `Authorization` header, the
-   system prompt and the first user message. Few clients send a session id, and
-   this hash is stable across the turns of one conversation. A subagent starts
-   with a different first message, so it gets its own decision.
-2. If that key has a pin younger than the TTL, reuse it and skip to step 7.
+1. Compute a versioned conversation key from hashed `Authorization`, alias,
+   client policy identity, system prompt and first user message. Framed JSON
+   avoids delimiter ambiguity. Legacy unscoped keys deliberately do not match.
+2. If that key has a pin younger than the TTL, revalidate it against all current
+   hard constraints, then skip Jev. A pin is a preference, not a policy exemption.
 3. Filter models in code against a capability table in `router.yaml`: drop
    models without tool calling when the request carries `tools`, drop models
    without vision when it carries images, and drop models whose context window
@@ -98,7 +98,10 @@ If the Jev call fails for any reason (timeout, 429, 529, bad JSON, an exception
 in the client) the router falls back to a decider that guesses from counts
 alone, or to the default route when no fallback is configured. A fallback
 decision is never pinned, so the next turn tries Jev again. Jev being down
-degrades the quality of the routing and never blocks a request.
+degrades routing quality but does not itself block an otherwise eligible request.
+Malformed or incomplete HTTP-200 answers are provider failures too. Validation
+checks requested IDs, types, vocabulary and finite numeric bounds before policy.
+Unsatisfiable hard constraints instead produce a structured 422 routing error.
 
 The fallback decider adds a safety margin to its guessed difficulty score,
 because it reads counts rather than meaning and so misses hard work that looks
@@ -107,13 +110,22 @@ to redo it. Over-routing only costs quota and time.
 
 ## Pinning
 
-A pinned conversation never switches model. The pin holds a model, an effort
-and the decision id, so every turn of one conversation reports the same
-decision id and feedback lands in one place.
+A valid pinned conversation keeps its model, effort, decision id and original TTL.
+Only hard infeasibility permits replacement: changed permissions, tools, vision,
+context or effort bounds. Search all eligible models, not just larger windows.
+Each replacement gets a new decision id. Quota, 429s and changed task wording do
+not trigger reassessment.
 
-There is one exception. If a conversation outgrows the pinned model's context
-window, the router moves it once to the smallest model that fits and re-pins.
-That move gets a new decision id, because it is a different route.
+Selection is not success. Commit new/replacement pins only after upstream 2xx
+headers, never from temporary decider fallback. Failed replacement attempts leave
+the original pin in storage; the next request revalidates it again, never blindly
+executes it. Stream completion/failure is separate from acceptance. No retry or
+pin rewrite follows a mid-stream failure.
+
+Allowed-model intersections, capabilities, context and explicit effort caps/floors
+are hard. Conflicting bounds or an empty eligible set are errors. Quota ordering
+and stickiness are preferences. A pure eligibility gate checks every execution
+entry, including local fallback, shadow defaults and optional drafts.
 
 ## Fallbacks and quota
 
@@ -141,8 +153,8 @@ A 4xx is not retried either. A malformed request is malformed at every
 provider, and retrying it spends a second provider's quota to get the same
 error.
 
-A conversation served by a fallback is pinned to the model that actually
-answered, not to the primary. The alternative is to leave the pin on the
+A non-temporary decision accepted with 2xx from a fallback is pinned to that
+model, not to the primary. Rejected attempts and network errors create no pin. The alternative is to leave the pin on the
 primary and hope, which would send every turn to a model that is failing and
 would throw away the serving provider's prompt cache on every turn. The
 decision row keeps both: `model` is what served, `intended_model` is what the
@@ -150,8 +162,7 @@ policy chose, and `fallback_reason` says why the earlier entries did not.
 
 A pinned conversation has no fallback plan at all. The pin exists to keep one
 conversation on one model; moving it on a transient 429 gives up the thing the
-pin was for. The pin rule already has one exception, context overflow, and one
-is enough.
+pin was for. Only hard incompatibility permits changing it.
 
 ### The circuit breaker
 

@@ -7,8 +7,9 @@ under settings.decider, settings.fallback_decider or an alias's `decider`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from ..config import AliasCfg, RouterConfig
 from ..features import Features
@@ -29,6 +30,7 @@ class Decision:
     state_builder: str = ""
     notes: list[str] = field(default_factory=list)
     decider: str = ""
+    routing_error: str | None = None
     # The route this came from, the rungs the forwarder may try, and what
     # quota pressure did to the choice.
     route: str | None = None
@@ -59,7 +61,7 @@ def pressure_source(deps: dict[str, Any]) -> Callable[[], dict[str, float]]:
     existed, which is what the eval scripts and the CLI want.
     """
     fn = deps.get("pressures")
-    return fn if callable(fn) else dict
+    return cast(Callable[[], dict[str, float]], fn) if callable(fn) else dict
 
 
 DeciderFactory = Callable[[RouterConfig, dict[str, Any]], "Decider"]

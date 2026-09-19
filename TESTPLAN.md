@@ -431,7 +431,7 @@ jev-router feedback last too_weak --model gpt-6-astra --effort high --note "miss
 
 Verdicts are `right`, `too_weak`, `too_strong`, and `too_slow`. The decision log keeps Jev's answers, the computed features, the rule that fired, and a hash of the config, but never the message text. That is enough to replay the policy against past decisions.
 
-Two passive signals are also logged, since most turns will never get an explicit verdict: a conversation that restarts within ten minutes with an explicit stronger model (a likely under-route), and a request that was regenerated.
+Restart-with-stronger-model and regeneration are proposed passive signals, not implemented telemetry. Current transport telemetry records acceptance, completion/failure, first-byte latency, execution duration and bytes without parsing SSE. First-byte latency is not time to first token.
 
 Shadow mode comes first. For a week the router logs what it would have chosen while still sending everything to the default. You grade 50 of those decisions by hand. This measures accuracy on your real traffic, which the synthetic cases can only approximate.
 
@@ -453,7 +453,7 @@ Review schedule: weekly for the first month, then monthly. Stop tuning a setting
 
 ## Layer 6: the service itself
 
-Unit tests (no network) cover features, state builders, rule matching, effort rewriting, pinning, context overflow, fallback, shadow mode, feedback, and byte-for-byte pass-through of non-alias requests and streams.
+Offline CI covers features, state builders, rules, effort rewriting, pins, hard eligibility, upstream fallback, shadow mode, feedback and raw stream fidelity. `tests/test_hardening*.py` adds real gzip decoding, malformed HTTP-200 Jev answers, failed pin commits, alias/client scoping, capability changes, failed replacement attempts, stream failure/disconnect, ingress limits and admin authentication. These tests gate deployment; paid evaluation requires a separate call budget.
 
 Live smoke test through the real proxy:
 

@@ -25,11 +25,11 @@ For every request to `/v1/chat/completions`:
 
 1. Look at `model`. If it is not an alias defined in `router.yaml`, forward the
    original bytes and stop.
-2. Compute the conversation key, a sha256 of the hashed `Authorization` header,
-   the system prompt and the first user message. If that key has a pin younger
-   than the TTL, reuse it and skip Jev. If the conversation has outgrown the
-   pinned model's context window, move up once to the smallest model that fits
-   and re-pin.
+2. Compute a versioned conversation key scoped by hashed `Authorization`, alias,
+   `X-Router-Client`, system prompt and first user message. Revalidate any live
+   pin against current model permissions, effort bounds, tools, vision and context.
+   Reuse a valid pin without Jev. If it is incompatible, choose the smallest
+   eligible replacement, which may have a smaller window when capabilities change.
 3. Compute features in code: an estimated token count, message count, tools,
    images, code blocks, code-block languages, and the `X-Router-Client` header.
    Jev is never asked to count anything.
@@ -49,7 +49,14 @@ For every request to `/v1/chat/completions`:
 If the Jev call fails for any reason, the router falls back to a no-network
 decider that guesses from counts, or to the default route. A fallback decision
 is never pinned, so the next turn tries Jev again. Jev being down never blocks
-a request.
+a request that has an eligible route. Malformed HTTP-200 Jev answers also fall
+back. Impossible hard constraints return HTTP 422 with `type: routing_error`;
+recovery never silently discards configured restrictions.
+
+New and replacement pins are committed only after upstream **2xx headers**.
+A later stream failure does not undo the pin or retry another model, but is
+recorded separately. Reused pins keep their original TTL. Upgrading from an
+unscoped key causes one fresh decision per conversation; legacy pins are not reused.
 
 Providers, models and routes are separate things. A provider is one account or
 subscription; a model names the provider it belongs to; a route is a named
@@ -94,7 +101,8 @@ The reply carries the routing headers:
 | `X-Router-Rule` | the rule that fired, or `pin`, `low_confidence`, `default`, `fallback` |
 | `X-Router-Pinned` | `true` when the conversation already had a model |
 | `X-Router-Decision` | the decision id, for feedback |
-| `X-Router-Fallback` | `true`, present only when Jev could not be used |
+| `X-Router-Fallback` | upstream fallback entry index; absent on the primary |
+| `X-Router-Decider-Fallback` | `true` when the decision used temporary local fallback |
 | `X-Router-Shadow-Model` | in shadow mode, what would have been chosen |
 
 ### Other commands
@@ -178,7 +186,10 @@ decider or a new quota source needs Python.
 | `log_state` | when true, also store the state sent to Jev |
 | `decider`, `fallback_decider` | which decider runs, and which one covers a Jev failure |
 | `upstream_connect_timeout_s`, `upstream_read_timeout_s` | forwarding timeouts |
-| `capture_usage_max_bytes` | how much of a non-streamed reply to buffer for its usage block |
+| `capture_usage_max_bytes` | maximum buffered and decoded non-streamed usage copy |
+| `max_body_bytes` | request limit, including chunked bodies; default 16 MiB |
+| `max_concurrent_requests` | in-flight request and upstream connection bound; default 64 |
+| `admin_token_env` | router endpoint token variable; default `JEV_ROUTER_ADMIN_TOKEN` |
 | `breaker` | the default circuit breaker, which a provider may override |
 
 ### A provider
@@ -260,10 +271,11 @@ request at all (no tool calling, no vision, too small a context window) is
 left out of the plan.
 
 A fallback that served the request sets `X-Router-Fallback: <n>` and is logged
-with the reason each earlier entry failed. The conversation is then pinned to
-the model that actually answered, so the rest of it stays on one model and
-keeps that provider's prompt cache. The decision row records the intended
-primary in `intended_model` and `intended_effort`.
+with the reason each earlier entry failed. Only a 2xx response from a non-temporary
+decision establishes a pin. If every entry fails, the next request decides afresh.
+Headers and the decision row identify the actual final entry; `accepted` distinguishes
+success from a rejected attempt. `intended_model` and `intended_effort` retain the
+policy choice (also in shadow mode, whose `model` now records actual execution).
 
 `equivalent: true` says an entry is as good as the primary for this lane's
 work. It is the only thing that lets quota pressure promote an entry ahead of
@@ -834,9 +846,9 @@ on TypeSafe's side cannot move routing without a rerun.
   captured.
 - The questions and their criteria are written in English. Non-English requests
   are classified less reliably.
-- A pinned conversation never changes model. The only exception is a
-  conversation that outgrows the pinned model's context window, which moves up
-  once.
+- A valid pin stays sticky, even during 429s or quota pressure. Hard permission,
+  capability, context or effort incompatibility permits a replacement with a new
+  decision id. New instructions alone do not trigger reassessment.
 - Jev is a closed, paid API from TypeSafe. Without a key the router falls back
   to the `rules` decider, which reads counts rather than meaning and
   under-routes about a quarter of the case set.
@@ -846,11 +858,52 @@ on TypeSafe's side cannot move routing without a rerun.
   models, one specific proxy, and a cost model in `evals/common.py` that nobody
   measured. Change `ROUTE_COST` first before reusing any of this.
 
+## Transport, privacy and deployment
+
+Forwarded replies use raw streaming with their `Content-Encoding` preserved.
+The client's `Accept-Encoding` is forwarded; absent means an explicit `identity`
+request upstream. Only a bounded private copy is decoded for JSON usage capture
+(gzip/deflate supported; unsupported encodings skip capture). SSE bytes are never
+parsed or rewritten. Alias decisions record `accepted`, `stream_state`,
+`first_byte_ms`, `response_ms`, and wire `response_bytes`. Timing starts at the
+execution plan, not ingress or Jev classification. First byte is **not TTFT**;
+`completed` means normal transport EOF, not a graded successful answer.
+
+`log_state: false` controls local storage, not data sent to TypeSafe. State builders
+send request excerpts, quoted material and tool names to Jev, a separate destination
+from the selected model. For no external classification, set `settings.decider: rules`
+and remove/replace any alias-level `decider: jev` overrides. This still forwards the
+request to the selected upstream model; it is not an entirely local-processing mode.
+
+`/router/*` endpoints require `X-Router-Admin-Token` when the environment variable
+named by `admin_token_env` is set. Without a token, **only direct loopback callers**
+are accepted; forwarded client-IP headers are not trusted. The admin header is
+never sent upstream. `Authorization` remains the model API's credential and is
+forwarded unchanged. Do not proxy remote traffic into loopback without setting an
+admin token. Non-loopback serving also needs trusted ingress/Tailscale ACLs: upstream
+authentication happens after classification, so it does not protect Jev quota.
+
+Body/concurrency limits return 413/503. For chunked passthrough uploads, the size
+limit is enforced as bytes arrive; an upstream may receive a prefix before rejection.
+Keep `log_state` disabled. Feedback notes are stored verbatim. Retention is explicit:
+
+```sh
+uv run jev-router prune --older-than-days 30
+```
+
+This irreversibly deletes old decisions, feedback and pins, including tuning evidence.
+Back up the database first. No automatic deletion runs at startup.
+
 ## Tests
 
 ```sh
 uv run pytest -q
 ```
+
+GitHub Actions installs from `uv.lock`, runs the offline tests on Python 3.12–3.14,
+and validates the configuration. No provider evals run in CI. HTTP/session regressions
+cover compressed representations, malformed Jev answers, pin success boundaries,
+alias/capability changes, hard conflicts, stream failures, and ingress limits.
 
 The unit tests mock Jev and the upstream with respx, so nothing leaves the
 machine. No test runs a quota source against a real program: the `command`

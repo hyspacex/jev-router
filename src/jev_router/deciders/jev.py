@@ -11,9 +11,17 @@ import httpx
 
 from ..config import AliasCfg, RouterConfig
 from ..features import Features
-from ..policy import apply_effort, evaluate, finalize
+from ..policy import (
+    RoutingError,
+    apply_effort,
+    constrained_effort,
+    eligible_models,
+    evaluate,
+    finalize,
+)
 from ..state import build_state
 from .base import Decider, Decision, build_decider, pressure_source, register_decider
+from .validation import validate_response
 
 log = logging.getLogger("jev_router.jev")
 
@@ -31,7 +39,7 @@ class JevDecider:
         self.config = config
         self.client = client
         self.fallback = fallback
-        self.pressures = pressures if callable(pressures) else dict
+        self.pressures = pressure_source({"pressures": pressures})
 
     @property
     def api_key(self) -> str:
@@ -48,10 +56,17 @@ class JevDecider:
         cfg = alias_cfg.draft
         if cfg is None or not cfg.enabled or not cfg.model:
             return ""
-        if cfg.model in self.config.models:
-            upstream_id, extra = apply_effort(self.config, cfg.model, cfg.effort)
-        else:
-            upstream_id, extra = cfg.model, {}
+        # A draft is optional, but it is still an execution attempt. Unknown
+        # or forbidden models must not bypass the alias/client boundary.
+        try:
+            if cfg.model not in eligible_models(self.config, alias_cfg, features):
+                return ""
+            effort = constrained_effort(
+                self.config, alias_cfg, features, cfg.model, cfg.effort
+            )
+            upstream_id, extra = apply_effort(self.config, cfg.model, effort)
+        except RoutingError:
+            return ""
         request = (features.last_user_message or "").strip()
         if not request:
             return ""
@@ -81,22 +96,27 @@ class JevDecider:
 
     async def decide(self, features: Features, alias_cfg: AliasCfg) -> Decision:
         settings = self.config.settings
-        state = build_state(alias_cfg.state_builder, features, self.config)
-        draft = await self.draft(features, alias_cfg)
-        if draft and isinstance(state, dict) and alias_cfg.draft is not None:
-            state[alias_cfg.draft.state_field] = draft
-        questions = {qid: self.config.question(qid) for qid in alias_cfg.questions}
-
-        if not self.api_key:
-            return await self._fallback(features, alias_cfg, state, "no Jev API key set")
-        if not questions:
-            return await self._fallback(
-                features, alias_cfg, state, "alias asks no questions"
-            )
-
-        payload = {"model": settings.jev_model, "state": state, "questions": questions}
+        state: Any = None
         started = time.perf_counter()
         try:
+            state = build_state(alias_cfg.state_builder, features, self.config)
+            draft = await self.draft(features, alias_cfg)
+            if draft and isinstance(state, dict) and alias_cfg.draft is not None:
+                state[alias_cfg.draft.state_field] = draft
+            questions = {qid: self.config.question(qid) for qid in alias_cfg.questions}
+            if not self.api_key:
+                return await self._fallback(
+                    features, alias_cfg, state, "no Jev API key set"
+                )
+            if not questions:
+                return await self._fallback(
+                    features, alias_cfg, state, "alias asks no questions"
+                )
+            payload = {
+                "model": settings.jev_model,
+                "state": state,
+                "questions": questions,
+            }
             resp = await self.client.post(
                 settings.jev_url,
                 json=payload,
@@ -104,37 +124,47 @@ class JevDecider:
                 timeout=settings.jev_timeout_ms / 1000,
             )
             resp.raise_for_status()
-            data = resp.json()
+            answers, input_tokens = validate_response(resp.json(), questions)
+            pressures = self.pressures()
+            result = evaluate(self.config, alias_cfg, answers, features, pressures)
+            elapsed = (time.perf_counter() - started) * 1000
+            return Decision(
+                model=result.model,
+                effort=result.effort,
+                rule=result.rule,
+                reason=result.reason,
+                answers=answers,
+                jev_ms=elapsed,
+                jev_input_tokens=input_tokens,
+                fallback=False,
+                state=state,
+                state_builder=alias_cfg.state_builder,
+                notes=result.notes,
+                decider=self.name,
+                route=result.route,
+                plan=result.plan,
+                pressures=dict(pressures),
+                shifts=result.shifts,
+                reordered=result.reordered,
+                pressure_changed_the_outcome=result.pressure_changed_the_outcome,
+            )
+        except RoutingError as exc:
+            return Decision(
+                model="",
+                effort=None,
+                rule="routing_error",
+                reason=str(exc),
+                fallback=True,
+                routing_error=str(exc),
+                decider=self.name,
+            )
         except Exception as exc:  # timeout, 429, 529, bad JSON, anything
             elapsed = (time.perf_counter() - started) * 1000
             reason = _short_error(exc)
             log.warning("jev call failed after %.0f ms: %s", elapsed, reason)
-            return await self._fallback(features, alias_cfg, state, reason, jev_ms=elapsed)
-
-        elapsed = (time.perf_counter() - started) * 1000
-        answers = data.get("answers") or {}
-        pressures = self.pressures()
-        result = evaluate(self.config, alias_cfg, answers, features, pressures)
-        return Decision(
-            model=result.model,
-            effort=result.effort,
-            rule=result.rule,
-            reason=result.reason,
-            answers=answers,
-            jev_ms=elapsed,
-            jev_input_tokens=(data.get("usage") or {}).get("input_tokens"),
-            fallback=False,
-            state=state,
-            state_builder=alias_cfg.state_builder,
-            notes=result.notes,
-            decider=self.name,
-            route=result.route,
-            plan=result.plan,
-            pressures=dict(pressures),
-            shifts=result.shifts,
-            reordered=result.reordered,
-            pressure_changed_the_outcome=result.pressure_changed_the_outcome,
-        )
+            return await self._fallback(
+                features, alias_cfg, state, reason, jev_ms=elapsed
+            )
 
     async def _fallback(
         self,
@@ -145,18 +175,40 @@ class JevDecider:
         jev_ms: float | None = None,
     ) -> Decision:
         if self.fallback is not None:
-            decision = await self.fallback.decide(features, alias_cfg)
-            decision.fallback = True
-            decision.jev_ms = jev_ms
-            decision.state = state
-            decision.state_builder = alias_cfg.state_builder
-            decision.reason = f"{reason}; {decision.reason}"
-            return decision
+            try:
+                decision = await self.fallback.decide(features, alias_cfg)
+                decision.fallback = True
+                decision.answers = {}  # heuristic answers are not Jev replay evidence
+                decision.jev_ms = jev_ms
+                decision.state = state
+                decision.state_builder = alias_cfg.state_builder
+                decision.reason = f"{reason}; {decision.reason}"
+                return decision
+            except Exception as exc:
+                log.warning("fallback decider failed: %s", type(exc).__name__)
 
         route = self.config.settings.default_route
-        result = finalize(
-            self.config, alias_cfg, route, "fallback", reason, features
-        )
+        try:
+            result = finalize(
+                self.config, alias_cfg, route, "fallback", reason, features
+            )
+        except Exception as exc:
+            # Still return a Decision; the HTTP boundary reports infeasibility
+            # rather than executing a candidate that bypasses hard constraints.
+            message = (
+                str(exc) if isinstance(exc, RoutingError) else "local routing failed"
+            )
+            return Decision(
+                model="",
+                effort=None,
+                rule="routing_error",
+                reason=reason,
+                fallback=True,
+                routing_error=message,
+                jev_ms=jev_ms,
+                state_builder=alias_cfg.state_builder,
+                decider=self.name,
+            )
         return Decision(
             model=result.model,
             effort=result.effort,

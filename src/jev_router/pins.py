@@ -57,7 +57,12 @@ CREATE TABLE IF NOT EXISTS decisions (
     fallback_reason TEXT,
     pressures TEXT,
     shifted TEXT,
-    reordered INTEGER
+    reordered INTEGER,
+    accepted INTEGER,
+    stream_state TEXT,
+    first_byte_ms REAL,
+    response_ms REAL,
+    response_bytes INTEGER
 );
 CREATE INDEX IF NOT EXISTS decisions_ts ON decisions (ts DESC);
 CREATE INDEX IF NOT EXISTS decisions_decision_id ON decisions (decision_id);
@@ -89,6 +94,11 @@ ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("pressures", "TEXT"),
         ("shifted", "TEXT"),
         ("reordered", "INTEGER"),
+        ("accepted", "INTEGER"),
+        ("stream_state", "TEXT"),
+        ("first_byte_ms", "REAL"),
+        ("response_ms", "REAL"),
+        ("response_bytes", "INTEGER"),
     ],
 }
 
@@ -117,14 +127,21 @@ def new_decision_id() -> str:
     return secrets.token_hex(6)
 
 
-def conversation_key(auth_header: str, system_prompt: str, first_user_message: str) -> str:
-    """Stable across the turns of one conversation, and not reversible."""
+def conversation_key(
+    auth_header: str,
+    system_prompt: str,
+    first_user_message: str,
+    *,
+    alias: str = "",
+    client: str = "",
+) -> str:
+    """Versioned, unambiguously framed identity scoped to auth and policy.
+
+    Legacy unscoped pins deliberately miss; no unsafe compatibility lookup.
+    """
     auth_hash = hashlib.sha256(auth_header.encode()).hexdigest()
-    digest = hashlib.sha256()
-    for part in (auth_hash, system_prompt, first_user_message):
-        digest.update(part.encode("utf-8", "replace"))
-        digest.update(b"\x00")
-    return digest.hexdigest()
+    parts = ["v2", auth_hash, alias, client, system_prompt, first_user_message]
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=True).encode()).hexdigest()
 
 
 class Store:
@@ -235,21 +252,23 @@ class Store:
                     effort,
                     rule,
                     mode,
-                    int(fallback),
-                    int(pinned),
+                    fallback,
+                    pinned,
                     jev_ms,
                     jev_tokens,
                     est_tokens,
                     message_count,
-                    json.dumps(state, default=str) if (self.log_state and state) else None,
+                    json.dumps(state, default=str)
+                    if (self.log_state and state)
+                    else None,
                     route,
                     json.dumps(pressures, default=str) if pressures else None,
                     json.dumps(shifted, default=str) if shifted else None,
-                    int(bool(reordered)),
+                    bool(reordered),
                 ),
             )
             self._conn.commit()
-            return int(cur.lastrowid or 0)
+            return cur.lastrowid or 0
 
     def update_decision(
         self,
@@ -263,6 +282,11 @@ class Store:
         intended_effort: str | None = None,
         fallback_index: int | None = None,
         fallback_reason: str | None = None,
+        accepted: bool | None = None,
+        stream_state: str | None = None,
+        first_byte_ms: float | None = None,
+        response_ms: float | None = None,
+        response_bytes: int | None = None,
     ) -> None:
         if not row_id:
             return
@@ -270,27 +294,40 @@ class Store:
             self._conn.execute(
                 "UPDATE decisions SET upstream_status = COALESCE(?, upstream_status),"
                 " upstream_usage = COALESCE(?, upstream_usage),"
-                " model = COALESCE(?, model), effort = COALESCE(?, effort),"
+                " model = COALESCE(?, model),"
+                " effort = CASE WHEN ? IS NOT NULL THEN ? ELSE COALESCE(?, effort) END,"
                 " intended_model = COALESCE(?, intended_model),"
                 " intended_effort = COALESCE(?, intended_effort),"
                 " fallback_index = COALESCE(?, fallback_index),"
-                " fallback_reason = COALESCE(?, fallback_reason)"
+                " fallback_reason = COALESCE(?, fallback_reason),"
+                " accepted = COALESCE(?, accepted), stream_state = COALESCE(?, stream_state),"
+                " first_byte_ms = COALESCE(?, first_byte_ms), response_ms = COALESCE(?, response_ms),"
+                " response_bytes = COALESCE(?, response_bytes)"
                 " WHERE id = ?",
                 (
                     upstream_status,
                     json.dumps(upstream_usage) if upstream_usage else None,
                     model,
+                    model,
+                    effort,
                     effort,
                     intended_model,
                     intended_effort,
                     fallback_index,
                     fallback_reason,
+                    accepted,
+                    stream_state,
+                    first_byte_ms,
+                    response_ms,
+                    response_bytes,
                     row_id,
                 ),
             )
             self._conn.commit()
 
-    def recent_decisions(self, limit: int = 20, with_feedback: bool = True) -> list[dict[str, Any]]:
+    def recent_decisions(
+        self, limit: int = 20, with_feedback: bool = True
+    ) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM decisions ORDER BY id DESC LIMIT ?", (limit,)
@@ -299,15 +336,16 @@ class Store:
         if with_feedback and out:
             ids = {item["decision_id"] for item in out}
             marks: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
-            placeholders = ",".join("?" * len(ids))
             with self._lock:
                 fb_rows = self._conn.execute(
-                    f"SELECT * FROM feedback WHERE decision_id IN ({placeholders})"
-                    " ORDER BY id ASC",
-                    tuple(ids),
+                    "SELECT * FROM feedback WHERE decision_id IN "
+                    "(SELECT decision_id FROM decisions ORDER BY id DESC LIMIT ?) "
+                    "ORDER BY id ASC",
+                    (limit,),
                 ).fetchall()
             for fb in fb_rows:
-                marks[fb["decision_id"]].append(dict(fb))
+                if fb["decision_id"] in marks:
+                    marks[fb["decision_id"]].append(dict(fb))
             for item in out:
                 item["feedback"] = marks.get(item["decision_id"], [])
         return out
@@ -336,6 +374,24 @@ class Store:
             ).fetchone()
         return str(row["decision_id"]) if row else None
 
+    def prune(self, older_than_seconds: float) -> dict[str, int]:
+        """Explicit retention: remove old logs/feedback and expired pins."""
+        cutoff = time.time() - older_than_seconds
+        with self._lock:
+            counts = {
+                "feedback": self._conn.execute(
+                    "DELETE FROM feedback WHERE ts < ?", (cutoff,)
+                ).rowcount,
+                "decisions": self._conn.execute(
+                    "DELETE FROM decisions WHERE ts < ?", (cutoff,)
+                ).rowcount,
+                "pins": self._conn.execute(
+                    "DELETE FROM pins WHERE created < ?", (cutoff,)
+                ).rowcount,
+            }
+            self._conn.commit()
+            return counts
+
     # --- feedback ------------------------------------------------------
 
     def add_feedback(
@@ -352,10 +408,18 @@ class Store:
             cur = self._conn.execute(
                 "INSERT INTO feedback (decision_id, ts, verdict, better_model, better_effort,"
                 " note, source) VALUES (?,?,?,?,?,?,?)",
-                (decision_id, time.time(), verdict, better_model, better_effort, note, source),
+                (
+                    decision_id,
+                    time.time(),
+                    verdict,
+                    better_model,
+                    better_effort,
+                    note,
+                    source,
+                ),
             )
             self._conn.commit()
-            return int(cur.lastrowid or 0)
+            return cur.lastrowid or 0
 
     def recent_feedback(self, limit: int = 20) -> list[dict[str, Any]]:
         """Feedback rows with the decision they are about."""
@@ -373,22 +437,30 @@ class Store:
         for row in rows:
             item = dict(row)
             if item.get("answers"):
-                try:
-                    item["answers"] = json.loads(item["answers"])
-                except (TypeError, ValueError):
-                    pass
+                item["answers"] = _load_json(item["answers"])
             out.append(item)
         return out
 
 
+def _load_json(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
-    for field in ("answers", "features", "upstream_usage", "state", "pressures", "shifted"):
+    for field in (
+        "answers",
+        "features",
+        "upstream_usage",
+        "state",
+        "pressures",
+        "shifted",
+    ):
         if item.get(field):
-            try:
-                item[field] = json.loads(item[field])
-            except (TypeError, ValueError):
-                pass
+            item[field] = _load_json(item[field])
     item["fallback"] = bool(item.get("fallback"))
     item["pinned"] = bool(item.get("pinned"))
     item["reordered"] = bool(item.get("reordered"))

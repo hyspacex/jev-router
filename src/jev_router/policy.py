@@ -14,8 +14,9 @@ what keeps the clock and the subprocess out of the routing code.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .config import AliasCfg, Lane, Route, RouteEntry, RouterConfig, Ruleset
 from .features import Features
@@ -37,6 +38,10 @@ FEATURE_CONDITIONS: dict[str, Callable[[Features, Any], bool]] = {
     "languages_include": lambda f, v: bool(set(f.languages) & set(v)),
     "tool_names_include": lambda f, v: bool(set(f.tool_names) & set(v)),
 }
+
+
+class RoutingError(Exception):
+    """The current request has no route satisfying its hard constraints."""
 
 
 @dataclass(frozen=True)
@@ -130,7 +135,15 @@ def _live_pressures(
     """Drop the zeros, and drop everything when quota routing is switched off."""
     if not pressures or not config.quota_policy.enabled:
         return {}
-    return {k: float(v) for k, v in pressures.items() if v}
+    live = {}
+    for key, value in pressures.items():
+        try:
+            pressure = float(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if 0 < pressure <= 1:
+            live[key] = pressure
+    return live
 
 
 def _differs_without_pressure(
@@ -146,7 +159,14 @@ def _differs_without_pressure(
         config, ruleset, answers, features, {}, []
     )
     calm = finalize(
-        config, alias_cfg, use, rule_name, reason, features, pressures={}, protected=protected
+        config,
+        alias_cfg,
+        use,
+        rule_name,
+        reason,
+        features,
+        pressures={},
+        protected=protected,
     )
     return (calm.model, calm.effort, [e.as_pair() for e in calm.plan]) != (
         result.model,
@@ -173,7 +193,7 @@ def finalize(
         entries, reordered = order_entries(config, entries, live)
 
     notes: list[str] = []
-    allowed = _allowed_models(config, alias_cfg, features, notes)
+    allowed = eligible_models(config, alias_cfg, features)
     model, effort = _apply_guards(
         config, alias_cfg, entries[0].model, entries[0].effort, features, allowed, notes
     )
@@ -227,39 +247,123 @@ def _apply_guards(
     allowed: list[str],
     notes: list[str],
 ) -> tuple[str, str | None]:
-    if model not in allowed:
-        replacement = _first_capable(config, allowed, features)
-        if replacement:
-            notes.append(f"{model} is not allowed here, using {replacement}")
-            model = replacement
-        else:
-            notes.append(f"no allowed model fits, keeping {model}")
+    eligible = eligible_models(config, alias_cfg, features)
+    if model not in eligible:
+        replacement = next((m for m in allowed if m in eligible), None)
+        if replacement is None:
+            raise RoutingError("no permitted model can serve this request")
+        notes.append(
+            f"{model} cannot serve this request or is not allowed, using {replacement}"
+        )
+        model = replacement
+    adjusted = constrained_effort(config, alias_cfg, features, model, effort)
+    if adjusted != effort:
+        notes.append("effort capped or floored onto the permitted model ladder")
+    return model, adjusted
 
-    capable = capable_models(config, allowed, features)
-    if model not in capable and capable:
-        notes.append(f"{model} cannot serve this request, using {capable[0]}")
-        model = capable[0]
 
-    order = config.settings.effort_order
+def constrained_effort(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    features: Features,
+    model: str,
+    effort: str | None,
+) -> str | None:
+    """Intersect the ladder with hard caps/floors before choosing a level."""
+    mcfg = config.models[model]
+    client = config.clients.get(features.client)
+    floor = client.min_effort if client else None
     cap = alias_cfg.max_effort
-    if cap and effort and _rank(order, effort) > _rank(order, cap):
-        notes.append(f"effort capped at {cap} by the alias")
-        effort = cap
+    order = config.settings.effort_order
+    if floor and cap and _rank(order, floor) > _rank(order, cap):
+        raise RoutingError("client minimum effort exceeds alias maximum effort")
+    if not mcfg.efforts or mcfg.effort_style == "none":
+        if floor and _rank(order, floor) > _rank(order, "none"):
+            raise RoutingError("model cannot satisfy the required effort floor")
+        return None
+    levels = [
+        e
+        for e in mcfg.efforts
+        if (not floor or _rank(order, e) >= _rank(order, floor))
+        and (not cap or _rank(order, e) <= _rank(order, cap))
+    ]
+    if not levels:
+        raise RoutingError("model has no effort satisfying the alias/client bounds")
+    want = effort or mcfg.default_effort or floor
+    if want is None and cap is None:
+        return None
+    # With a cap, send an explicit effort rather than an uncontrolled default.
+    want = want or cap or levels[0]
+    lower = [e for e in levels if _rank(order, e) <= _rank(order, want)]
+    return (
+        max(lower, key=lambda e: _rank(order, e))
+        if lower
+        else min(levels, key=lambda e: _rank(order, e))
+    )
 
-    client_cfg = config.clients.get(features.client) if features.client else None
-    if client_cfg and client_cfg.min_effort:
-        floor = client_cfg.min_effort
-        if effort is None or _rank(order, effort) < _rank(order, floor):
-            notes.append(f"client {features.client} floors effort at {floor}")
-            effort = floor
 
-    return model, clamp_effort(config, model, effort)
+def eligible_models(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    features: Features,
+) -> list[str]:
+    """Mandatory pure eligibility, deliberately independent of quota/health."""
+    allowed = _allowed_models(config, alias_cfg, features, [])
+    eligible = []
+    for model in allowed:
+        if not fits(config, model, features):
+            continue
+        try:
+            constrained_effort(config, alias_cfg, features, model, None)
+        except RoutingError:
+            continue
+        eligible.append(model)
+    if not eligible:
+        raise RoutingError(
+            "no model satisfies permitted models, capabilities, context and effort bounds"
+        )
+    return eligible
+
+
+def guard_candidate(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    features: Features,
+    model: str,
+    effort: str | None,
+) -> tuple[str, str | None]:
+    return _apply_guards(
+        config,
+        alias_cfg,
+        model,
+        effort,
+        features,
+        eligible_models(config, alias_cfg, features),
+        [],
+    )
+
+
+def validate_entry(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    features: Features,
+    entry: PlanEntry,
+) -> None:
+    """Last check before I/O. Never silently execute a different entry."""
+    if entry.model not in eligible_models(config, alias_cfg, features):
+        raise RoutingError("execution entry is not eligible for this request")
+    if entry.effort != constrained_effort(
+        config, alias_cfg, features, entry.model, entry.effort
+    ):
+        raise RoutingError("execution effort violates the current constraints")
 
 
 # --- routes -------------------------------------------------------------
 
 
-def resolve_use(config: RouterConfig, route: Route) -> tuple[list[RouteEntry], str | None]:
+def resolve_use(
+    config: RouterConfig, route: Route
+) -> tuple[list[RouteEntry], str | None]:
     """A rule's `use:` as an ordered list of entries, plus the route's name.
 
     `{model, effort}` is one entry and no name, which is what every rule was
@@ -381,8 +485,11 @@ def shift_amount(cond: Any, pressures: dict[str, float]) -> tuple[float, str, fl
         return 0.0, "", 0.0
     if isinstance(max_shift, bool):
         return 0.0, "", 0.0
-    pressure = max(0.0, min(1.0, float(pressures.get(provider, 0.0) or 0.0)))
-    return max(0.0, float(max_shift)) * pressure, provider, pressure
+    try:
+        pressure = max(0.0, min(1.0, float(pressures.get(provider, 0.0) or 0.0)))
+    except (TypeError, ValueError, OverflowError):
+        pressure = 0.0
+    return max(0.0, max_shift) * pressure, provider, pressure
 
 
 def _answer_matches(
@@ -411,7 +518,11 @@ def _answer_matches(
         `gte` and `conf_gte` fire on high values, so the cutoff goes up. `lte`
         fires on low values, so the cutoff comes down.
         """
-        if not points or not isinstance(operand, (int, float)) or isinstance(operand, bool):
+        if (
+            not points
+            or not isinstance(operand, (int, float))
+            or isinstance(operand, bool)
+        ):
             return operand
         effective = operand + points if op in ("gte", "conf_gte") else operand - points
         if shifts is not None:
@@ -420,8 +531,8 @@ def _answer_matches(
                     rule=rule_name,
                     question=question,
                     op=op,
-                    base=float(operand),
-                    effective=float(effective),
+                    base=operand,
+                    effective=effective,
                     provider=provider,
                     pressure=pressure,
                 )
@@ -454,7 +565,9 @@ def _describe(when: dict[str, Any], answers: dict[str, dict[str, Any]]) -> str:
         elif ans.get("type") == "choice":
             bits.append(f"{key}={ans.get('choice')}@{ans.get('confidence', 0):.2f}")
         elif ans.get("type") == "score":
-            bits.append(f"{key}={ans.get('score', 0):.2f}@{ans.get('confidence', 0):.2f}")
+            bits.append(
+                f"{key}={ans.get('score', 0):.2f}@{ans.get('confidence', 0):.2f}"
+            )
         elif ans.get("type") == "noul":
             bits.append(f"{key}={ans.get('noul', 0):.2f}")
     return ", ".join(bits)
@@ -469,14 +582,14 @@ def _allowed_models(
     features: Features,
     notes: list[str],
 ) -> list[str]:
-    allowed = list(alias_cfg.allowed_models or config.models.keys())
+    allowed = list(
+        config.models if alias_cfg.allowed_models is None else alias_cfg.allowed_models
+    )
     client_cfg = config.clients.get(features.client) if features.client else None
-    if client_cfg and client_cfg.allowed_models:
-        narrowed = [m for m in allowed if m in client_cfg.allowed_models]
-        if narrowed:
-            allowed = narrowed
-        else:
-            notes.append(f"client {features.client} allows no model of this alias")
+    if client_cfg and client_cfg.allowed_models is not None:
+        allowed = [m for m in allowed if m in client_cfg.allowed_models]
+    if not allowed:
+        raise RoutingError("alias and client permit no common model")
     return allowed
 
 
@@ -497,28 +610,20 @@ def capable_models(
     return [m for m in allowed if fits(config, m, features)]
 
 
-def _first_capable(config: RouterConfig, allowed: list[str], features: Features) -> str | None:
-    capable = capable_models(config, allowed, features)
-    if capable:
-        return capable[0]
-    return allowed[0] if allowed else None
-
-
 def next_model_that_fits(
     config: RouterConfig,
     current: str,
     features: Features,
     allowed: list[str] | None = None,
 ) -> str | None:
-    """The smallest model that is roomier than `current` and can serve this request."""
-    pool = allowed or list(config.models)
-    current_cfg = config.models.get(current)
-    floor = current_cfg.context_window if current_cfg else 0
-    candidates = [
-        m
-        for m in pool
-        if m != current and config.models[m].context_window > floor and fits(config, m, features)
-    ]
+    """The smallest eligible replacement for an incompatible current model.
+
+    Capability changes may require a smaller window, unlike context overflow.
+    """
+    pool = list(config.models) if allowed is None else allowed
+    if current in pool and fits(config, current, features):
+        return None
+    candidates = [m for m in pool if m != current and fits(config, m, features)]
     if not candidates:
         return None
     return min(candidates, key=lambda m: config.models[m].context_window)

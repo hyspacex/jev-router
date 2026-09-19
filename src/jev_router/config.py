@@ -178,7 +178,11 @@ class Settings(Base):
     fallback_decider: str | None = "rules"
     upstream_connect_timeout_s: float = 10.0
     upstream_read_timeout_s: float = 900.0
-    capture_usage_max_bytes: int = 1_048_576
+    capture_usage_max_bytes: int = Field(default=1_048_576, ge=0)
+    max_body_bytes: int = Field(default=16 * 1024 * 1024, gt=0)
+    max_concurrent_requests: int = Field(default=64, gt=0)
+    # Router-owned endpoints only; never forwarded to the model API.
+    admin_token_env: str = "JEV_ROUTER_ADMIN_TOKEN"  # noqa: S105 - env var name, not a secret
     # The default breaker for every provider that does not override it.
     breaker: BreakerCfg = Field(default_factory=BreakerCfg)
 
