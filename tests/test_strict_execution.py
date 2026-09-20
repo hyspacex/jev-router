@@ -166,7 +166,7 @@ async def test_a_prepared_contract_expires_but_an_active_one_does_not(caller, se
 @respx.mock
 @pytest.mark.parametrize(
     "change",
-    ["upstream_id", "protocol", "provider", "context_window", "revoked", "unpermitted"],
+    ["upstream_id", "protocol", "provider", "context_window", "compatibility_revision", "revoked", "unpermitted"],
 )
 async def test_c07_model_account_and_protocol_changes_are_rejected(caller, service, change):
     await bound(caller)
@@ -181,6 +181,8 @@ async def test_c07_model_account_and_protocol_changes_are_rejected(caller, servi
         model.provider = "other"
     elif change == "context_window":
         model.context_window = 8000
+    elif change == "compatibility_revision":
+        model.compatibility_revision = "responses-v2"
     elif change == "revoked":
         del service.config.models["small"]
     else:
@@ -610,3 +612,18 @@ async def test_the_session_endpoints_report_identity_state_and_adaptation(caller
     closed = await caller.close_session()
     assert closed.json()["state"] == "closed" and closed.json()["was"] == "active"
     assert code(await caller.execute()) == "SESSION_CLOSED"
+
+
+@respx.mock
+async def test_compatibility_revision_change_is_rejected_after_restart(caller, service):
+    await bound(caller)
+    assert (await caller.execute()).status_code == 200
+    binding = caller.binding
+    service.config.models["small"].compatibility_revision = "chat-small-v2"
+    await service.restart()
+    response = await caller.execute()
+    assert response.status_code == 409
+    assert code(response) == "PROFILE_CHANGED"
+    row = service.sessions.get(caller.session_id)
+    assert row["binding_revision"] == binding
+    assert row["compatibility_revision"] == "chat-small-v1"

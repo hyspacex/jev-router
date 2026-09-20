@@ -39,17 +39,13 @@ def test_an_omitted_semantic_policy_block_behaves_as_it_did_before(config):
     assert config.shadow_questions(config.aliases["auto"]) == []
 
 
-def test_the_shipped_config_asks_three_questions_and_shadows_three():
+def test_the_shipped_config_asks_only_three_active_questions():
     from jev_router.config import load_config
 
     cfg = load_config("router.yaml")
     sp = cfg.semantic_policy
     assert sp.active_questions == ["task", "difficulty", "harm_if_wrong"]
-    assert sp.shadow_questions == [
-        "mechanical_transform",
-        "interacting_constraints",
-        "requirements_missing",
-    ]
+    assert sp.shadow_questions == []
     assert sp.distribution_policy == "shadow"
     assert shadow_questions(cfg, cfg.aliases["auto"]) == sp.shadow_questions
     # Defined for Milestone C, asked by nobody yet.
@@ -63,7 +59,7 @@ def test_the_shipped_shadow_questions_name_the_fields_they_judge():
     from jev_router.config import load_config
 
     cfg = load_config("router.yaml")
-    for qid in cfg.semantic_policy.shadow_questions:
+    for qid in ("mechanical_transform", "interacting_constraints", "requirements_missing"):
         text = cfg.questions[qid]["instructions"]
         assert "current_user_request" in text
         assert "quoted_material" in text

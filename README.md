@@ -86,7 +86,7 @@ exactly as it did.
 
 What chooses a strict binding in the first place is in
 [`docs/SEMANTIC_POLICY.md`](docs/SEMANTIC_POLICY.md): the semantic packet, the
-shadow questions that are measured and read by nothing, the quality lanes that
+offline question experiments, the quality lanes that
 bound what quota pressure may do, the coherent quota windows, and replaying a
 decision from its own row.
 [`docs/README.md`](docs/README.md) is the index, and it lists the known issues.
