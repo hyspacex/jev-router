@@ -24,7 +24,7 @@ behaves exactly as it did.
 `b3_distribution` 91.8 [86.7, 95.1]. Under-routing was 1.2% for the shipped
 packet against 4.1% for `b1_coding_state`, and the three extra questions cost
 about 900 input tokens and 2 ms of median Jev latency. Nothing was promoted:
-`coding_state_v1` is still a variant, the shadow questions are still shadow,
+`coding_state_v1` is still a variant, extra questions remain offline,
 and `distribution_policy` is still `shadow`. Experiment 22 in
 [`../evals/EXPERIMENTS.md`](../evals/EXPERIMENTS.md) has the detail and the
 limits.
@@ -34,13 +34,14 @@ limits.
 ```yaml
 semantic_policy:
   active_questions: [task, difficulty, harm_if_wrong]
-  shadow_questions: [mechanical_transform, interacting_constraints, requirements_missing]
+  shadow_questions: []
   distribution_policy: shadow
 ```
 
 The three active questions are the reproducible baseline and have not been
-rewritten. The three shadow questions go out in the **same batched call**, are
-validated separately, are recorded, and cannot reach the routing path.
+rewritten. Extra questions are disabled in production. Offline experiments may enable
+them in the same batched call. Their outputs are excluded from policy, but
+asking them can perturb active answers; this is not causal isolation.
 
 What that separation buys:
 
@@ -205,8 +206,10 @@ policy:
 Capability and adequacy are different filters. A model that supports tools is
 not thereby qualified to finish a tool-driven coding task. So:
 
-- **A pressure-driven alternative has to be in the lane.** A threshold shift or
-  an `equivalent` promotion that lands outside it is refused: the adequate
+- **Strict admission fixes the lane at zero pressure.** Quota cannot shift
+  semantic thresholds into a weaker lane. Legacy routing retains threshold shifts.
+- **A pressure-driven alternative has to be in the lane.** An `equivalent`
+  promotion that lands outside it is refused: the adequate
   provider is kept and the decision records "deferred/kept under pressure".
 - **A capability replacement is drawn from the lane.** If the lane has nothing
   eligible, the request is refused rather than served by a model nobody

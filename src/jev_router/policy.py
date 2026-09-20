@@ -220,6 +220,8 @@ def evaluate(
     answers: dict[str, dict[str, Any]],
     features: Features,
     pressures: dict[str, float] | None = None,
+    *,
+    freeze_rule_pressure: bool = False,
 ) -> PolicyResult:
     """Choose a route. `pressures` is quota pressure per provider, or nothing."""
     ruleset = config.ruleset_for(alias_cfg)
@@ -231,7 +233,8 @@ def evaluate(
     shifts: list[Shift] = []
     notes: list[str] = []
     use, rule_name, reason, protected = _pick_route(
-        config, ruleset, answers, features, live, shifts, running, notes
+        config, ruleset, answers, features, {} if freeze_rule_pressure else live,
+        shifts, running, notes
     )
     result = finalize(
         config,
@@ -287,13 +290,17 @@ def select(
     run = evaluate_rules or evaluate
     ruleset = config.ruleset_for(alias_cfg)
     live = _live_pressures(config, pressures)
-    result = run(config, alias_cfg, answers, features, live)
-    calm = run(config, alias_cfg, answers, features, None) if live else result
+    # Strict admission fixes semantic requirements before allocating capacity.
+    # Legacy evaluate() still supports quota-shifted thresholds.
+    strict = alias_cfg.session_mode == "strict"
+    options = {"freeze_rule_pressure": True} if strict else {}
+    calm = run(config, alias_cfg, answers, features, None)
+    result = run(config, alias_cfg, answers, features, live, **options) if live else calm
 
     result.counterfactual = (calm.model, calm.effort)
     result.exclusions = excluded_models(config, alias_cfg, features)
 
-    lane_name, lane = _rule_lane(config, ruleset, result.rule)
+    lane_name, lane = _rule_lane(config, ruleset, calm.rule if strict else result.rule)
     result.lane = lane_name
     if lane is None:
         result.evidence = "weak"

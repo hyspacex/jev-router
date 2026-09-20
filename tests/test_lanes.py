@@ -375,3 +375,28 @@ def test_a_lane_entry_with_no_effort_means_any_effort_of_that_model():
     assert lane.allows("big", "low") and lane.allows("big", "xhigh")
     assert not lane.allows("small", "none")
     assert lane.reference_for("big", "low") == "r"
+
+
+@pytest.mark.parametrize("pressure", [0.0, 0.5, 1.0])
+def test_strict_quality_requirement_does_not_move_with_quota(pressure):
+    cfg = load_config("router.yaml")
+    alias = cfg.aliases["auto-session"]
+    answers = {
+        "task": {"type": "choice", "choice": "code-edit", "confidence": 0.99},
+        "difficulty": {"type": "score", "score": 2.5, "confidence": 0.99},
+        "harm_if_wrong": {"type": "noul", "noul": 0.1},
+    }
+    result = select(cfg, alias, answers, FEATURES, {"openai": pressure})
+    assert result.rule == "hard"
+    assert result.lane == "frontier-work"
+    assert (result.model, result.effort) == ("gpt-6-astra", "high")
+    assert result.counterfactual == ("gpt-6-astra", "high")
+    assert result.shifts == []
+    assert not result.pressure_changed_the_outcome
+    # The legacy path deliberately retains its threshold shifts.
+    if pressure == 1.0:
+        legacy = evaluate(cfg, cfg.aliases["auto"], answers, FEATURES, {"openai": pressure})
+        assert legacy.rule != "hard"
+        legacy_selected = select(cfg, cfg.aliases["auto"], answers, FEATURES, {"openai": pressure})
+        assert legacy_selected.rule == legacy.rule
+        assert legacy_selected.model == legacy.model

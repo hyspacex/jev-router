@@ -2011,6 +2011,8 @@ class Router:
             or mcfg.upstream_id != row["upstream_id"]
         ):
             stop("the profile now names a different upstream model or account")
+        if mcfg.compatibility_revision != row["compatibility_revision"]:
+            stop("the profile compatibility revision changed")
         if mcfg.protocol != row["protocol"]:
             stop(f"the profile now speaks {mcfg.protocol}, not {row['protocol']}")
         if mcfg.context_window < (row["context_window"] or 0):

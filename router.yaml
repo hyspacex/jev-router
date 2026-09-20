@@ -320,13 +320,9 @@ session_routing:
   require_control_token: true   # the only value there is; false is an error
   max_request_history: 200      # finished request ids kept per session
 
-# Which questions decide, and which ride along only to be measured.
-#
-# The three active questions are the reproducible baseline and are not being
-# rewritten. The three shadow questions are asked in the same batched call,
-# validated on their own, recorded, and never read by the routing path: a
-# malformed shadow answer is dropped and counted, and it can neither weaken the
-# validation of the active answers nor change a route.
+# Production asks only the three active questions. Extra question definitions
+# remain available for offline experiments: asking them in the same call can
+# perturb active answers even though policy never reads their outputs.
 #
 # `distribution_policy` says what a rule may do with a Score's probability
 # vector. `shadow` computes the experimental route beside the real one and logs
@@ -334,7 +330,7 @@ session_routing:
 # which is how the router behaved before any of this existed.
 semantic_policy:
   active_questions: [task, difficulty, harm_if_wrong]
-  shadow_questions: [mechanical_transform, interacting_constraints, requirements_missing]
+  shadow_questions: []
   distribution_policy: shadow
 
 # Experimental gates. Everything here is off in the shipped file.
