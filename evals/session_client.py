@@ -10,8 +10,7 @@ An arm that pins a model has no session to resolve. It sends the concrete
 model straight through, which is the unmanaged passthrough contract, and the
 report says which arm did that.
 
-This module is not imported by the offline tests. They drive the runner with
-a fake client, so no test can make a call.
+Offline tests use scripted HTTP transports; no test needs provider access.
 """
 
 from __future__ import annotations
@@ -35,10 +34,12 @@ class RouterSessionClient:
         admin_token: str = "",
         timeout_s: float = 300.0,
         client_name: str = "session-eval",
+        upstream_api_key: str = "",
     ) -> None:
         self.base = router_url.rstrip("/")
         self.token = admin_token
         self.client_name = client_name
+        self.upstream_api_key = upstream_api_key
         self._http = httpx.AsyncClient(timeout=timeout_s)
         self._counter = 0
 
@@ -55,6 +56,8 @@ class RouterSessionClient:
 
     async def resolve(self, task: Any, arm: dict[str, Any]) -> dict[str, Any]:
         """One binding for this session, or a pinned model for a fixed arm."""
+        if arm.get("distribution_policy") or arm.get("adaptive_effort"):
+            raise SessionClientError("this live client does not implement experimental arm overrides")
         if not arm.get("alias"):
             model = str(arm.get("model") or "")
             if not model:
@@ -68,6 +71,8 @@ class RouterSessionClient:
                 ),
             }
 
+        from run_sessions import tool_schemas
+
         session_id = "session-" + secrets.token_hex(8)
         payload = {
             "schema_version": "1",
@@ -78,7 +83,7 @@ class RouterSessionClient:
             "client": self.client_name,
             "request": {
                 "messages": [{"role": "user", "content": task.prompt}],
-                "tools": [],
+                "tools": tool_schemas(task),
             },
             "limits": {"max_output_tokens": 4096},
         }
@@ -91,6 +96,15 @@ class RouterSessionClient:
             )
         contract = response.json()
         execution = contract["execution"]
+        report_response = await self._http.get(
+            f"{self.base}/router/sessions/{session_id}", headers=self._control()
+        )
+        report_response.raise_for_status()
+        report = report_response.json()
+        expected = arm.get("decider")
+        if expected and report.get("decision_source") != expected:
+            await self.close_binding({"session_id": session_id})
+            raise SessionClientError(f"expected {expected} admission, got {report.get('decision_source')}")
         return {
             "mode": "session",
             "session_id": session_id,
@@ -99,7 +113,19 @@ class RouterSessionClient:
             "effort": execution["initial_effort"],
             "wire_model": execution["wire_model"],
             "context_window": execution["context_window"],
+            "decision_source": report.get("decision_source"),
+            "decision_rule": report.get("decision_rule"),
+            "quality_lane": report.get("quality_lane"),
+            "quota_at_admission": report.get("quota_at_admission"),
         }
+
+    async def close_binding(self, binding: dict[str, Any]) -> None:
+        if binding.get("session_id"):
+            response = await self._http.post(
+                f"{self.base}/router/sessions/{binding['session_id']}/close",
+                headers=self._control(),
+            )
+            response.raise_for_status()
 
     async def complete(
         self,
@@ -116,9 +142,12 @@ class RouterSessionClient:
                 "X-Router-Binding": binding["binding_revision"],
                 "X-Router-Request-Id": f"execution-{self._counter:04d}",
             }
+        if self.upstream_api_key:
+            headers["Authorization"] = f"Bearer {self.upstream_api_key}"
         body: dict[str, Any] = {
             "model": binding["wire_model"],
             "messages": messages,
+            "max_tokens": 4096,
         }
         if tools:
             body["tools"] = tools
@@ -130,10 +159,12 @@ class RouterSessionClient:
                 f"execution failed with {response.status_code}: "
                 f"{response.text[:300]}"
             )
-        choice = (response.json().get("choices") or [{}])[0]
+        data = response.json()
+        choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         return {
             "content": message.get("content") or "",
             "tool_calls": message.get("tool_calls") or [],
             "finish_reason": choice.get("finish_reason") or "",
+            "usage": data.get("usage") or {},
         }

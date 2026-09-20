@@ -39,6 +39,7 @@ import asyncio
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -88,7 +89,7 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
     },
     "simple_rules": {
         "purpose": "what session routing is worth without Jev",
-        "alias": "auto",
+        "alias": "auto-session-rules",
         "decider": "rules",
     },
     "jev_mean": {
@@ -120,7 +121,7 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_ARMS = ["fixed_strong", "jev_mean", "jev_packet"]
+DEFAULT_ARMS = ["fixed_strong", "simple_rules", "jev_mean"]
 
 
 # --- task specs ----------------------------------------------------------
@@ -501,6 +502,9 @@ class SessionResult:
     error: str = ""
     turns_done: int = 0
     turns_total: int = 0
+    admission: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, int] = field(default_factory=dict)
+    final_response: str = ""
 
     @property
     def unfinished(self) -> bool:
@@ -521,6 +525,9 @@ class SessionResult:
             "effort": self.effort,
             "turns": f"{self.turns_done}/{self.turns_total}",
             "error": self.error,
+            "admission": self.admission,
+            "usage": self.usage,
+            "final_response": self.final_response[-4000:],
             # The tail only. A whole pytest run is not worth keeping.
             "check_output": self.check_output[-1500:],
         }
@@ -549,6 +556,7 @@ async def run_task(
     root = Path(workspace_root or tempfile.mkdtemp(prefix=f"jev-session-{task.id}-"))
     workspace = Workspace(task, root, container_image)
     started = time.perf_counter()
+    binding = None
     try:
         workspace.materialise()
         if task.check.expect_fail_before:
@@ -562,6 +570,9 @@ async def run_task(
                 return result
 
         binding = await client.resolve(task, arm)
+        result.admission = {key: binding.get(key) for key in (
+            "decision_source", "decision_rule", "quality_lane", "quota_at_admission"
+        ) if key in binding}
         result.model = str(binding.get("model") or "")
         result.effort = binding.get("effort")
 
@@ -578,8 +589,18 @@ async def run_task(
                         f"wall clock cap: {limits.wall_clock_seconds:.0f}s"
                     )
                     break
-                reply = await client.complete(binding, messages, tools)
                 result.calls += 1
+                remaining = limits.wall_clock_seconds - (time.perf_counter() - started)
+                try:
+                    reply = await asyncio.wait_for(client.complete(binding, messages, tools), timeout=remaining)
+                except asyncio.TimeoutError:
+                    result.capped = f"wall clock cap: {limits.wall_clock_seconds:.0f}s"
+                    break
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    value = reply.get("usage", {}).get(key)
+                    if isinstance(value, int):
+                        result.usage[key] = result.usage.get(key, 0) + value
+                result.final_response = reply.get("content") or ""
                 calls = reply.get("tool_calls") or []
                 messages.append(
                     {
@@ -610,6 +631,12 @@ async def run_task(
         result.error = f"{type(exc).__name__}: {exc}"
     finally:
         result.wall_clock_s = time.perf_counter() - started
+        close_binding = getattr(client, "close_binding", None)
+        if binding is not None and close_binding is not None:
+            try:
+                await close_binding(binding)
+            except Exception as exc:
+                result.error = result.error or f"session cleanup failed: {type(exc).__name__}"
         if workspace_root is None:
             workspace.cleanup()
     return result
@@ -665,7 +692,7 @@ def report(results: list[SessionResult], arms: list[str]) -> str:
         if not rows:
             continue
         times = sorted(r.wall_clock_s for r in rows)
-        median = times[len(times) // 2] if times else 0.0
+        median = statistics.median(times) if times else 0.0
         lines.append(
             f"| {arm} | {rate_of(r.completed for r in rows)} | "
             f"{sum(1 for r in rows if r.capped)} | "
@@ -705,7 +732,7 @@ def report(results: list[SessionResult], arms: list[str]) -> str:
                 left = [r.completed for r in results if r.task == task_id and r.arm == base]
                 right = [r.completed for r in results if r.task == task_id and r.arm == arm]
                 if left and right:
-                    pairs.append((float(any(left)), float(any(right))))
+                    pairs.append((sum(left) / len(left), sum(right) / len(right)))
             if len(pairs) < 2:
                 lines.append(f"- {base} against {arm}: not enough paired tasks")
                 continue
@@ -740,6 +767,7 @@ def build_client(args: argparse.Namespace) -> SessionClient:
         router_url=args.router,
         admin_token=os.environ.get("JEV_ROUTER_ADMIN_TOKEN", ""),
         timeout_s=args.timeout,
+        upstream_api_key=os.environ.get("UPSTREAM_API_KEY", ""),
     )
 
 
@@ -804,17 +832,27 @@ async def main_async(args: argparse.Namespace) -> int:
         return 2
 
     caps = Caps(max_calls=args.max_calls, wall_clock_seconds=args.wall_clock)
+    out_dir = allocate_results(EVALS_DIR / "results", f"sessions-{int(time.time())}")
+    (out_dir / "plan.json").write_text(json.dumps({
+        "tasks": [t.id for t in tasks], "arms": arms, "repeats": args.repeats,
+        "order": "task order; arm order rotates by task and repeat",
+    }, indent=2))
+    print(f"saving results to {out_dir}", flush=True)
     client = build_client(args)
     results: list[SessionResult] = []
     try:
         for repeat in range(args.repeats):
-            for arm in arms:
-                for task in tasks:
+            for task_index, task in enumerate(tasks):
+                offset = (task_index + repeat) % len(arms)
+                for arm in arms[offset:] + arms[:offset]:
                     result = await run_task(
                         task, arm, client, caps=caps, repeat=repeat,
                         container_image=args.container_image
                     )
                     results.append(result)
+                    checkpoint = out_dir / "sessions.tmp"
+                    checkpoint.write_text(json.dumps([r.to_dict() for r in results], indent=2))
+                    checkpoint.replace(out_dir / "sessions.json")
                     print(
                         f"[{arm:12s}] {task.id:26s} r{repeat} "
                         f"{'done' if result.completed else 'NOT done'} "
@@ -826,7 +864,6 @@ async def main_async(args: argparse.Namespace) -> int:
         if close is not None:
             await close()
 
-    out_dir = allocate_results(EVALS_DIR / "results", f"sessions-{int(time.time())}")
     (out_dir / "sessions.json").write_text(
         json.dumps([r.to_dict() for r in results], indent=2)
     )
