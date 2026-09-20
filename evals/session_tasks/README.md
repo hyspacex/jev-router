@@ -6,7 +6,23 @@ actually done. `evals/run_sessions.py` runs them.
 
 These eight are a **pilot**. They exist to find failures and to measure what a
 session costs, not to prove a small improvement. Eight tasks and two repeats
-cannot separate policies that are close.
+cannot separate policies that are close, and the report says so rather than
+leaving it to be inferred.
+
+```sh
+uv run python evals/run_sessions.py --list      # no credentials needed
+uv run python evals/run_sessions.py --dry-run   # shows what would run, no calls
+uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
+```
+
+Five arms: `fixed_strong`, `simple_rules`, `jev_mean`, `jev_packet`, and
+`fixed_effort_vs_adaptive`, which needs `--allow-adaptive-effort` and a profile
+that has passed `evals/qualify_effort.py`. Without one the router resolves its
+sessions with adaptation off and that arm measures nothing.
+
+Anything past `--list` and `--dry-run` needs a router to resolve against and an
+upstream that serves the candidate models, and spends real quota. Nothing in
+CI makes a call: the offline tests drive the runner with fake clients.
 
 ## The format
 
