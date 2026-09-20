@@ -29,3 +29,8 @@ evals/results/20260919-081432/*
 # never republished from this repo. `evals/import_public.py` rebuilds it.
 evals/cases_public.yaml
 evals/cases_public_labels.yaml
+
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/

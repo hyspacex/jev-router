@@ -577,3 +577,48 @@ def test_the_generated_fixture_is_deterministic():
     files = run_sessions.generated_repo(spec)
     assert '"200"' in files["src/handlers/h03.py"]
     assert '"200"' not in files["src/handlers/h02.py"]
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+def test_workspace_rejects_sibling_prefix_and_symlink_escape(tmp_path, symlink):
+    workspace = run_sessions.Workspace(run_sessions.load_tasks()[0], tmp_path / "ws")
+    sibling = tmp_path / "ws-sibling"
+    sibling.mkdir()
+    target = sibling / "private.txt"
+    target.write_text("unchanged")
+    name = "../ws-sibling/private.txt"
+    if symlink:
+        (workspace.root / "link").symlink_to(sibling, target_is_directory=True)
+        name = "link/private.txt"
+    with pytest.raises(ValueError, match="escapes the workspace"):
+        workspace.read_file(name)
+    with pytest.raises(ValueError, match="escapes the workspace"):
+        workspace.write_file(name, "changed")
+    assert target.read_text() == "unchanged"
+
+
+def test_container_timeout_removes_background_work(tmp_path, monkeypatch):
+    import subprocess
+    commands = []
+    def run(command, **kwargs):
+        commands.append(command)
+        if command[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, "", "")
+    monkeypatch.setattr(run_sessions.subprocess, "run", run)
+    workspace = run_sessions.Workspace(run_sessions.load_tasks()[0], tmp_path, "eval:test")
+    assert workspace.run_command(["python", "-c", "while True: pass"], timeout=1) == "error: the command timed out"
+    container = commands[0][commands[0].index("--name") + 1]
+    assert commands[1] == ["docker", "rm", "--force", container]
+
+
+def test_live_evaluation_requires_isolation_before_creating_client(monkeypatch, capsys):
+    import argparse
+    import asyncio
+    args = argparse.Namespace(tasks=None, task=None, family=None, list=False,
+        arms="fixed_strong", dry_run=False, container_image=None)
+    def forbidden(*args, **kwargs):
+        pytest.fail("must not create a live client before requiring isolation")
+    monkeypatch.setattr(run_sessions, "build_client", forbidden)
+    assert asyncio.run(run_sessions.main_async(args)) == 2
+    assert "require --container-image" in capsys.readouterr().err

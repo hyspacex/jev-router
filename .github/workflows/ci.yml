@@ -17,5 +17,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - run: uv sync --locked
-      - run: uv run --no-sync pytest -q
+      - if: matrix.python-version != '3.13'
+        run: uv run --no-sync pytest -q
+      - if: matrix.python-version == '3.13'
+        run: uv run --no-sync pytest --cov=jev_router --cov-branch --cov-report=term-missing --cov-report=xml -ra
       - run: uv run --no-sync jev-router check-config

@@ -21,6 +21,7 @@ jev-router = "jev_router.cli:main"
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=7.1.0",
     "respx>=0.21",
 ]
 # Only evals/import_public.py needs these. The router does not.
