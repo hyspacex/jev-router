@@ -87,6 +87,11 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
         "model": "gpt-6-astra",
         "effort": "medium",
     },
+    "fixed_mid": {
+        "purpose": "tool-driven coding qualification: fixed mid model, no routing",
+        "model": "ollama/glm-5.3",
+        "effort": "none",
+    },
     "simple_rules": {
         "purpose": "what session routing is worth without Jev",
         "alias": "auto-session-rules",

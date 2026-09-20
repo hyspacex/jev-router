@@ -559,14 +559,18 @@ def test_the_report_pairs_by_task_and_says_what_a_pilot_cannot_show():
     assert "## By task" in text
 
 
-def test_the_arms_table_matches_the_spec_and_names_what_is_missing():
+def test_the_arms_table_includes_qualification_and_names_what_is_missing():
     assert set(run_sessions.POLICY_ARMS) == {
         "fixed_strong",
+        "fixed_mid",
         "simple_rules",
         "jev_mean",
         "jev_packet",
         "fixed_effort_vs_adaptive",
     }
+    assert "fixed_mid" not in run_sessions.DEFAULT_ARMS
+    assert run_sessions.POLICY_ARMS["fixed_mid"]["model"] == "ollama/glm-5.3"
+    assert run_sessions.POLICY_ARMS["fixed_mid"]["effort"] == "none"
     blocked = run_sessions.POLICY_ARMS["fixed_effort_vs_adaptive"]
     assert "not implemented" in blocked["requires"]
 
