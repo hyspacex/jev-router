@@ -69,7 +69,7 @@ from metrics import (  # noqa: E402
     Rate,
     calibration as calibration_metric,
     accuracy_below_confidence,
-    chance_rate,
+    permutation_membership_null,
     cost_matched_random,
     majority_class_rate,
     min_detectable_difference,
@@ -824,7 +824,7 @@ def calibration(records: list[Record], variant: Variant, qid: str) -> list[dict[
                 "bucket": f"{lo:.2f}-{hi:.2f}",
                 "n": len(bucket),
                 "mean_confidence": statistics.fmean(
-                    confidence(r.answers, qid) for r in bucket
+                    c for r in bucket if (c := confidence(r.answers, qid)) is not None
                 ),
                 "accuracy": pct(sum(1 for c in correct if c), len(correct)),
             }
@@ -956,12 +956,26 @@ def write_summary(
           f"{fmt(m.get('random_mean_cost'))} |")
     w("")
     if control == "shuffled-labels":
-        labels = [r.case.task for r in first if r.case.labelled]
-        w(f"Shuffled-label control. Task accuracy should fall to about "
-          f"{chance_rate(labels):.1f}%, which is the rate at which a shuffled "
-          "permutation of these labels matches itself by accident. Tier "
-          "accuracy should fall to about "
-          f"{chance_rate([tuple(r.case.acceptable_tiers) for r in first if r.case.labelled]):.1f}%.")
+        w("Shuffled-label control: fixed predictions against uniformly shuffled "
+          "label sets, using the same membership scorer as accuracy. Bounds "
+          "are 95% permutation-null intervals, not quality confidence intervals.")
+        for name, records in results.items():
+            labelled = [r for r in records if r.case.labelled]
+            if not labelled:
+                continue
+            variant = variants.get(name) or Variant(name=name)
+            for metric, predictions, accepted in (
+                ("tier", [tier_of(r.model) for r in labelled],
+                 [r.case.acceptable_tiers for r in labelled]),
+                ("task", [str(answer_value(r.answers, "task")) for r in labelled],
+                 [[r.case.task7 if variant.task_space == "seven" else r.case.task]
+                  for r in labelled]),
+            ):
+                null = permutation_membership_null(predictions, accepted)
+                w(f"- {name} {metric}: observed {null['observed']:.1f}%; "
+                  f"chance {null['expected']:.1f}% "
+                  f"[{null['low']:.1f}, {null['high']:.1f}]; "
+                  f"one-sided permutation p = {null['p_upper']:.4f}.")
         w("")
     if control == "constant-state":
         w("Constant-state control. Every case was replaced by the same bland "
@@ -1135,7 +1149,9 @@ def write_summary(
         w("")
         gate = 0.55
         try:
-            gate = v.config().policy.low_confidence.min_confidence
+            gate_config = v.config().policy.low_confidence
+            if gate_config is not None:
+                gate = gate_config.min_confidence
         except Exception:  # noqa: BLE001 - a variant with no gate keeps the default
             pass
         w(f"| question | cutoff | accuracy below | accuracy at or above |")

@@ -92,6 +92,21 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
         "model": "ollama/glm-5.3",
         "effort": "none",
     },
+    "fixed_mid_low": {
+        "purpose": "GLM reasoning qualification, fixed model without routing",
+        "model": "ollama/glm-5.3",
+        "effort": "low",
+    },
+    "fixed_mid_high": {
+        "purpose": "GLM reasoning qualification, fixed model without routing",
+        "model": "ollama/glm-5.3",
+        "effort": "high",
+    },
+    "fixed_strong_low": {
+        "purpose": "low-effort frontier coding reference without routing",
+        "model": "gpt-6-astra",
+        "effort": "low",
+    },
     "simple_rules": {
         "purpose": "what session routing is worth without Jev",
         "alias": "auto-session-rules",
@@ -353,6 +368,7 @@ class Workspace:
     def run_command(self, command: list[str], timeout: float = 120.0) -> str:
         container = f"jev-eval-{uuid.uuid4().hex}" if self.container_image else None
         if container:
+            assert self.container_image is not None
             command = [
                 "docker", "run", "--rm", "--name", container,
                 "--pull", "never", "--network", "none", "--read-only",

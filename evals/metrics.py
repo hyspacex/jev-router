@@ -571,9 +571,40 @@ def majority_class_rate(acceptable: Sequence[Sequence[str]]) -> float:
     """
     if not acceptable:
         return 0.0
-    fast = sum(1 for tiers in acceptable if "fast" in tiers)
-    frontier = sum(1 for tiers in acceptable if "frontier" in tiers)
-    return 100.0 * max(fast, frontier) / len(acceptable)
+    tiers = {tier for group in acceptable for tier in group}
+    return 100.0 * max(
+        (sum(tier in group for group in acceptable) for tier in tiers), default=0
+    ) / len(acceptable)
+
+
+def permutation_membership_null(
+    predictions: Sequence[str], acceptable: Sequence[Sequence[str]],
+    *, samples: int = 10000, seed: int = 4242,
+) -> dict[str, float]:
+    """Fixed predictions vs uniformly shuffled label sets, scored by membership.
+
+    Mean is exact; bounds are a seeded 95% null interval (not a confidence
+    interval on model quality). p_upper tests excess agreement one-sided.
+    """
+    if len(predictions) != len(acceptable) or not predictions or samples < 1:
+        raise ValueError("need equal nonempty inputs and positive samples")
+    n = len(predictions)
+    observed = sum(p in a for p, a in zip(predictions, acceptable, strict=True)) / n
+    mean = sum(p in a for p in predictions for a in acceptable) / (n * n)
+    rng = random.Random(seed)
+    shuffled = list(acceptable)
+    scores = []
+    for _ in range(samples):
+        rng.shuffle(shuffled)
+        scores.append(sum(p in a for p, a in zip(predictions, shuffled, strict=True)) / n)
+    scores.sort()
+    return {
+        "expected": 100 * mean,
+        "low": 100 * scores[(samples - 1) // 40],
+        "high": 100 * scores[39 * (samples - 1) // 40],
+        "observed": 100 * observed,
+        "p_upper": (1 + sum(s >= observed for s in scores)) / (samples + 1),
+    }
 
 
 def chance_rate(labels: Sequence[Any]) -> float:

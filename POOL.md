@@ -65,6 +65,29 @@ not general coding-agent reliability or long-context qualification. No
 binding was changed. Broader repeated tasks and predeclared acceptance
 criteria are needed before promoting mid for general tool-driven traffic.
 
+## GLM reasoning tool qualification (2026-09-20)
+
+The owner requested enabling GLM for moderate tool traffic. The follow-up
+[effort pilot](evals/reports/2026-09-20-glm-effort/summary.md) tested the actual
+proxy at explicit low and high effort. GLM high completed 8/8 tasks (95%
+Wilson interval 67.6%–100%); low completed 7/8 (52.9%–97.8%), with one call
+cap. This is bounded operational admission, not broad frontier equivalence.
+Astra low had four provider errors; no healthy-provider comparison is claimed.
+
+Deployed after correcting the control's tuple-equality chance calculation to
+prediction-versus-label-set membership. All four controls reran from cache;
+the shuffled result is inside its permutation-null interval. A fresh live
+admission selected GLM high via `moderate_tools`; no execution was sent.
+
+The policy admits GLM high in a separate `moderate-tools` quality lane. Replace
+`tool_loop` with `moderate_tools`, after `moderate_careful`, making Astra low
+reachable for moderate careful work even when tools are present. Hard,
+high-harm, image and low-confidence safeguards stay unchanged. GLM remains
+outside `frontier-work`; existing strict bindings do not change. Non-tool
+mid keeps its previously measured proxy `(none)` setting. Native Z.ai docs
+require thinking, so the proxy's `(none)` must not be described as verified
+native thinking-off behavior. See the report for sources and limitations.
+
 ## Evidence so far
 
 Measured through the proxy on 2026-09-19. One streamed 400-token coding prompt

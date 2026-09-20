@@ -11,9 +11,9 @@ from __future__ import annotations
 import copy
 
 import pytest
+from conftest import BASE_CONFIG, make_config
 from pydantic import ValidationError
 
-from conftest import BASE_CONFIG, make_config
 from jev_router.config import RouterConfig
 from jev_router.features import Features, Message, extract_features
 from jev_router.policy import (
@@ -46,7 +46,7 @@ def test_the_shipped_config_asks_only_three_active_questions():
     sp = cfg.semantic_policy
     assert sp.active_questions == ["task", "difficulty", "harm_if_wrong"]
     assert sp.shadow_questions == []
-    assert sp.distribution_policy == "shadow"
+    assert sp.distribution_policy == "off"
     assert shadow_questions(cfg, cfg.aliases["auto"]) == sp.shadow_questions
     # Defined for Milestone C, asked by nobody yet.
     for qid in ("corrective_followup", "failure_mode"):

@@ -9,9 +9,9 @@ Named cases from docs/R2_SPEC.md 13.2 covered here:
 from __future__ import annotations
 
 import pytest
+from conftest import make_config
 from pydantic import ValidationError
 
-from conftest import make_config
 from jev_router.config import load_config
 from jev_router.features import Features
 from jev_router.policy import RoutingError, evaluate, excluded_models, select
@@ -380,7 +380,7 @@ def test_a_lane_entry_with_no_effort_means_any_effort_of_that_model():
 @pytest.mark.parametrize("pressure", [0.0, 0.5, 1.0])
 def test_strict_quality_requirement_does_not_move_with_quota(pressure):
     cfg = load_config("router.yaml")
-    alias = cfg.aliases["auto-session"]
+    alias = cfg.aliases["auto"]
     answers = {
         "task": {"type": "choice", "choice": "code-edit", "confidence": 0.99},
         "difficulty": {"type": "score", "score": 2.5, "confidence": 0.99},
@@ -395,8 +395,9 @@ def test_strict_quality_requirement_does_not_move_with_quota(pressure):
     assert not result.pressure_changed_the_outcome
     # The legacy path deliberately retains its threshold shifts.
     if pressure == 1.0:
-        legacy = evaluate(cfg, cfg.aliases["auto"], answers, FEATURES, {"openai": pressure})
+        legacy_alias = alias.model_copy(update={"session_mode": "legacy"})
+        legacy = evaluate(cfg, legacy_alias, answers, FEATURES, {"openai": pressure})
         assert legacy.rule != "hard"
-        legacy_selected = select(cfg, cfg.aliases["auto"], answers, FEATURES, {"openai": pressure})
+        legacy_selected = select(cfg, legacy_alias, answers, FEATURES, {"openai": pressure})
         assert legacy_selected.rule == legacy.rule
         assert legacy_selected.model == legacy.model
