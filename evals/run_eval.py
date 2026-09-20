@@ -1363,7 +1363,12 @@ async def main_async(args: argparse.Namespace) -> int:
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = EVALS_DIR / "results" / stamp
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Two runs can start in the same second. Never share a directory.
+    n = 1
+    while out_dir.exists():
+        n += 1
+        out_dir = EVALS_DIR / "results" / f"{stamp}-{n}"
+    out_dir.mkdir(parents=True)
     with (out_dir / "per_case.jsonl").open("w") as fh:
         for recs in results.values():
             for r in recs:
@@ -1435,7 +1440,7 @@ async def main_async(args: argparse.Namespace) -> int:
     latest = EVALS_DIR / "results" / "latest"
     if latest.is_symlink() or latest.exists():
         latest.unlink()
-    latest.symlink_to(stamp)
+    latest.symlink_to(out_dir.name)
 
     print(f"\nlive Jev calls: {jev.calls}, input tokens: {jev.input_tokens}")
     print(f"wrote {out_dir}/summary.md")

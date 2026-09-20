@@ -32,10 +32,8 @@ Related, elsewhere in the repository:
 
 Open as of 2026-09-19. None of them lose data.
 
-- **Two eval runs in the same second collide.** `evals/run_eval.py` names its
-  result directory `evals/results/%Y%m%d-%H%M%S`. Two runs started inside one
-  second write into the same directory and the second overwrites the first.
-  Start them a second apart, or pass different case sets.
+- **Fixed: two eval runs in the same second collided.** `evals/run_eval.py` now
+  adds a numeric suffix when the result directory already exists.
 - **`sessions show` prints `mode=fixed` for an adaptive session.** The
   `effort_mode` column is written as `fixed` at resolve and never updated, so
   an adaptive session prints `mode=fixed  adaptation=active` on one line. The
