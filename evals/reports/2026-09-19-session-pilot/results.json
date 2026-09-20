@@ -1,0 +1,674 @@
+[
+  {
+    "task": "mechanical-rename",
+    "family": "mechanical",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 18.83,
+    "tool_calls": 4,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 3283,
+      "completion_tokens": 243,
+      "total_tokens": 3526
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.01s\n"
+  },
+  {
+    "task": "mechanical-rename",
+    "family": "mechanical",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 18.82,
+    "tool_calls": 4,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 3281,
+      "completion_tokens": 246,
+      "total_tokens": 3527
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.00s\n"
+  },
+  {
+    "task": "mechanical-rename",
+    "family": "mechanical",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 18.67,
+    "tool_calls": 4,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "low_confidence",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 3281,
+      "completion_tokens": 251,
+      "total_tokens": 3532
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.01s\n"
+  },
+  {
+    "task": "mechanical-transform",
+    "family": "mechanical",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 3,
+    "wall_clock_s": 9.95,
+    "tool_calls": 2,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 1519,
+      "completion_tokens": 108,
+      "total_tokens": 1627
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  },
+  {
+    "task": "mechanical-transform",
+    "family": "mechanical",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 3,
+    "wall_clock_s": 3.81,
+    "tool_calls": 2,
+    "model": "ollama/glm-5.3-flash",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "easy",
+      "quality_lane": "simple-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 1180,
+      "completion_tokens": 132,
+      "total_tokens": 1312
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  },
+  {
+    "task": "mechanical-transform",
+    "family": "mechanical",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 3,
+    "wall_clock_s": 11.45,
+    "tool_calls": 2,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 1519,
+      "completion_tokens": 110,
+      "total_tokens": 1629
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  },
+  {
+    "task": "implementation-csv",
+    "family": "implementation",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 35.53,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 4954,
+      "completion_tokens": 754,
+      "total_tokens": 5708
+    },
+    "check_output": "exit 0\n...........                                                              [100%]\n11 passed in 0.01s\n"
+  },
+  {
+    "task": "implementation-csv",
+    "family": "implementation",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 38.11,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 5091,
+      "completion_tokens": 849,
+      "total_tokens": 5940
+    },
+    "check_output": "exit 0\n..................                                                       [100%]\n18 passed in 0.01s\n"
+  },
+  {
+    "task": "implementation-csv",
+    "family": "implementation",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 36.89,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 5094,
+      "completion_tokens": 822,
+      "total_tokens": 5916
+    },
+    "check_output": "exit 0\n...................                                                      [100%]\n19 passed in 0.01s\n"
+  },
+  {
+    "task": "implementation-money",
+    "family": "implementation",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 4,
+    "wall_clock_s": 22.88,
+    "tool_calls": 3,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 2463,
+      "completion_tokens": 377,
+      "total_tokens": 2840
+    },
+    "check_output": "exit 0\n.......                                                                  [100%]\n7 passed in 0.01s\n"
+  },
+  {
+    "task": "implementation-money",
+    "family": "implementation",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 33.73,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 4771,
+      "completion_tokens": 573,
+      "total_tokens": 5344
+    },
+    "check_output": "exit 0\n...............                                                          [100%]\n15 passed in 0.01s\n"
+  },
+  {
+    "task": "implementation-money",
+    "family": "implementation",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 4,
+    "wall_clock_s": 6.93,
+    "tool_calls": 3,
+    "model": "ollama/glm-5.3-flash",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "easy",
+      "quality_lane": "simple-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 1898,
+      "completion_tokens": 312,
+      "total_tokens": 2210
+    },
+    "check_output": "exit 0\n.......                                                                  [100%]\n7 passed in 0.01s\n"
+  },
+  {
+    "task": "diagnosis-interacting",
+    "family": "diagnosis",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 29.94,
+    "tool_calls": 7,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 5367,
+      "completion_tokens": 393,
+      "total_tokens": 5760
+    },
+    "check_output": "exit 0\n....                                                                     [100%]\n4 passed in 0.01s\n"
+  },
+  {
+    "task": "diagnosis-interacting",
+    "family": "diagnosis",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 25.67,
+    "tool_calls": 7,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 4487,
+      "completion_tokens": 341,
+      "total_tokens": 4828
+    },
+    "check_output": "exit 0\n....                                                                     [100%]\n4 passed in 0.01s\n"
+  },
+  {
+    "task": "diagnosis-interacting",
+    "family": "diagnosis",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 28.84,
+    "tool_calls": 7,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 5522,
+      "completion_tokens": 387,
+      "total_tokens": 5909
+    },
+    "check_output": "exit 0\n....                                                                     [100%]\n4 passed in 0.01s\n"
+  },
+  {
+    "task": "context-growth-audit",
+    "family": "context-growth",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 34.0,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 5165,
+      "completion_tokens": 486,
+      "total_tokens": 5651
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.01s\n"
+  },
+  {
+    "task": "context-growth-audit",
+    "family": "context-growth",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 7,
+    "wall_clock_s": 34.86,
+    "tool_calls": 7,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 8263,
+      "completion_tokens": 511,
+      "total_tokens": 8774
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.01s\n"
+  },
+  {
+    "task": "context-growth-audit",
+    "family": "context-growth",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 27.01,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 5165,
+      "completion_tokens": 487,
+      "total_tokens": 5652
+    },
+    "check_output": "exit 0\n...                                                                      [100%]\n3 passed in 0.01s\n"
+  },
+  {
+    "task": "multi-turn-ladder",
+    "family": "multi-turn",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 12,
+    "wall_clock_s": 71.3,
+    "tool_calls": 9,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "3/3",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 15123,
+      "completion_tokens": 1521,
+      "total_tokens": 16644
+    },
+    "check_output": "exit 0\n.......................                                                  [100%]\n23 passed in 0.01s\n"
+  },
+  {
+    "task": "multi-turn-ladder",
+    "family": "multi-turn",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 12,
+    "wall_clock_s": 79.08,
+    "tool_calls": 9,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "3/3",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 15011,
+      "completion_tokens": 1488,
+      "total_tokens": 16499
+    },
+    "check_output": "exit 0\n.......................                                                  [100%]\n23 passed in 0.01s\n"
+  },
+  {
+    "task": "multi-turn-ladder",
+    "family": "multi-turn",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 12,
+    "wall_clock_s": 31.95,
+    "tool_calls": 10,
+    "model": "ollama/glm-5.3-flash",
+    "effort": "none",
+    "turns": "3/3",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "easy",
+      "quality_lane": "simple-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 13827,
+      "completion_tokens": 1389,
+      "total_tokens": 15216
+    },
+    "check_output": "exit 0\n.........                                                                [100%]\n9 passed in 0.01s\n"
+  },
+  {
+    "task": "environment-missing",
+    "family": "environment",
+    "arm": "simple_rules",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 27.88,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "rules",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier_medium",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 4245,
+      "completion_tokens": 570,
+      "total_tokens": 4815
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  },
+  {
+    "task": "environment-missing",
+    "family": "environment",
+    "arm": "jev_mean",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 34.18,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {
+      "decision_source": "jev",
+      "decision_rule": "tool_loop",
+      "quality_lane": "frontier-work",
+      "quota_at_admission": {
+        "openai": "fresh",
+        "ollama": "unknown",
+        "xai": "fresh"
+      }
+    },
+    "usage": {
+      "prompt_tokens": 4331,
+      "completion_tokens": 697,
+      "total_tokens": 5028
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  },
+  {
+    "task": "environment-missing",
+    "family": "environment",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 30.9,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 4303,
+      "completion_tokens": 673,
+      "total_tokens": 4976
+    },
+    "check_output": "exit 0\n..                                                                       [100%]\n2 passed in 0.00s\n"
+  }
+]
