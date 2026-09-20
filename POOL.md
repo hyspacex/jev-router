@@ -5,6 +5,15 @@ should have, and what each model had to show before it went live. The admission
 test has run and `router.yaml` reflects the verdicts below. The sections after
 "Verdicts" are the plan as it stood before the test, kept for the reasoning.
 
+This file is also where the `quality_lanes` block in `router.yaml` points. Each
+qualified model and effort pair there carries a `qualification_ref` naming a
+heading below, and config load refuses a pair that names none. A verdict here
+is what lets quota pressure move a request onto that pair; see
+`docs/SEMANTIC_POLICY.md`, "Quality lanes". Note that "lane" means two things
+in this repository: a named route in `router.yaml`, which is how the sections
+below use it, and a `quality_lanes` entry, which is a set of measured pairs. A
+route's failure fallbacks are not members of its quality lane.
+
 ## Verdicts (2026-09-19)
 
 Full numbers are in `evals/ADMISSION.md`. Two samples per case, 5 to 12 cases
