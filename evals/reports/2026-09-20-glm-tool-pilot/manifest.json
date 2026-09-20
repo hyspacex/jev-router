@@ -1,0 +1,96 @@
+{
+  "schema_version": "1",
+  "script": "evals/run_sessions.py",
+  "kind": "live",
+  "written_at": "2026-09-20T05:42:25+00:00",
+  "repo_sha": "a0e69df9a1fec6abaa10a11e61a5f2c902684e04-dirty",
+  "python": "3.14.7",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {},
+  "cases": {
+    "count": 8,
+    "by_split": {
+      "pilot": [
+        "context-growth-audit",
+        "diagnosis-interacting",
+        "environment-missing",
+        "implementation-csv",
+        "implementation-money",
+        "mechanical-rename",
+        "mechanical-transform",
+        "multi-turn-ladder"
+      ]
+    },
+    "families": [
+      "context-growth",
+      "diagnosis",
+      "environment",
+      "implementation",
+      "mechanical",
+      "multi-turn"
+    ]
+  },
+  "seeds": {},
+  "repeats": 1,
+  "cache": {},
+  "caps": {
+    "max_calls": 12,
+    "wall_clock_seconds": 300.0,
+    "per_task": {
+      "mechanical-rename": {
+        "max_calls": 10,
+        "wall_clock_seconds": 240
+      },
+      "mechanical-transform": {
+        "max_calls": 10,
+        "wall_clock_seconds": 240
+      },
+      "implementation-csv": {
+        "max_calls": 14,
+        "wall_clock_seconds": 420
+      },
+      "implementation-money": {
+        "max_calls": 14,
+        "wall_clock_seconds": 420
+      },
+      "diagnosis-interacting": {
+        "max_calls": 16,
+        "wall_clock_seconds": 480
+      },
+      "context-growth-audit": {
+        "max_calls": 24,
+        "wall_clock_seconds": 600
+      },
+      "multi-turn-ladder": {
+        "max_calls": 20,
+        "wall_clock_seconds": 600
+      },
+      "environment-missing": {
+        "max_calls": 12,
+        "wall_clock_seconds": 300
+      }
+    }
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "programmatic": "the task's own check command"
+  },
+  "exclusions": [],
+  "unfinished": [],
+  "arms": {
+    "fixed_mid": {
+      "purpose": "tool-driven coding qualification: fixed mid model, no routing",
+      "model": "ollama/glm-5.3",
+      "effort": "none"
+    },
+    "fixed_strong": {
+      "purpose": "current-workflow reference: one strong model, one effort",
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    }
+  },
+  "container_image": "jev-eval:local"
+}

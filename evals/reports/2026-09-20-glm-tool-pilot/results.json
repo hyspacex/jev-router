@@ -1,0 +1,338 @@
+[
+  {
+    "task": "mechanical-rename",
+    "family": "mechanical",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 4.38,
+    "tool_calls": 8,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 2737,
+      "completion_tokens": 262,
+      "total_tokens": 2999
+    }
+  },
+  {
+    "task": "mechanical-rename",
+    "family": "mechanical",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 29.26,
+    "tool_calls": 14,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 5406,
+      "completion_tokens": 420,
+      "total_tokens": 5826
+    }
+  },
+  {
+    "task": "mechanical-transform",
+    "family": "mechanical",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 3,
+    "wall_clock_s": 12.08,
+    "tool_calls": 2,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 1519,
+      "completion_tokens": 134,
+      "total_tokens": 1653
+    }
+  },
+  {
+    "task": "mechanical-transform",
+    "family": "mechanical",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 3,
+    "wall_clock_s": 2.67,
+    "tool_calls": 2,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 1180,
+      "completion_tokens": 184,
+      "total_tokens": 1364
+    }
+  },
+  {
+    "task": "implementation-csv",
+    "family": "implementation",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 43.21,
+    "tool_calls": 6,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 3349,
+      "completion_tokens": 595,
+      "total_tokens": 3944
+    }
+  },
+  {
+    "task": "implementation-csv",
+    "family": "implementation",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 38.02,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 4828,
+      "completion_tokens": 804,
+      "total_tokens": 5632
+    }
+  },
+  {
+    "task": "implementation-money",
+    "family": "implementation",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 4,
+    "wall_clock_s": 21.98,
+    "tool_calls": 3,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 2463,
+      "completion_tokens": 377,
+      "total_tokens": 2840
+    }
+  },
+  {
+    "task": "implementation-money",
+    "family": "implementation",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 4,
+    "wall_clock_s": 4.04,
+    "tool_calls": 3,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 2004,
+      "completion_tokens": 337,
+      "total_tokens": 2341
+    }
+  },
+  {
+    "task": "diagnosis-interacting",
+    "family": "diagnosis",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 3.93,
+    "tool_calls": 6,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 3019,
+      "completion_tokens": 233,
+      "total_tokens": 3252
+    }
+  },
+  {
+    "task": "diagnosis-interacting",
+    "family": "diagnosis",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 6,
+    "wall_clock_s": 26.1,
+    "tool_calls": 7,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 5424,
+      "completion_tokens": 338,
+      "total_tokens": 5762
+    }
+  },
+  {
+    "task": "context-growth-audit",
+    "family": "context-growth",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 26.51,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 5147,
+      "completion_tokens": 473,
+      "total_tokens": 5620
+    }
+  },
+  {
+    "task": "context-growth-audit",
+    "family": "context-growth",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 8,
+    "wall_clock_s": 9.21,
+    "tool_calls": 11,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 7147,
+      "completion_tokens": 631,
+      "total_tokens": 7778
+    }
+  },
+  {
+    "task": "multi-turn-ladder",
+    "family": "multi-turn",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 12,
+    "wall_clock_s": 13.09,
+    "tool_calls": 9,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "3/3",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 14854,
+      "completion_tokens": 1873,
+      "total_tokens": 16727
+    }
+  },
+  {
+    "task": "multi-turn-ladder",
+    "family": "multi-turn",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 12,
+    "wall_clock_s": 71.78,
+    "tool_calls": 9,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "3/3",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 14923,
+      "completion_tokens": 1489,
+      "total_tokens": 16412
+    }
+  },
+  {
+    "task": "environment-missing",
+    "family": "environment",
+    "arm": "fixed_strong",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 5,
+    "wall_clock_s": 31.11,
+    "tool_calls": 6,
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 4282,
+      "completion_tokens": 643,
+      "total_tokens": 4925
+    }
+  },
+  {
+    "task": "environment-missing",
+    "family": "environment",
+    "arm": "fixed_mid",
+    "repeat": 0,
+    "completed": true,
+    "capped": "",
+    "calls": 4,
+    "wall_clock_s": 5.06,
+    "tool_calls": 6,
+    "model": "ollama/glm-5.3",
+    "effort": "none",
+    "turns": "1/1",
+    "error": "",
+    "admission": {},
+    "usage": {
+      "prompt_tokens": 2855,
+      "completion_tokens": 484,
+      "total_tokens": 3339
+    }
+  }
+]

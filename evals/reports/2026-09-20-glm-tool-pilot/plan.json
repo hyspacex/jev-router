@@ -1,0 +1,18 @@
+{
+  "tasks": [
+    "mechanical-rename",
+    "mechanical-transform",
+    "implementation-csv",
+    "implementation-money",
+    "diagnosis-interacting",
+    "context-growth-audit",
+    "multi-turn-ladder",
+    "environment-missing"
+  ],
+  "arms": [
+    "fixed_mid",
+    "fixed_strong"
+  ],
+  "repeats": 1,
+  "order": "task order; arm order rotates by task and repeat"
+}

@@ -1,0 +1,22 @@
+{
+  "source_run": "evals/results/sessions-1789882602",
+  "endpoint": "http://100.82.7.89:8317",
+  "execution": "direct proxy; fixed wire models; no router admission or pins",
+  "container_image_id": "sha256:f88ce06928ee50f396519fd424a5585879005cfafcd14a94d821b59a27bbed18",
+  "omitted_fields": [
+    "final_response",
+    "check_output"
+  ],
+  "source_sha256": {
+    "evals/run_sessions.py": "fda60069281f9c77b32edb239e668c045bceb24d8610e9abc83fbb210377eb91",
+    "evals/session_client.py": "fe06101da71f60493b875724df03b513be5d5f9f61897dfff0f4e0a2950b16bd",
+    "evals/session_tasks/01-mechanical-rename.yaml": "6cc895950439da9f32e20f47afc7231d1788de9d894a9fc998f1fb97bf5c4bca",
+    "evals/session_tasks/02-mechanical-transform.yaml": "bdfd6ae7b7efaf9b6ce90616a5e02cca4c4af5a267370ca748d6d194dbe0fa77",
+    "evals/session_tasks/03-implementation-csv.yaml": "bd331165ed5422e0fecfc8e3339e1270b69e79701d250fa33c1392d46df8b4b1",
+    "evals/session_tasks/04-implementation-money.yaml": "6fcc3587d08d302159a87d62263f8365324894ad29b9f4b4c7a9b5d52729d87d",
+    "evals/session_tasks/05-diagnosis-interacting.yaml": "f340bbc90f1a2d459ccb532fb85374b6636bfb28abfc00be90112c85d1967620",
+    "evals/session_tasks/06-context-growth-audit.yaml": "17bcef4adbd4d40ddebb60e33fdc9d7ef631a8ff253b710865150d874e3985bc",
+    "evals/session_tasks/07-multi-turn-ladder.yaml": "20dc34d7192242ef62ff96e3d55a1c7d8ef6fe805608137d07f992cbc943e78b",
+    "evals/session_tasks/08-environment-missing.yaml": "f6793fabca0d54a2912bf0ef345a25389696835f6af6f3e11b3214102c6ca34c"
+  }
+}

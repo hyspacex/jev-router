@@ -35,13 +35,35 @@ What the routing eval added after the models went in:
   above on the frontier model. Code edits are exempt. With the rule, the 171
   cases score tier 92.4%, under-routed 1.2%, over-routed 6.4%, at a slightly
   lower cost than before.
-- Requests that carry tool schemas stay on the frontier model. The mid model
-  has not been tested in a tool loop, and that is the next thing to measure:
-  it is 46 of the 171 cases and most coding-agent traffic.
+- The shipped tool rule keeps moderate tool-bearing requests on frontier.
+  The GLM pilot below adds bounded tool-loop evidence, but does not authorize
+  broad promotion. The agentic slice contains 46 of the 171 cases.
 - Only `acceptable_tiers` on the admission cases is a measured `mid` label. For
   other cases `evals/common.py` accepts mid where both neighbours are
   acceptable, or where the case is frontier-labelled at difficulty 2 or lower
   with no faithfulness need and no tool loop.
+
+## GLM tool-driven coding pilot (2026-09-20 UTC)
+
+**Pilot pass; broad qualification inconclusive. Routing unchanged.** The live
+[GLM tool pilot](evals/reports/2026-09-20-glm-tool-pilot/summary.md) compared
+`ollama/glm-5.3(none)` with `gpt-6-astra(medium)` on the eight existing isolated
+coding tasks, once per model. Both completed 8/8 (95% Wilson interval
+67.6%–100%); paired completion bootstrap p = 1.000 does not establish
+equivalence. There were no capped or errored sessions. The run used 93 model
+calls of the approved 192-call ceiling.
+
+Median session wall time was 4.72 s for GLM (95% task-bootstrap interval
+3.93–13.09 s) and 27.89 s for Astra (21.98–38.02 s). These are live session
+measurements including tool overhead, not quota savings or repeated-run
+latency estimates. GLM was slower on the CSV task. Both used the entire
+12-call allowance on the multi-turn task.
+
+This provides evidence of successful tool use on these bounded fixtures,
+not general coding-agent reliability or long-context qualification. No
+`quality_lanes` entry, routing rule, allowed-model list, live config or existing
+binding was changed. Broader repeated tasks and predeclared acceptance
+criteria are needed before promoting mid for general tool-driven traffic.
 
 ## Evidence so far
 

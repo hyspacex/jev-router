@@ -12,7 +12,7 @@ from run_sessions import POLICY_ARMS, load_tasks, tool_schemas
 from session_client import RouterSessionClient, SessionClientError
 
 
-@pytest.mark.parametrize("arm_name", ["fixed_strong", "simple_rules", "jev_mean"])
+@pytest.mark.parametrize("arm_name", ["fixed_strong", "fixed_mid", "simple_rules", "jev_mean"])
 async def test_benchmark_sends_auth_tools_and_limits_for_each_arm(arm_name):
     task = load_tasks()[0]
     requests = []
@@ -34,6 +34,9 @@ async def test_benchmark_sends_auth_tools_and_limits_for_each_arm(arm_name):
         body = json.loads(request.content)
         assert body["max_tokens"] == 4096
         assert body["tools"] == tool_schemas(task)
+        if arm_name in {"fixed_strong", "fixed_mid"}:
+            arm = POLICY_ARMS[arm_name]
+            assert body["model"] == f"{arm['model']}({arm['effort']})"
         return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}],
                                         "usage": {"total_tokens": 42}})
     client = RouterSessionClient(admin_token="control-test", upstream_api_key="upstream-test")
@@ -45,7 +48,7 @@ async def test_benchmark_sends_auth_tools_and_limits_for_each_arm(arm_name):
         assert reply["usage"]["total_tokens"] == 42
         await client.close_binding(binding)
         execution = next(r for r in requests if r.url.path == "/v1/chat/completions")
-        assert ("x-router-session" in execution.headers) == (arm_name != "fixed_strong")
+        assert ("x-router-session" in execution.headers) == (arm_name not in {"fixed_strong", "fixed_mid"})
     finally:
         await client.aclose()
 
