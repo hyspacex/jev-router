@@ -1,0 +1,48 @@
+{
+  "started_utc": "2026-09-20T01:36:26.806012+00:00",
+  "source_commit": "d2e72a935a2af2629fd6b1323f799e527a29fafb",
+  "container_image": "sha256:f88ce06928ee50f396519fd424a5585879005cfafcd14a94d821b59a27bbed18",
+  "config_sha256": "dc8ee769300e5e1d0891d8aa26bff3a058cd57bbed8b8d53b92bff85465b5c09",
+  "task_sha256": {
+    "08-environment-missing.yaml": "f6793fabca0d54a2912bf0ef345a25389696835f6af6f3e11b3214102c6ca34c",
+    "01-mechanical-rename.yaml": "6cc895950439da9f32e20f47afc7231d1788de9d894a9fc998f1fb97bf5c4bca",
+    "04-implementation-money.yaml": "6fcc3587d08d302159a87d62263f8365324894ad29b9f4b4c7a9b5d52729d87d",
+    "02-mechanical-transform.yaml": "bdfd6ae7b7efaf9b6ce90616a5e02cca4c4af5a267370ca748d6d194dbe0fa77",
+    "06-context-growth-audit.yaml": "17bcef4adbd4d40ddebb60e33fdc9d7ef631a8ff253b710865150d874e3985bc",
+    "07-multi-turn-ladder.yaml": "20dc34d7192242ef62ff96e3d55a1c7d8ef6fe805608137d07f992cbc943e78b",
+    "05-diagnosis-interacting.yaml": "f340bbc90f1a2d459ccb532fb85374b6636bfb28abfc00be90112c85d1967620",
+    "03-implementation-csv.yaml": "bd331165ed5422e0fecfc8e3339e1270b69e79701d250fa33c1392d46df8b4b1"
+  },
+  "planned_sessions": 24,
+  "repeats": 1,
+  "arms": [
+    "fixed_strong",
+    "simple_rules",
+    "jev_mean"
+  ],
+  "upstream": "existing deployment proxy",
+  "quota": "same provider polling configuration as deployment; captured per routed admission",
+  "output_limit": 4096,
+  "caps": "task caps, bounded by 24 calls and 600 seconds",
+  "finished_utc": "2026-09-20T01:48:18.800930+00:00",
+  "exit_code": 0,
+  "admission_pressures": [
+    {
+      "openai": 0.24
+    }
+  ],
+  "quota_statuses": [
+    {
+      "openai": "fresh",
+      "ollama": "unknown",
+      "xai": "fresh"
+    }
+  ],
+  "production_service_modified": false,
+  "completed_attempts": 24,
+  "hidden_checks_passed": 24,
+  "task_change_before_run": "environment-missing prompt explicitly requests FINDINGS.md, matching its existing hidden checker",
+  "cache_isolation": "not enforced; provider prompt caching may affect tokens and latency",
+  "offline_validation": "1100 passed, 2 skipped",
+  "preflight": "Docker/pytest passing sanity check; all eight untouched task repositories fail their hidden checks"
+}
