@@ -120,6 +120,51 @@ class _TurnGuard:
     waiting: int = 0
 
 
+class ClosingStream(StreamingResponse):
+    """A streamed reply whose body generator is always finalized.
+
+    Starlette cancels `stream_response` when the client goes away. Where that
+    cancellation lands decides whether a generator's `finally` runs at all:
+
+    - suspended inside `aiter_raw`, waiting for the upstream, it is thrown
+      into the generator and the `finally` runs. That is the path an earlier
+      review checked.
+    - suspended at the `yield`, waiting for the socket to take a chunk - which
+      is where a long reply spends most of its life - the generator is simply
+      never resumed. Nothing records the disconnect, nothing closes the
+      upstream response, and for a managed request nothing releases the
+      session's in-flight execution claim. Every later request on that session
+      is then refused as a conflict, and every turn boundary as unsettled,
+      until the garbage collector happens to finalize the generator.
+
+    So it is closed here, on the way out of the ASGI call, whatever ended it.
+    `on_abandon` is the backstop for the one case closing cannot cover: a
+    generator that was never started has no `finally` to run.
+    """
+
+    def __init__(
+        self,
+        *args: Any,
+        on_abandon: Callable[[], None] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._on_abandon = on_abandon
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            closing = getattr(self.body_iterator, "aclose", None)
+            if closing is not None:
+                try:
+                    await closing()
+                except Exception:  # noqa: BLE001 - the reply is already over
+                    log.exception("could not close a streamed reply")
+            if self._on_abandon is not None:
+                self._on_abandon()
+
+
 class Router:
     def __init__(self, config: RouterConfig, store: Store | None = None) -> None:
         self.config = config
@@ -286,22 +331,27 @@ class Router:
             state = "disconnected"
             raise
         finally:
-            if capture_row:
-                self.store.update_decision(
-                    capture_row,
-                    stream_state=state,
-                    first_byte_ms=first_byte,
-                    response_ms=(time.perf_counter() - started) * 1000,
-                    response_bytes=count,
-                )
-                if state == "completed" and buffer is not None:
-                    usage = self._record_usage(
+            try:
+                if capture_row:
+                    self.store.update_decision(
                         capture_row,
-                        bytes(buffer),
-                        upstream_response.headers.get("content-encoding", ""),
+                        stream_state=state,
+                        first_byte_ms=first_byte,
+                        response_ms=(time.perf_counter() - started) * 1000,
+                        response_bytes=count,
                     )
-                    if usage is not None and usage_sink is not None:
-                        usage_sink(usage)
+                    if state == "completed" and buffer is not None:
+                        usage = self._record_usage(
+                            capture_row,
+                            bytes(buffer),
+                            upstream_response.headers.get("content-encoding", ""),
+                        )
+                        if usage is not None and usage_sink is not None:
+                            usage_sink(usage)
+            except Exception:  # noqa: BLE001 - telemetry may never strand a claim
+                # Whatever went wrong writing this down, what follows still has
+                # to run: it is what releases the session's execution claim.
+                log.exception("could not record how a streamed reply ended")
             if observer is not None:
                 observer.finish()
             if on_finish is not None:
@@ -437,6 +487,14 @@ class Router:
         observer: P.Observer | None = None,
         usage_sink: Callable[[Any], None] | None = None,
     ) -> Response:
+        """Hand the upstream reply back, byte for byte.
+
+        `on_finish` is told how the transport ended. It is called from the body
+        generator, and again on the way out of the ASGI call if the generator
+        never ran - a client that goes away before the first chunk leaves an
+        unstarted generator, which has no `finally` to run. It has to be safe
+        to call twice; the second call is a no-op.
+        """
         if decision_row:
             self.store.update_decision(
                 decision_row, upstream_status=upstream_response.status_code
@@ -457,7 +515,7 @@ class Router:
         raw_headers.extend(
             (k.encode("latin-1"), v.encode("latin-1")) for k, v in extra.items()
         )
-        response = StreamingResponse(
+        response = ClosingStream(
             self._stream(
                 upstream_response,
                 decision_row,
@@ -468,6 +526,9 @@ class Router:
             ),
             status_code=upstream_response.status_code,
             background=BackgroundTask(upstream_response.aclose),
+            on_abandon=(
+                None if on_finish is None else lambda: on_finish("disconnected")
+            ),
         )
         response.raw_headers = raw_headers
         return response
@@ -2083,15 +2144,28 @@ class Router:
             else None
         )
 
+        # This reply is accounted for once. `_respond` calls back a second
+        # time when the body generator never ran at all, and that call is the
+        # backstop, not a second outcome.
+        told: list[str] = []
+
         def on_finish(state: str) -> None:
+            if told:
+                return
+            told.append(state)
             if not accepted:
                 return
+            settled = state == "completed"
             if observer is not None:
                 seen = observer.observation
+                # A clean socket EOF is not a provider completion. If the tap
+                # never saw a terminal event, the provider may well have run
+                # this and nobody here can say what it did, so the attempt is
+                # ambiguous however tidily the transport ended.
+                settled = settled and seen.terminal
                 self.record_observation(row, seen)
                 if pending is not None:
-                    # Only a terminal `response.completed` confirms it. A
-                    # clean socket EOF is not a provider completion, and a
+                    # Only a terminal `response.completed` confirms it, and a
                     # completion carrying tool calls is still a completion.
                     self.advance_plan(
                         pending,
@@ -2105,12 +2179,12 @@ class Router:
                     # which only relaxes what a replay is checked against; what
                     # stops is the next effort change, until somebody says.
                     self.mark_compaction_unknown(row)
-            finish(
-                {"completed": "completed", "failed": "stream_failed"}.get(
-                    state, "unknown"
-                ),
-                status,
-            )
+            if settled:
+                finish("completed", status)
+            else:
+                finish(
+                    "stream_failed" if state == "failed" else "unknown", status
+                )
 
         headers = {
             "X-Router-Model": row["wire_model"] or "",
