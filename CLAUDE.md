@@ -17,10 +17,17 @@ uv run jev-router explain request.json --pressure openai=0.8
 uv run jev-router quota --poll                # runs each enabled quota source once
 uv run jev-router sessions list               # strict session bindings
 uv run jev-router sessions show <id>
+uv run jev-router sessions close <id>
+uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
 uv run jev-router decisions -n 20             # active vs shadow answers, lane, quota
 uv run jev-router decisions replay <id>       # re-run the selection from the row
-uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
+uv run jev-router feedback last too_weak --model gpt-6-astra --effort high
+uv run jev-router prune --older-than-days 30  # irreversible
+uv run jev-router adapter --alias <strict-alias> --port 18320   # Codex client shim
 ```
+
+Every subcommand takes `-c/--config`, which also reads `$JEV_ROUTER_CONFIG` and
+defaults to `router.yaml` in the working directory.
 
 Eval scripts all spend real API quota. `run_eval.py` and `tune.py` need
 `TYPESAFE_API_KEY`; `run_outcomes.py` also needs `UPSTREAM_API_KEY` and
@@ -98,8 +105,11 @@ uv run python evals/qualify_effort.py --profile <key> --plan
   transitions. Pure: a ladder in, a rung out. It never chooses a model.
 - `protocols.py` — the experimental Responses contract: the
   `configuration_update` item, full-replay and chain validation against the
-  ledger, the compaction restriction, and the bounded read-only SSE observer.
-  Not a converter.
+  ledger, what a compaction request may be, and the bounded read-only SSE
+  observer. Not a converter.
+- `adapter.py` — the Codex client shim behind `jev-router adapter`. A client,
+  not policy: it resolves a binding, asks for turn plans, inserts the items
+  the plans hand it, and chooses nothing. In memory only.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
@@ -192,13 +202,15 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - Revalidate every pin against current alias/client permitted models, effort
   bounds, tools, vision and context. Only hard infeasibility permits replacing
   a pin, with a new decision id; search all eligible models, not just larger
-  windows. Quota and transient failures never move a valid pin, and a pinned
-  turn has no fallback plan. Keys are scoped by authorization, alias and client.
-- Commit new/replacement pins only after upstream 2xx headers, never at candidate
-  selection or from temporary decider fallbacks. A later stream failure is
-  recorded separately and never switches models. Valid reused pins keep their TTL.
-- Empty allowed intersections or impossible effort/capability/context constraints
-  return a routing error; failure recovery must not silently discard constraints.
+  windows. Quota and transient failures never move a valid pin, a pinned turn
+  has no fallback plan, and a reused pin keeps its TTL. Keys are scoped by
+  authorization, alias and client. Commit a new or replacement pin only after
+  upstream 2xx headers, never at candidate selection and never from a
+  temporary decider fallback; a later stream failure is recorded separately
+  and never switches models.
+- An empty allowed intersection, or an impossible effort, capability or
+  context constraint, is a routing error. Recovery never silently discards a
+  configured restriction.
 
 - A strict binding is a contract, not a cache entry. It never repins, never
   expires on `pin_ttl_seconds`, and gets a one-entry execution plan: no
@@ -222,6 +234,10 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - `session_requests` distinguishes accepted, completed, rejected, stream
   failure and unknown. A repeated id never calls the provider again, and a
   record whose outcome is unknown is never pruned.
+- One request in flight per session, claimed in memory. A second is a
+  conflict, never a queue, and a second strict service on the same database in
+  one process is refused. The guard cannot see another process: one service
+  per database.
 - An execution is held to the limits it negotiated. An output ask above the
   ceiling is `CONTEXT_BUDGET_EXCEEDED` with the binding kept; the body is
   never rewritten to fit. With `previous_response_id` the budget uses the
@@ -239,17 +255,26 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   `router.yaml` verified.
 - An effort change keeps the model, the provider, the negotiated limits and
   the base effort. It happens at most once per user turn, at a reported
-  boundary, and never inside a tool loop. Upward acts at once; downward needs
-  N consecutive recommendations. A short "continue" is not downgrade
-  evidence, an environment or missing-information failure is not by itself a
-  reason to raise, and a classifier failure keeps the current effort rather
-  than guessing a cheaper one. Quota may only resolve an undecided turn
-  downward, above every floor.
+  boundary, and never inside a tool loop. Upward acts at once and goes straight
+  to the rung `targets` asks for, which may be two rungs (`upward: jump`, the
+  default; `step` is the old single rung). Downward moves one rung and needs
+  `downgrade_confirmations` consecutive recommendations. A short "continue" is
+  not downgrade evidence, an environment or missing-information failure is not
+  by itself a reason to raise, and a classifier failure keeps the current
+  effort rather than guessing a cheaper one. Quota may only resolve an
+  undecided turn downward, above every floor.
 - The router owns the plan; the client owns the transcript. The router never
   inserts an update item and a client-authored one is refused. Every applied
   update has to come back at its recorded position with a matching prefix
-  hash, and the base setting never moves. Automatic compaction and truncation
-  are refused for these sessions.
+  hash, and the base setting never moves.
+- A compaction the client asks for is passed through and opens a compaction
+  epoch (owner decision, 2026-09-19). The router never compacts, summarises or
+  rewrites a provider item, and never changes model. In a new epoch, updates
+  from earlier epochs stop being position-validated and stop being required,
+  the expected and confirmed effort go back to the base effort, and the next
+  eligible turn may plan again. `truncation: auto` and the automatic-management
+  fields (`context_management`, `compaction`, `auto_compaction`,
+  `auto_truncation`) are still refused.
 - 2xx headers are transport acceptance. Only a valid provider completion
   confirms an effort transition, and only a confirmed one moves the effective
   effort; expected and confirmed are separate columns. A reply's

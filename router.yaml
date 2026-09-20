@@ -226,8 +226,8 @@ routes:
 # recorded. A route's failure fallbacks are a separate matter and are not
 # listed: reaching one after a 429 is not a claim that it was good enough.
 #
-# Every reference points at evals/POOL.md, which is where the admission test
-# verdicts are written down.
+# Every reference points at POOL.md, at the top of the repository, which is
+# where the admission test verdicts are written down.
 quality_lanes:
   simple-work:
     description: Short, easy work with nothing much at stake.
@@ -359,6 +359,11 @@ experiments:
     on_unknown: keep
     hysteresis: true
     ladder: [low, medium, high]
+    # `upward`, `downward`, `targets`, `thresholds`, `questions` and
+    # `shadow_questions` are left out and take their defaults: an upward change
+    # jumps straight to the rung the evidence asks for, a downward change steps
+    # one rung and needs its confirmations. examples/adaptive-effort.yaml
+    # writes every one of them out. None of it runs while mode is "off".
 
 # Passed to Jev exactly as written. Wording is the main lever on accuracy:
 # be literal, be concrete, and make every score level a standalone situation.
