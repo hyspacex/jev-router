@@ -138,9 +138,11 @@ in `qualified_profiles`:
   `request_parameter`;
 - carries `effort_control.qualification: verified`;
 - names a `qualification_ref` that resolves to a file that exists;
-- carries its base effort as a request field (`effort_style: param`), because
-  a model-name suffix would give the same setting two owners;
-- has at least two rungs on its ladder.
+- carries its base effort as a request field (`effort_style: param`) when the
+  strategy is `native_configuration_update`, because a model-name suffix would
+  give the same setting two owners;
+- has at least two rungs on its ladder, after the client floor, the alias cap
+  and the lane have narrowed it.
 
 ## The policy
 
@@ -630,7 +632,16 @@ holds it. The session is not bricked by it.
 
 The same applies when the bounded SSE observer could not read a reply: lineage
 is marked unknown, further transitions stop, and the reply itself is untouched
-and never retried.
+and never retried. A stream the upstream closed cleanly without ever saying how
+the response ended is ambiguous too, however tidily the transport finished: the
+attempt reads `unknown`, not `completed`.
+
+Every refusal that a reconcile would clear names the command. `TURN_NOT_SETTLED`
+says which plan the router is holding and what state it is in;
+`EXECUTION_OUTCOME_UNKNOWN` gives the `jev-router sessions reconcile` line and
+the `POST /router/turn-plan/{plan}/reconcile` equivalent. A session report names
+the open update as well, so a client can read what is blocking it rather than
+working it out from the ledger.
 
 ## Rollback
 

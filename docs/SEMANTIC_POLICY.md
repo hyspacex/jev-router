@@ -18,6 +18,17 @@ Four parts, and they are deliberately separate:
 Everything here defaults to off. A `router.yaml` written before any of it
 behaves exactly as it did.
 
+**What has been measured.** The four packet arms of spec 13.4 were run on
+2026-09-19 and came out a tie: `router_yaml` 92.4 [87.4, 95.5] tier correct,
+`b1_coding_state` 90.6 [85.3, 94.2], `b2_expanded_packet` 90.6 [85.3, 94.2],
+`b3_distribution` 91.8 [86.7, 95.1]. Under-routing was 1.2% for the shipped
+packet against 4.1% for `b1_coding_state`, and the three extra questions cost
+about 900 input tokens and 2 ms of median Jev latency. Nothing was promoted:
+`coding_state_v1` is still a variant, the shadow questions are still shadow,
+and `distribution_policy` is still `shadow`. Experiment 22 in
+[`../evals/EXPERIMENTS.md`](../evals/EXPERIMENTS.md) has the detail and the
+limits.
+
 ## The packet
 
 ```yaml
