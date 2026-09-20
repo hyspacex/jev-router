@@ -1,0 +1,205 @@
+{
+  "schema_version": "1",
+  "script": "evals/run_sessions.py",
+  "kind": "live",
+  "written_at": "2026-09-20T06:12:06+00:00",
+  "repo_sha": "89d9bd868af5d8038a90a9ebb49387d458a20058-dirty",
+  "python": "3.14.7",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {},
+  "cases": {
+    "count": 8,
+    "by_split": {
+      "pilot": [
+        "context-growth-audit",
+        "diagnosis-interacting",
+        "environment-missing",
+        "implementation-csv",
+        "implementation-money",
+        "mechanical-rename",
+        "mechanical-transform",
+        "multi-turn-ladder"
+      ]
+    },
+    "families": [
+      "context-growth",
+      "diagnosis",
+      "environment",
+      "implementation",
+      "mechanical",
+      "multi-turn"
+    ]
+  },
+  "seeds": {},
+  "repeats": 1,
+  "cache": {},
+  "caps": {
+    "max_calls": 12,
+    "wall_clock_seconds": 180.0,
+    "per_task": {
+      "mechanical-rename": {
+        "max_calls": 10,
+        "wall_clock_seconds": 240
+      },
+      "mechanical-transform": {
+        "max_calls": 10,
+        "wall_clock_seconds": 240
+      },
+      "implementation-csv": {
+        "max_calls": 14,
+        "wall_clock_seconds": 420
+      },
+      "implementation-money": {
+        "max_calls": 14,
+        "wall_clock_seconds": 420
+      },
+      "diagnosis-interacting": {
+        "max_calls": 16,
+        "wall_clock_seconds": 480
+      },
+      "context-growth-audit": {
+        "max_calls": 24,
+        "wall_clock_seconds": 600
+      },
+      "multi-turn-ladder": {
+        "max_calls": 20,
+        "wall_clock_seconds": 600
+      },
+      "environment-missing": {
+        "max_calls": 12,
+        "wall_clock_seconds": 300
+      }
+    }
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "programmatic": "the task's own check command"
+  },
+  "exclusions": [],
+  "unfinished": [
+    {
+      "task": "diagnosis-interacting",
+      "family": "diagnosis",
+      "arm": "fixed_strong_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "",
+      "calls": 2,
+      "wall_clock_s": 3.52,
+      "tool_calls": 1,
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "turns": "0/1",
+      "error": "SessionClientError: execution failed with 503: {\"error\":{\"message\":\"upstream connect error or disconnect/reset before headers. reset reason: connection timeout\",\"type\":\"server_error\",\"code\":\"internal_server_error\"}}",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 437,
+        "completion_tokens": 30,
+        "total_tokens": 467
+      },
+      "final_response": "",
+      "check_output": ""
+    },
+    {
+      "task": "context-growth-audit",
+      "family": "context-growth",
+      "arm": "fixed_strong_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "",
+      "calls": 1,
+      "wall_clock_s": 0.32,
+      "tool_calls": 0,
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "turns": "0/1",
+      "error": "SessionClientError: execution failed with 503: {\"error\":{\"message\":\"auth_unavailable: no auth available (providers=codex, model=gpt-6-astra(low); last upstream error: upstream connect error or disconnect/reset before headers. reset reason: connection timeout)\",\"type\":\"server_error\",\"code\":\"internal_server_error\"}}",
+      "admission": {},
+      "usage": {},
+      "final_response": "",
+      "check_output": ""
+    },
+    {
+      "task": "multi-turn-ladder",
+      "family": "multi-turn",
+      "arm": "fixed_mid_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 15.58,
+      "tool_calls": 11,
+      "model": "ollama/glm-5.3",
+      "effort": "low",
+      "turns": "2/3",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 18527,
+        "completion_tokens": 2069,
+        "total_tokens": 20596
+      },
+      "final_response": "All 8 tests pass. Summary of the changes:\n\n**`src/events.py`** \u2014 implemented `merge(a, b)`:\n- Determines the \"later\" event by comparing `at` values (with `None` treated as earliest), falling back to `b` on ties.\n- Shared fields take the later event's value; absent (`None`) fields fall back to the earlier event's value.\n- The result's `at` is the earlier of the two.\n\n**`tests/test_events.py`** \u2014 added tests covering: later event winning shared fields, earliest `at` kept, absent fields not overwriting, absent fields filled from the earlier event, ties going to the second event, and the return type.",
+      "check_output": "ocstring_was_renamed():\n        text = pathlib.Path(\"src/events.py\").read_text()\n>       assert text.lstrip().startswith('\"\"\"Event records.')\nE       assert False\nE        +  where False = <built-in method startswith of str object at 0xaaab014c3aa0>('\"\"\"Event records.')\nE        +    where <built-in method startswith of str object at 0xaaab014c3aa0> = '\"\"\"Events.\"\"\"\\n\\n\\nclass Event:\\n    def __init__(self, at, name=None, payload=None):\\n        self.at = at\\n        ...is None:\\n        merged[\"payload\"] = earlier.payload\\n    return Event(earlier.at, merged[\"name\"], merged[\"payload\"])'.startswith\nE        +      where '\"\"\"Events.\"\"\"\\n\\n\\nclass Event:\\n    def __init__(self, at, name=None, payload=None):\\n        self.at = at\\n        ...is None:\\n        merged[\"payload\"] = earlier.payload\\n    return Event(earlier.at, merged[\"name\"], merged[\"payload\"])' = <built-in method lstrip of str object at 0xaaab014c3aa0>()\nE        +        where <built-in method lstrip of str object at 0xaaab014c3aa0> = '\"\"\"Events.\"\"\"\\n\\n\\nclass Event:\\n    def __init__(self, at, name=None, payload=None):\\n        self.at = at\\n        ...is None:\\n        merged[\"payload\"] = earlier.payload\\n    return Event(earlier.at, merged[\"name\"], merged[\"payload\"])'.lstrip\n\ntests/test_events_hidden.py:23: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_events_hidden.py::test_the_docstring_was_renamed - assert F...\n1 failed, 10 passed in 0.01s\n"
+    },
+    {
+      "task": "multi-turn-ladder",
+      "family": "multi-turn",
+      "arm": "fixed_strong_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "",
+      "calls": 1,
+      "wall_clock_s": 0.32,
+      "tool_calls": 0,
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "turns": "0/3",
+      "error": "SessionClientError: execution failed with 503: {\"error\":{\"message\":\"auth_unavailable: no auth available (providers=codex, model=gpt-6-astra(low); last upstream error: upstream connect error or disconnect/reset before headers. reset reason: connection timeout)\",\"type\":\"server_error\",\"code\":\"internal_server_error\"}}",
+      "admission": {},
+      "usage": {},
+      "final_response": "",
+      "check_output": ""
+    },
+    {
+      "task": "environment-missing",
+      "family": "environment",
+      "arm": "fixed_strong_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "",
+      "calls": 1,
+      "wall_clock_s": 0.31,
+      "tool_calls": 0,
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "turns": "0/1",
+      "error": "SessionClientError: execution failed with 503: {\"error\":{\"message\":\"auth_unavailable: no auth available (providers=codex, model=gpt-6-astra(low); last upstream error: upstream connect error or disconnect/reset before headers. reset reason: connection timeout)\",\"type\":\"server_error\",\"code\":\"internal_server_error\"}}",
+      "admission": {},
+      "usage": {},
+      "final_response": "",
+      "check_output": ""
+    }
+  ],
+  "arms": {
+    "fixed_mid_low": {
+      "purpose": "GLM reasoning qualification, fixed model without routing",
+      "model": "ollama/glm-5.3",
+      "effort": "low"
+    },
+    "fixed_mid_high": {
+      "purpose": "GLM reasoning qualification, fixed model without routing",
+      "model": "ollama/glm-5.3",
+      "effort": "high"
+    },
+    "fixed_strong_low": {
+      "purpose": "low-effort frontier coding reference without routing",
+      "model": "gpt-6-astra",
+      "effort": "low"
+    }
+  },
+  "container_image": "jev-eval:local"
+}

@@ -273,12 +273,12 @@ def test_the_simulator_never_reads_route_cost():
     assert "from common import config_with_overlay" in source
 
 
-def test_a_window_running_ahead_of_pace_moves_a_new_admission():
+def test_a_window_running_ahead_of_pace_keeps_strict_quality():
     result = quota_sim.run(quota_sim.demo_scenario())
     calm, pressed = result.rows[0], result.rows[1]
     assert calm["model"] == "gpt-6-astra"
-    assert pressed["quota_changed_choice"] is True
-    assert pressed["model"] != "gpt-6-astra"
+    assert pressed["quota_changed_choice"] is False
+    assert pressed["model"] == "gpt-6-astra"
 
 
 def test_a_failed_poll_is_neutral_and_stays_visible_as_an_error():
@@ -563,6 +563,9 @@ def test_the_arms_table_includes_qualification_and_names_what_is_missing():
     assert set(run_sessions.POLICY_ARMS) == {
         "fixed_strong",
         "fixed_mid",
+        "fixed_mid_low",
+        "fixed_mid_high",
+        "fixed_strong_low",
         "simple_rules",
         "jev_mean",
         "jev_packet",

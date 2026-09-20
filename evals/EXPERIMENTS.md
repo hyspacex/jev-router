@@ -23,6 +23,53 @@ export TYPESAFE_API_KEY=...
 uv run python evals/run_eval.py --variants <name> --repeats 3
 ```
 
+## 2026-09-20: moderate tool admission, no classifier change
+
+Removed the blanket `tool_loop` intercept; added GLM high for moderate tool
+work after `moderate_careful`. The latter can now select Astra low with tools.
+Questions, state, confidence gate and all numeric thresholds are unchanged.
+See [qualification report](reports/2026-09-20-glm-effort/summary.md).
+
+One fresh Jev answer per existing case, then both policies replayed on those
+same answers at zero pressure. No labels changed. Tier correctness:
+
+| Split | Before | After | Paired bootstrap p |
+| --- | --- | --- | --- |
+| Tuning, 120 cases | 92.5% [86.4, 96.0] | 92.5% [86.4, 96.0] | 1.000 |
+| Held out, 51 cases | 90.2% [79.0, 95.7] | 90.2% [79.0, 95.7] | 1.000 |
+
+Intervals are 95% Wilson. Eight choices changed across the full set. This is
+policy replay, not proof that GLM completes every case labelled for frontier;
+legacy acceptable-tier annotations were not expanded to flatter the change.
+
+All four controls reran (one repeat, concurrency two). Shuffled-label task
+accuracy was 14.0% [9.6, 20.0], compatible with its stated 11.5% chance rate,
+but tier accuracy was 58.5% [51.0, 65.6], above the report's stated 34.4%
+chance rate. Deployment was held to investigate. The chance calculation was
+wrong: tuple-label equality is not prediction membership in an acceptable-tier
+set. Corrected fixed-prediction permutation chance is 54.9%, with 95% null
+interval [48.0, 61.4]; observed 58.5% gives one-sided p = 0.1683. Task chance
+is 10.8% [6.4, 15.8], observed 14.0%, p = 0.1093. These null intervals are
+not confidence intervals on quality. Neither control shows excess agreement.
+
+The shuffle also now freezes the donor's resolved acceptable tiers instead
+of recomputing them from recipient slice metadata, and uses a uniform
+permutation matching the null. No original case annotations changed. The
+majority-class helper now considers mid as well as fast/frontier. Regression
+tests cover asymmetric prediction frequencies, overlapping tier sets, donor
+label preservation and a synthetic leaked-label control that must fail.
+All four controls reran cache-only after the fix. Constant-state equals the
+majority baseline; constant-policy and length-only do not match the real ladder.
+
+Deployment proceeded after 1,130 tests passed (3 skipped). The live health
+endpoint exposes mid_tools; a fresh admission selected GLM high under
+moderate_tools, then its test binding was closed without execution. Existing
+bindings were left untouched. This smoke check spent one additional Jev call.
+Raw run manifests and summary tables with intervals are retained alongside the
+qualification report. The fresh classifier and constant-state runs spent 342
+Jev calls; the remaining controls were cache-only policy replay. Session evals
+spent 120 upstream calls, separately accounted. No subscription saving claimed.
+
 ## Starting point
 
 `summary_v1`, the seven-category `task` question, the difficulty levels and the

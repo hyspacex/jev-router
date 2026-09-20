@@ -1,0 +1,2742 @@
+{
+  "kind": "policy_replay",
+  "pressure": 0,
+  "records": [
+    {
+      "case": "code-rename-trivial-01",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-add-cli-flag-02",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-large-refactor-di-03",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-regex-extract-04",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-sql-window-query-05",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-shell-oneliner-06",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-multiturn-yes-do-it-07",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-chinese-hooks-08",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-prose-shaped-really-code-09",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "code-migration-backfill-10",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-go-deadlock-short-40-11",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-long-log-trivial-question-12",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-flaky-test-ci-13",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-nameerror-typo-14",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-multiturn-tool-result-15",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-adversarial-injection-in-log-16",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-css-overflow-17",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-spanish-slow-query-18",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "debug-screenshot-build-error-19",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-eventbus-tradeoff-20",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-security-snippet-21",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-pr-review-small-22",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-auth-module-review-23",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-naming-bikeshed-24",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "design-german-kafka-redis-25",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-index-strategy-26",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-schema-diagram-image-27",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "design-latest-turn-changes-task-28",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "agent-run-tests-and-fix-29",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-lookup-node-version-30",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-multiturn-grep-result-31",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-monorepo-dep-bump-32",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-delete-orig-files-33",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-find-and-change-config-34",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-bisect-regression-35",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-changelog-from-git-log-36",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "high",
+        "moderate_tools"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "writing-incident-customer-notice-37",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-medical-discharge-38",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-legal-clause-39",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-rsu-tax-explainer-40",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-security-advisory-41",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-regulator-response-42",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-offer-negotiation-email-43",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "writing-investor-update-numbers-44",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-limerick-printer-45",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-noir-opening-46",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-novel-continuity-47",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-npc-dialogue-48",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-wedding-speech-49",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-parody-lyrics-50",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-pov-rewrite-51",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "creative-spanish-microcuento-52",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-docstring-tidy-53",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-slack-grammar-54",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-product-blurb-55",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-commit-message-56",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-defuse-email-57",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-readme-intro-58",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-translate-customer-reply-59",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "polish-payment-error-copy-60",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-meeting-notes-dates-61",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "extract-invoice-json-62",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-blogpost-tldr-63",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-ticket-export-themes-64",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "extract-action-items-65",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-trial-abstract-66",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-chinese-article-67",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-diff-release-notes-68",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "summarise-adversarial-doc-69",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "quick-bash-for-loop-70",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "quick-postgres-port-71",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "quick-weakmap-vs-map-72",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "quick-drug-interaction-73",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "quick-percentage-74",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "quick-borrow-checker-misleading-75",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "quick-german-idempotent-76",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "quick-timezone-abbrev-77",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-simple-question-proof-78",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-probability-puzzle-79",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-trip-itinerary-80",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-gym-split-81",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "none",
+        "moderate"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "other-translate-manual-82",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-explain-to-child-83",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-buy-vs-rent-84",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "xhigh",
+        "very_hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "xhigh",
+        "very_hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-chitchat-85",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "other-chart-image-read-86",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "images_need_vision"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-incident-root-cause-162",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-log-last-error-163",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-policy-approval-threshold-164",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-policy-section-list-165",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-python-unit-bug-166",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-python-rename-167",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-transcript-decisions-168",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-csv-cost-centre-169",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-changelog-breaking-170",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "longctx-changelog-migration-note-171",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-premium-tooltip-87",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-jargon-git-fetch-88",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-subtle-rename-89",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-compose-indent-90",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "adv-sow-dates-91",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-file-header-escalate-92",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-enterprise-cron-93",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "adv-jargon-json-format-94",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-oneliner-webhook-race-95",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-five-second-cron-tz-96",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-spec-mechanical-refunds-97",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-lock-glue-comment-98",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-static-markup-rounding-99",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-starter-plan-shard-key-100",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-jargon-serializable-retry-101",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-payout-mechanical-join-102",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-homework-scheduling-103",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-paed-dose-routine-104",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-migration-trivial-comment-105",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-matter-budget-appeal-106",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-preapproved-auth-middleware-107",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-jargon-allergen-menu-108",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-trivial-vat-filing-109",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-plan-screened-routine-110",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "adv-manifest-routing-field-111",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-import-yes-no-112",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-first-turn-timeout-const-113",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-first-turn-bind-log-context-114",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "high",
+        "moderate_tools"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-first-turn-webhook-idempotency-115",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-first-turn-async-port-116",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "xhigh",
+        "very_hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "xhigh",
+        "very_hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-read-back-python-floor-117",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-grep-prints-to-logger-118",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "agent-proration-off-by-one-119",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-alembic-two-heads-120",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-lock-ordering-fix-121",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-parallel-config-precedence-122",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-parallel-three-hashers-123",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-parallel-schema-snapshot-124",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-parallel-perf-regression-125",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-pytest-rounding-fix-126",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "high",
+        "moderate_tools"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "agent-pytest-tz-boundary-127",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-pytest-failed-twice-128",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-pytest-test-is-wrong-129",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "low",
+        "moderate_careful"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-plan-step-three-money-path-130",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-plan-step-two-imports-131",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-plan-step-three-stop-before-migration-132",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-plan-step-four-inconsistency-133",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-tracker-unassigned-keys-134",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "tool_loop"
+      ],
+      "after": [
+        "ollama/glm-5.3",
+        "high",
+        "moderate_tools"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "agent-sql-replica-refund-spike-135",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "agent-deploy-canary-decision-136",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-outbox-carry-on-137",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-ratelimiter-continue-138",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-schema-review-rest-139",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-i18n-keys-continue-140",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "multiturn-tls-then-curl-flag-141",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-refactor-then-git-undo-142",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-abstract-then-sourdough-143",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "low_confidence"
+      ],
+      "before_ok": false,
+      "after_ok": false
+    },
+    {
+      "case": "multiturn-flaky-test-narrowing-144",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-idempotency-drilldown-145",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-node-memory-drilldown-146",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-standup-then-outage-email-147",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-spreadsheet-then-pension-148",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-postmortem-then-reword-149",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-query-then-comment-150",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multiturn-regulator-then-shorten-151",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-zh-squash-commits-152",
+      "split": "held_out",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-zh-hikari-timeout-153",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-es-slack-softening-154",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-es-doble-cobro-155",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-de-mandantenfaehigkeit-156",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-de-exit-code-137-157",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-ja-refund-notice-158",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "medium",
+        "high_harm"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-ja-commit-message-159",
+      "split": "tune",
+      "before": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "after": [
+        "ollama/glm-5.3-flash",
+        "none",
+        "easy"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-fr-plan-explain-160",
+      "split": "tune",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    },
+    {
+      "case": "multilingual-pt-coorte-retencao-161",
+      "split": "held_out",
+      "before": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "after": [
+        "gpt-6-astra",
+        "high",
+        "hard"
+      ],
+      "before_ok": true,
+      "after_ok": true
+    }
+  ]
+}

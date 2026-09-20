@@ -1,4 +1,6 @@
 # jev-router configuration.
+# Preserve literal classifier text; line wrapping can change the Jev input.
+# yamllint disable rule:line-length
 #
 # Adding a provider, a model, a question, a route, a rule, an alias or a client
 # floor is an edit to this file alone. Only a new state builder, a new decider
@@ -191,6 +193,10 @@ routes:
       - {model: gpt-5.6-luna, effort: low}
       - {model: gpt-6-astra, effort: low}
 
+  mid_tools:
+    description: Moderate tool-enabled work; explicitly bounded reasoning.
+    primary: {model: ollama/glm-5.3, effort: high}
+
   frontier_low:
     description: Work that needs the strong model but not much thinking.
     primary: {model: gpt-6-astra, effort: low}
@@ -267,8 +273,20 @@ quality_lanes:
         qualification_ref: "POOL.md: the model this band was measured against"
     conservative_default: {model: gpt-6-astra, effort: low}
 
+  moderate-tools:
+    description: Moderate, low-consequence tool work; bounded pilot qualification.
+    qualification_ref: "POOL.md: GLM reasoning tool qualification (2026-09-20)"
+    qualified:
+      - model: ollama/glm-5.3
+        effort: high
+        qualification_ref: "evals/reports/2026-09-20-glm-effort/summary.md"
+      - model: gpt-6-astra
+        effort: medium
+        qualification_ref: "POOL.md: GLM tool-driven coding pilot (2026-09-20 UTC)"
+    conservative_default: {model: gpt-6-astra, effort: medium}
+
   frontier-work:
-    description: Hard work, high consequence work, and tool loops.
+    description: Hard work and high consequence work.
     # grok-4.6 is deliberately absent. It is a failure fallback for the
     # frontier routes and POOL.md records it 0.72 below the frontier model on
     # nine hard cases, so no amount of quota pressure may promote it here.
@@ -331,7 +349,7 @@ session_routing:
 semantic_policy:
   active_questions: [task, difficulty, harm_if_wrong]
   shadow_questions: []
-  distribution_policy: shadow
+  distribution_policy: "off"
 
 # Experimental gates. Everything here is off in the shipped file.
 #
@@ -624,15 +642,6 @@ policy:
         harm_if_wrong: {gte: 0.8}
       use: {route: frontier_medium}
 
-    # The mid model has not been tested in a tool loop yet, so requests that
-    # carry tool schemas stay on the frontier model.
-    - name: tool_loop
-      lane: frontier-work
-      when:
-        has_tools: true
-        difficulty: {gte: 1.4, shift_with: openai, max_shift: 0.4}
-      use: {route: frontier_medium}
-
     # Moderate work where a mistake would matter stays on the frontier model.
     # Sending it to the mid model under-routed nine faithfulness-sensitive cases
     # in the routing eval. Code edits are exempt: they are what the mid model
@@ -644,6 +653,16 @@ policy:
         difficulty: {gte: 1.4}
         harm_if_wrong: {gte: 0.45}
       use: {route: frontier_low}
+
+    # Tools being available does not by itself require frontier. Keep this
+    # after moderate_careful so faithfulness-sensitive work can reach Astra low.
+    # High effort passed the bounded tool pilot; no general equivalence claim.
+    - name: moderate_tools
+      lane: moderate-tools
+      when:
+        has_tools: true
+        difficulty: {gte: 1.4}
+      use: {route: mid_tools}
 
     # Moderate work without tools. evals/ADMISSION.md: the mid model scored
     # 9.70 against the frontier model's 9.31 on 12 such cases, at a third of
@@ -667,89 +686,17 @@ policy:
 
   default: {route: frontier_medium}
 
-# Extra named rulesets an alias can point at.
-rulesets:
-  # Not measured by the eval set, which only exercises the `auto` alias. The
-  # cutoffs follow the tuned ladder above, one step more cautious.
-  code_only:
-    low_confidence:
-      min_confidence: 0.5
-      questions: [difficulty]
-      use:
-        model: gpt-6-astra
-        effort: medium
-    rules:
-      - name: risky_code
-        when:
-          harm_if_wrong: {gte: 0.8}
-        use:
-          model: gpt-6-astra
-          effort: high
-      - name: hard_code
-        when:
-          difficulty: {gte: 2.6}
-        use:
-          model: gpt-6-astra
-          effort: xhigh
-      - name: normal_code
-        when:
-          difficulty: {gte: 1.4}
-        use:
-          model: gpt-6-astra
-          effort: high
-      - name: small_code
-        when:
-          difficulty: {lte: 1.399}
-        use:
-          model: ollama/glm-5.3-flash
-          effort: low
-    default:
-      model: gpt-6-astra
-      effort: medium
-
+# Production exposes one strict entry. Experiments use separate configurations.
+rulesets: {}
 aliases:
   auto:
-    description: Pick a model and an effort for this request.
-    state_builder: continuation_aware_v1
-    questions: [task, difficulty, harm_if_wrong]
-    rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
-
-  # Keeps the smallest possible state. The questions name fields that
-  # last_message_only never produces; an absent field reads as "not present",
-  # which is what the wording says to do, so it degrades rather than breaks.
-  auto-fast:
-    description: Same choice, capped at low effort, for latency-sensitive scripts.
-    state_builder: last_message_only
-    questions: [task, difficulty]
-    rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
-    max_effort: low
-
-  # The same choice as `auto`, made once and kept. Resolve a session through
-  # POST /router/resolve, then send every request with X-Router-Session,
-  # X-Router-Binding and X-Router-Request-Id. The model does not change for
-  # the life of the session: overflow, a changed capability, a 429 and a
-  # classifier outage all report the problem instead of moving the work.
-  # See docs/SESSION_ROUTING.md.
-  auto-session:
-    description: Pick a model once and keep it for the whole session.
+    description: Choose once for fresh work; keep the model and effort for the session.
     session_mode: strict
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
     allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
-    # What admission binds when Jev is down. Without this an admission with no
-    # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
-    # whatever it binds here is as fixed as any other binding.
     admission_fallback: {route: frontier_medium}
-
-  auto-code:
-    description: Coding work only. Skips the task question.
-    state_builder: continuation_aware_v1
-    questions: [difficulty, harm_if_wrong]
-    rules: code_only
-    allowed_models: [ollama/glm-5.3-flash, gpt-6-astra]
 
 # Floors per X-Router-Client header value. Never keyed by an API key.
 clients: {}

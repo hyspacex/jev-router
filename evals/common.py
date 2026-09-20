@@ -461,22 +461,26 @@ def assign_slice_holdout(cases: list[Case], held: str) -> int:
 def shuffle_labels(cases: list[Case], seed: int = 4242) -> list[Case]:
     """Every case keeps its request and gets another case's labels.
 
-    A derangement where it can manage one, so a case rarely keeps its own
-    labels by accident. Classification and routing scores must fall to chance.
+    Use a uniform permutation, matching the report's permutation null.
+    Freeze derived acceptable tiers on the donor: recipient request metadata
+    must not change the meaning of the shuffled label.
     """
     labelled = [c for c in cases if c.labelled]
     rng = random.Random(seed)
     order = list(range(len(labelled)))
-    for _ in range(20):
-        rng.shuffle(order)
-        if all(i != j for i, j in enumerate(order)) or len(order) < 2:
-            break
-    expected = [copy.deepcopy(c.expected) for c in labelled]
+    rng.shuffle(order)
+    expected = []
+    for c in labelled:
+        label = copy.deepcopy(c.expected)
+        label["acceptable_tiers"] = c.acceptable_tiers
+        expected.append(label)
     out = []
     for c in cases:
         clone = copy.copy(c)
         if c.labelled:
             clone.expected = expected[order[labelled.index(c)]]
+            # Prevent re-widening the donor's already resolved tier set.
+            clone.label_source = "outcome"
         out.append(clone)
     return out
 
