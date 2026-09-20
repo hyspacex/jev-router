@@ -17,6 +17,9 @@ resolves one execution profile once and keeps it:
   it, when you prune it, or when a prepared contract is never used.
 - A request that no longer fits is refused with a machine-readable reason.
   The router does not compact, widen the window or pick a bigger model.
+  Compacting is the client's job, and a compaction the client asks for is
+  passed through untouched; see
+  [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md), "Compaction".
 - Effort is fixed by default. Changing it between turns is a separate,
   opt-in experiment that never changes the model; see
   [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md). With it off, `effort_mode` is
@@ -236,7 +239,7 @@ delivery, and the router never calls the provider again on your behalf.
 |---|---|
 | Completed | `REQUEST_ALREADY_COMPLETED`. No response is stored to replay. |
 | Definitively rejected before acceptance | Retried normally. |
-| Accepted, stream failed, in flight, or unknown | `EXECUTION_OUTCOME_UNKNOWN`. Reconcile it, or start a new attempt with a new id. |
+| Accepted, stream failed, in flight, or unknown | `EXECUTION_OUTCOME_UNKNOWN`. Reconcile it, or start a new attempt with a new id. The message names the reconcile command. |
 | Same id, different body | `SESSION_CONFLICT`. |
 
 Records whose outcome nobody can state are never dropped by the bounded
@@ -316,7 +319,7 @@ Every error is a structured body with a stable machine code:
 | `UNSUPPORTED_PROFILE` | 422 | Unsupported protocol or endpoint, tools or images the profile cannot take, or the session service switched off. |
 | `REQUEST_ALREADY_COMPLETED` | 409 | A completed request id was sent again. |
 | `EXECUTION_OUTCOME_UNKNOWN` | 409 | The previous attempt at that id cannot be called settled. |
-| `TURN_NOT_SETTLED` | 409 | An effort plan was asked for while the previous turn was still running. |
+| `TURN_NOT_SETTLED` | 409 | An effort plan was asked for while the previous turn was still running. The message says what the router is holding and, when that is an update nobody can account for, the command that settles it. |
 | `EFFORT_HISTORY_MISMATCH` | 409 | A required effort update was dropped, moved, duplicated, or the base setting was changed. |
 
 None of these is ever converted into a cheaper request. An authorization, a
@@ -462,8 +465,13 @@ none of it is ever injected into a prompt.
 - **Between-turn effort changes.** `POST /router/turn-plan`, the `turn_plans`
   ledger and the `effort_control` block are an opt-in experiment that changes
   the effort of the bound model and nothing else. It is off in the shipped
-  configuration and no deployment is qualified for it. See
-  [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md).
+  configuration, which declares no qualified profile, and whether it is worth
+  doing has not been measured. One deployment has a provisional protocol test.
+  See [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md).
+- **Compaction.** A compaction the client asks for is forwarded as a
+  maintenance request of the same session: same binding, no admission, no turn
+  plan. It opens a compaction epoch, which is what the effort ledger checks a
+  later replay against. The router builds no compactor of its own.
 - **Strict forwarding over the Responses protocol.** A managed request on
   `/v1/responses` executes against a binding whose profile really speaks that
   protocol. A mismatch either way is `UNSUPPORTED_PROFILE`; the router never
