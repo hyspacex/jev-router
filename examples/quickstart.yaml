@@ -1,0 +1,32 @@
+# Connectivity demo, not an admitted model pool or a quality benchmark.
+# Set upstream_id and limits to values your upstream actually supports.
+settings:
+  host: 127.0.0.1
+  port: 8318
+  upstream_base_url: http://127.0.0.1:8317
+  sqlite_path: ~/.jev-router/quickstart.db
+  decider: rules
+  log_state: false
+  default_route: {model: demo}
+models:
+  demo:
+    upstream_id: replace-with-your-model-id
+    protocol: openai-chat
+    context_window: 8192
+    max_output_tokens: 1024
+    supports_tools: false
+    supports_vision: false
+    efforts: []
+    effort_style: none
+policy:
+  default: {model: demo}
+session_routing:
+  enabled: true
+  require_control_token: true
+aliases:
+  auto:
+    description: Single-model strict-session connectivity demo.
+    session_mode: strict
+    decider: rules
+    allowed_models: [demo]
+    admission_fallback: {model: demo}

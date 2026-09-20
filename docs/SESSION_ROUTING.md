@@ -2,8 +2,8 @@
 
 A legacy alias decides per request. It hashes the conversation, pins the model
 for six hours, and may replace that model when the conversation stops fitting
-it. That is the right trade for a chat window, and it is what every alias in
-`router.yaml` still does.
+it. That can suit a chat window, but it is not the shipped default:
+`router.yaml` exposes one strict alias, `auto`.
 
 A coding session wants the opposite. The harness has already sized its history
 against one model's window, it holds a prompt cache, and a model that changes
@@ -27,8 +27,8 @@ resolves one execution profile once and keeps it:
   three separate opt-ins agree.
 
 Legacy behaviour is untouched. An alias with no `session_mode` is legacy, and
-a request with no `X-Router-Session` header takes exactly the path it took
-before any of this existed.
+legacy requests without `X-Router-Session` keep the legacy path. A strict
+alias without a binding is refused; it never falls through to legacy routing.
 
 This file is about the contract: one binding, resolved once, never moved.
 What decides that binding — the semantic packet, the shadow questions, the
@@ -37,6 +37,10 @@ replaying a decision from its own row — is in
 [`SEMANTIC_POLICY.md`](SEMANTIC_POLICY.md).
 
 ## Turning it on
+
+The shipped `auto` already enables this contract. The `auto-session` name in
+this guide is an example for a custom configuration, not a shipped alias.
+For a runnable example using `auto`, start with the [quick start](../README.md#quick-start).
 
 ```yaml
 session_routing:

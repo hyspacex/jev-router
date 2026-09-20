@@ -1,67 +1,72 @@
 # Documentation
 
-`README.md` at the top of the repository is the overview and the quick start.
-This directory holds the parts that need more room.
+Start with the [project overview and runnable quick start](../README.md).
+The shipped entrypoint is **strict `auto`**: resolve a fresh session, then execute
+on its fixed model. Legacy aliases and adaptive effort have separate guides.
 
-| File | What it covers |
+## Get started
+
+| Guide | What you will do |
 | --- | --- |
-| [`SESSION_ROUTING.md`](SESSION_ROUTING.md) | Strict sessions: `POST /router/resolve`, the managed execution headers, the context budget, and all thirteen error codes. |
-| [`SEMANTIC_POLICY.md`](SEMANTIC_POLICY.md) | What decides a binding: the semantic packet, shadow questions, quality lanes, quota windows, and replaying a decision from its own row. |
-| [`ADAPTIVE_EFFORT.md`](ADAPTIVE_EFFORT.md) | The between-turn effort experiment: the three modes, the policy, `POST /router/turn-plan`, the ledger, compaction epochs, the Codex adapter. Off by default. |
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Running it as a launchd service: upgrading, the migration, rollback, and turning strict sessions on. |
-| [`R2_SPEC.md`](R2_SPEC.md) | The specification the three above were built from, including the C01-C34 and F01-F20 acceptance cases. Two owner decisions of 2026-09-19 override parts of it; both are marked in place. |
-| [`qualification/`](qualification/) | One dated report per deployment that has been tested for between-turn effort, plus `TEMPLATE.md`. |
+| [Quick start](../README.md#quick-start) | Install, connect one upstream model, resolve a session, and get a reply. |
+| [Setup choices and troubleshooting](guides/getting-started.md) | Move from the demo to Jev-based routing and diagnose common failures. |
+| [Pi integration](../integrations/pi/README.md) | Use `jev-router/auto` for fresh coding sessions. |
+| [Strict session contract](SESSION_ROUTING.md) | Build a client that negotiates model metadata before execution. |
 
-Related, elsewhere in the repository:
+## Use and operate
 
-- [`../DESIGN.md`](../DESIGN.md) — why the router is shaped this way, and what was rejected.
-- [`../TESTPLAN.md`](../TESTPLAN.md) — what is measured, how, and what the numbers cannot show. The C and F ids map to test files there.
-- [`../POOL.md`](../POOL.md) — which models are in the pool and what admitted them.
-- [`../evals/EXPERIMENTS.md`](../evals/EXPERIMENTS.md) — one entry per change tried, with before and after numbers.
+| Guide | What it covers |
+| --- | --- |
+| [Operations and privacy](guides/operations.md) | Dashboard, decision logs, feedback, stored data, transport, and retention. |
+| [Deployment](DEPLOYMENT.md) | launchd example, upgrades, additive migrations, backups, and rollback. |
+| [Quota-aware routing](guides/quota.md) | Sources, pressure, thresholds, and route ordering for new work. |
+| [Legacy conversation routing](guides/legacy-routing.md) | Custom non-strict aliases, TTL pins, fallback plans, and shadow mode. Not the shipped default. |
 
-## Where to start
+## Reference
 
-- Routing `model: "auto"` and nothing else: the top-level `README.md` is all of
-  it. Nothing in this directory is on that path.
-- Building a coding harness that wants one model for a whole session:
-  `SESSION_ROUTING.md`, then `SEMANTIC_POLICY.md` for what chose the model.
-- Deploying it: `DEPLOYMENT.md`.
-- Changing what Jev is asked: `SEMANTIC_POLICY.md`, then `../TESTPLAN.md`.
+| Reference | What it covers |
+| --- | --- |
+| [Configuration](reference/configuration.md) | Settings, providers, models, routes, rules, aliases, and extension points. |
+| [HTTP and CLI](reference/api.md) | Commands, endpoints, headers, and environment variables. |
+| [Semantic policy](SEMANTIC_POLICY.md) | Active/shadow questions, quality lanes, coherent quota windows, and replay. |
+| [Known issues and fixes](reference/known-issues.md) | Dated limitations and resolved regressions. |
+| [Model pool](../POOL.md) | Admission verdicts and the evidence behind them. |
 
-## Known issues
+## Develop and evaluate
 
-Open as of 2026-09-19. None of them lose data.
+| Document | What it covers |
+| --- | --- |
+| [Development and tests](development/testing.md) | Offline checks and regression coverage. |
+| [Evaluation guide](development/evaluation.md) | Classification, controls, live outcomes, isolation, and tuning. |
+| [Design](../DESIGN.md) | Architecture, trade-offs, and rejected alternatives. |
+| [Test plan](../TESTPLAN.md) | Measurement methodology and acceptance-case mapping. |
+| [Session and effort specification](R2_SPEC.md) | C01–C34 and F01–F20 contracts, with later owner decisions marked in place. |
+| [Experiment log](../evals/EXPERIMENTS.md) | Changes tried and their before/after evidence. |
+| [Live evaluation isolation](../evals/ISOLATION.md) | Docker, scrubbed environments, benchmark aliases, and call budgets. |
 
-- **Fixed: two eval runs in the same second collided.** `evals/run_eval.py` now
-  adds a numeric suffix when the result directory already exists.
-- **`sessions show` prints `mode=fixed` for an adaptive session.** The
-  `effort_mode` column is written as `fixed` at resolve and never updated, so
-  an adaptive session prints `mode=fixed  adaptation=active` on one line. The
-  `adaptation` word on the same line is the one that is right; the efforts
-  printed above it are right too.
-- **Codex logs a model-list error against the adapter.** `codex` refreshes
-  `GET /v1/models` and expects a Codex-shaped body; the router answers with an
-  OpenAI-shaped one, so it logs `failed to refresh available models` once per
-  session. It is noise. The conversation works.
-- **`POST /v1/responses/compact` answers 404 on CLIProxyAPI.** The router
-  forwards it as a maintenance request of the bound session, but the proxy
-  tested on 2026-09-19 does not implement the endpoint. Codex never calls it,
-  so nothing depends on it today. The provider's inline `compaction_trigger`
-  flow does work; see `ADAPTIVE_EFFORT.md`, "Compaction".
-## Fixed
+## Experiments and evidence
 
-- **A held session claim after a mid-stream disconnect.** Fixed on
-  2026-09-19. A client that walked away while a long reply was waiting for the
-  socket left the body generator suspended at its `yield`, so nothing recorded
-  the disconnect, closed the upstream response or released the session's
-  in-flight claim. Every later request on that session was a
-  `SESSION_CONFLICT` and every turn boundary a `TURN_NOT_SETTLED` until the
-  garbage collector got round to it. A reply is now finalized on the way out
-  of the ASGI call whatever ended it, with a backstop for a generator that
-  never started. Two related things went with it: a stream the upstream closed
-  cleanly without saying how the response ended now reads `unknown` rather than
-  `completed`, so a repeat of that request id asks for a reconcile instead of
-  claiming the work was done; and `TURN_NOT_SETTLED` and
-  `EXECUTION_OUTCOME_UNKNOWN` now name the exact `jev-router sessions
-  reconcile` command that would settle them. `tests/test_broken_stream.py`
-  holds all of it.
+These are not prerequisites for using the router. Do not treat historical
+results as measurements of the current configuration.
+
+- [Adaptive effort](ADAPTIVE_EFFORT.md): between-turn effort changes, the ledger,
+  compaction epochs, and the experimental Codex adapter. Off by default.
+- [Historical benchmark snapshot](development/historical-results.md): results
+  moved out of the original README, with their original caveats.
+- [Coding-session pilot](../evals/reports/2026-09-19-session-pilot/summary.md):
+  the eight-task fixed/rules/Jev comparison; adaptive effort was off.
+- [Deployment qualification reports](qualification/): provisional deployment
+  evidence and a template, not blanket model-family qualification.
+- [Consolidation verification](verification/2026-09-19-consolidation.md): dated
+  offline/live checks and checks that were not run.
+
+## Where documentation belongs
+
+- The root `README.md` is the product overview and first successful request.
+- `guides/` contains task-oriented instructions; `reference/` contains lookup material.
+- `development/` contains contributor and evaluation guidance.
+- Existing top-level contracts, `qualification/`, and `verification/` retain
+  stable paths because code, configs, evidence, and external links cite them.
+- Integration-specific instructions stay beside their client code in `integrations/`.
+- Run artifacts and experiment history stay in `evals/`; new results need provenance
+  and uncertainty, not an undated claim in the product README.
