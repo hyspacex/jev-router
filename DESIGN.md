@@ -262,6 +262,235 @@ The point is to measure the classifier against real traffic before it can
 affect anything. Run it for a week, read the log, fix the question wording,
 then switch to `active`.
 
+## A binding is a contract, not a cache entry
+
+A pin is a preference. It says "this conversation went to that model last
+time, and reusing the answer is cheaper than asking again". Everything about it
+follows from that: it expires, it is revalidated on every turn, and hard
+incompatibility replaces it.
+
+A coding session needs something different, and the difference is not a matter
+of degree. The harness has already sized its history against one model's
+context window. It holds a prompt cache at one provider. It has been told, in
+the shape of a profile it configured itself from, what it may send. A pin that
+quietly becomes a different model has broken three promises the harness made to
+itself on the router's word.
+
+So a strict binding is a contract. The router says what the profile is, the
+client acknowledges it by revision, and from then on neither side may change it
+alone. That one decision settles most of the behaviour without further argument:
+
+- **No TTL.** A contract does not expire because time passed. It ends when the
+  client closes it, when it is pruned, or when a contract that was offered and
+  never used goes stale.
+- **No repin.** Overflow, a lost capability, a reduced configured limit: every
+  one of these reports a machine-readable code and keeps the binding. The
+  alternative is to move the work silently, which is the thing the contract
+  exists to stop.
+- **No cross-model fallback.** One entry in the execution plan. A 429 is
+  reported to the caller on the bound profile. A route's fallback list is a
+  legacy-path idea: it exists because a per-conversation pin can afford to land
+  somewhere else, and a contract cannot.
+- **No quota influence after admission.** Pressure chose which profile to
+  admit. After that it has no say at all.
+
+The two live in separate tables and neither reads the other, so none of this
+leaks into the legacy path. An alias with no `session_mode` behaves byte for
+byte as it did.
+
+What a contract cannot do is police the other side of itself. The router is an
+HTTP shim: it cannot tell genuinely new work from a fork of an old thread
+beyond the history evidence in front of it, it cannot see a tool loop, and it
+does not own the transcript. Those are named as trusted-client assertions
+rather than pretended away, and the ones the router *can* check — the binding
+revision, the request id, the context budget, its own in-flight state — it
+checks on every request.
+
+## Capability is not adequacy
+
+Quota pressure was originally bounded by two things: a `max_shift` on a
+threshold, and an `equivalent: true` flag on a route entry. Both bound *how
+far* pressure may move a decision. Neither says anything about *where it may
+land*.
+
+That gap matters as soon as the pool has more than two models. A model that
+declares `supports_tools: true` is capable of a tool-driven coding task in the
+sense that the request will not be rejected. Whether it can finish one is a
+different question, and the only honest answer comes from having run it.
+Filtering on capability and then letting pressure pick among the survivors
+quietly treats the first question as an answer to the second.
+
+So a rule may name a **quality lane**: the set of model and effort pairs
+somebody measured for that kind of work, each carrying a reference to where the
+evidence is. Pressure may then move a request only between pairs inside the
+lane. A threshold shift or an `equivalent` promotion that lands outside it is
+refused, the adequate provider is kept, and the decision records the deferral
+rather than taking it quietly. A capability replacement is drawn from the lane
+too, and if the lane has nothing eligible the request is refused rather than
+served by a model nobody measured — a hard constraint is never recovered from
+by lowering the floor.
+
+A lane entry with no `qualification_ref` is refused at config load. That is the
+load-bearing part. Without it a lane is just another list of model names, and
+the mechanism becomes a place to write down an opinion and have the router
+treat it as a measurement.
+
+A route's failure fallbacks are deliberately not lane members. Reaching one
+after a 429 is not a claim that it was good enough; it is what happened when
+the good one would not answer. In the shipped config that distinction is what
+keeps `grok-4.6` a frontier fallback and never a quota saving.
+
+The counterfactual is recorded with an honesty flag. The useful claim is "this
+task met the same adequacy requirement under both policies, and pressure chose
+between two qualified options". When there is no lane, or when one of the two
+pairs is not in it, that claim cannot be made, and the row says `evidence:
+weak` instead of implying it.
+
+## Measuring is not deciding
+
+The cheapest way to find out whether a new question helps is to ask it in the
+call that is already being made and see what it says. The trap is that a
+question you can see is a question you will be tempted to use, and once one
+answer in the packet can reach the route, "we are only measuring it" stops
+being true.
+
+So shadow answers are separated four ways, not one. They live in a different
+field on the result. They are validated one at a time by a different function,
+so a malformed shadow answer is dropped and counted rather than failing the
+packet, and — the direction that matters more — it can never satisfy or weaken
+a requirement the active side has. They carry their own packet version. And
+the routing and effort paths are handed the active answers only.
+
+The fourth separation needed stating explicitly, because it is the one that
+looks like an exception. The between-turn effort policy has a shadow question,
+`failure_mode`, whose job would be to *hold an upgrade back* when the obstacle
+is a missing credential rather than a hard problem. Suppressing a change is a
+decision like any other, so a shadow answer may not do that either. What it
+would have done is computed and stored on the plan as a counterfactual, with
+the action, the rung and whether it differed. That is how the question earns a
+promotion: move it from `shadow_questions` into `questions` and it arrives as
+an active answer like any other.
+
+Two config-load rules keep the arrangement from rotting. The active and shadow
+sets may not overlap, and an alias that routes on a question may not also be
+measuring it. A question cannot be both the answer and the experiment.
+
+## Effort is not model identity
+
+A strict binding says the model never changes. Between-turn effort changes the
+reasoning effort of that model. Those two statements are only compatible
+because effort and model identity are different things, and the design leans on
+that rather than carving out an exception.
+
+What the harness configured itself from is the profile: the model, the
+provider, the context window, the output ceiling, what it supports. None of
+that moves. The prompt cache is keyed on the history, which also does not move.
+Effort is a setting on a request. Changing it costs nothing the binding
+promised.
+
+Three consequences follow. The turn boundary calls `classify`, which returns
+answers, rather than `decide`, which runs the cross-model policy — there is no
+model choice for a turn assessment to reach. `effort.plan_turn` is a pure
+function from a ladder and some evidence to a rung, and it has no way to name a
+model. And the ladder a turn may move on is narrowed first by the client's
+floor, the alias's cap and the quality lane the admission rule named, so a
+turn-level decision cannot escape a session-level one.
+
+The asymmetry between up and down is about where the cost of being wrong lands.
+An upward change goes straight to the rung the evidence asks for, because
+underserving a turn costs that turn's quality and is corrected at the next
+boundary. A downward change moves one rung and needs several consecutive
+recommendations, because a drop that is too deep is only discovered after the
+weak answer has been given. Confirmations are a way of paying for information
+in the direction where the mistake is expensive.
+
+The first implementation climbed one rung per turn in both directions, which
+meant a turn nobody would call anything but hard was served at `medium` and
+reached `high` only if the next turn was hard too. The owner overruled that on
+2026-09-19. The old mechanic is kept as a replay arm rather than deleted, so
+the two can be compared rather than asserted about.
+
+## Planned, accepted, confirmed
+
+The reply to a request that carried an effort update can tell you three
+different things, and running them together produces a ledger that lies.
+
+- **2xx headers** say the transport accepted the request. They say nothing
+  about whether the provider read the item, honoured it, or ignored it.
+- **A terminal provider completion** says the request ran to the end and what
+  it did. This is the only thing that can confirm a transition.
+- **A reply's own `reasoning.effort`** reports the *base* effort — the
+  request-level field the client is required to hold still. Reading it as the
+  effective effort would make the two impossible to tell apart, which is
+  exactly why the client is required to hold it still.
+
+So `turn_plans.status` has five values and the session row keeps expected and
+confirmed effective effort in separate columns. Only `confirmed` moves the
+effective effort. A plan that was accepted and never completed leaves the
+confirmed value where it was, and it blocks the next change rather than being
+guessed at.
+
+`outcome_unknown` is the honest answer to a disconnected response, and it is
+the one a system is tempted to round off. The request went out; nobody can say
+what ran. Rounding it down loses an update the provider may hold. Rounding it
+up claims a transition that may not have happened. So it blocks the next change
+until a person who can check the provider says which it was, and
+reconciliation is legal only from `accepted` or `outcome_unknown` — the two
+states where the provider had the request either way. A `planned` plan was
+never sent, so no hand-written `applied` could be true, and a `confirmed` or
+`rejected` one already has its answer: a second would rewrite a fact rather
+than supply a missing one.
+
+An `applied` reconciliation leaves a hole, and saying so is better than
+papering over it. The router never saw where the client put that item. So
+execution carries on, a replay is still checked for everything that can
+honestly be checked, a chain must still not resend it, and the *next* effort
+transition is blocked, because a new update's anchor would be measured against
+a history with a gap in it.
+
+## Compaction epochs
+
+The first design refused compaction outright, which is defensible for a
+protocol experiment and wrong for a client. Codex compacts. It has always
+compacted. Refusing it means the experiment can only run on short sessions,
+which are the sessions where the experiment matters least.
+
+The owner's decision on 2026-09-19 was that a compaction the client asks for
+stays exactly what the client does. The router passes it through and records
+that it happened. It still never compacts, summarises, translates or rewrites a
+provider item, and never changes model. `truncation: auto` and the
+automatic-management fields are still refused, because those rewrite a history
+with no request of their own for the ledger to see.
+
+What compaction breaks is anchoring. Every applied update is recorded with a
+position and a prefix hash of the history in front of it, because repeated
+identical user text is not a unique anchor. After the history is folded up
+those positions name nothing. Codex also declares a different tool set on a
+compaction request, so the very first item's id changes and every prefix hash
+behind it changes with it.
+
+An epoch is the smallest thing that fixes this. It is a counter on the session,
+stamped on every plan. Crossing it relaxes what a later request is checked
+against and nothing else:
+
+- Updates from earlier epochs stop being position-validated and stop being
+  required in a replay. They stay in the ledger; they are simply not asked for
+  again.
+- Everything since the last compaction is still checked exactly as before.
+- Expected and confirmed effective effort go back to the base effort, because
+  that is what the measurement says actually happens: replaying a compaction
+  built from a history that carried an update to `high` produced the same
+  reasoning work as the base arm.
+- The next eligible turn may plan the effort again, which is the reapplication.
+
+The epoch moves on an accepted compaction rather than on a confirmed one,
+which looks like a violation of the previous section and is not. Moving it only
+ever *relaxes* a check. If the compaction went out and nothing came back, the
+session is marked `compaction_state: unknown` and further effort changes stop,
+exactly as they do for a reply nobody could read. The router loosens what it
+demands of the client and tightens what it will do itself, which is the safe
+way round.
+
 ## Guard rails
 
 - Pipelines that process untrusted text should keep naming their model
@@ -276,12 +505,28 @@ then switch to `active`.
 
 ## What is stored
 
-One SQLite file holds pins, a decision log and feedback. The log keeps Jev's
-answers with their confidences, the computed counts and flags, the rule that
-fired, and a hash of the config that produced the row. It never keeps message
-text, prompts or API keys. The conversation key is a hash and is not
-reversible. That is enough to replay the policy against past decisions, which
-is what `evals/tune.py` does.
+One SQLite file holds pins, a decision log and feedback, and, for strict
+sessions, the bindings, the per-attempt request records and the effort ledger.
+The log keeps Jev's answers with their confidences, the computed counts and
+flags, the rule that fired, and a hash of the config that produced the row. It
+never keeps message text, prompts or API keys. The conversation key, the
+session owner and every request fingerprint are hashes and are not reversible.
+
+That is enough to replay the policy against past decisions, which is what
+`evals/tune.py` does — and, one row at a time, what `decisions replay` does.
+Replay is why the pressure a decision was taken under is stored beside it: a
+deliberate quota saving replayed at pressure zero would look like a routing
+change. It is also the constraint that keeps the log honest. If a decision has
+to be reproducible from its own row without the prompt, then everything the
+policy read has to be in the row as counts and flags, and nothing the policy
+read can be the prompt itself.
+
+Migrations are forward-only and additive. A new column is nullable, defaults to
+NULL, and is added the next time the router opens the file; nothing is dropped,
+rewritten or retyped. Reads are `SELECT *` into a dict and writes name their
+columns, so an older build against a newer file ignores what it does not know
+and writes NULL where it has nothing to say. That is what makes a rollback a
+checkout rather than a restore.
 
 ## Open questions
 
@@ -290,9 +535,19 @@ is what `evals/tune.py` does.
 - TypeSafe publishes no latency guarantee. The default timeout is a guess based
   on the measured 95th percentile of 0.25 s.
 - A client that declares per-model settings (context window, reasoning efforts)
-  needs the most conservative values of any model an alias can choose.
+  needs the most conservative values of any model an alias can choose. A
+  strict alias can answer that with a static envelope; a legacy alias cannot.
 - `/v1/responses` and `/v1/messages` could learn aliases. They pass through
-  today.
+  today, except that a strict session may execute on `/v1/responses` when its
+  bound profile speaks that protocol. The router converts nothing either way.
+- Whether changing effort between turns produces better work than leaving it
+  alone is unmeasured, at every rung. The protocol has been tested on one
+  deployment, provisionally. That is a different question and the reports say
+  so.
+- Multi-process deployment. The one-request-per-session claim is held in
+  memory, so two services sharing a database would not see each other's
+  claims. The router refuses the second one inside a process and cannot see
+  another process.
 
 ## Related work
 
