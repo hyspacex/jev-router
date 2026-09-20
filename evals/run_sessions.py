@@ -8,11 +8,17 @@ scrubbed environment, under hard call, wall-clock and spend caps.
 
     uv run python evals/run_sessions.py --list
     uv run python evals/run_sessions.py --dry-run
-    uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
+    uv run python evals/run_sessions.py --container-image jev-eval:local --arms fixed_strong,jev_mean --repeats 2
 
 It needs credentials to do real work: a router to resolve against and an
 upstream that serves the candidate models. The offline tests drive it with
 fake clients instead, so nothing in CI ever makes a call.
+
+Isolation requirement: live runs require --container-image. Generated commands
+and checks run in disposable Docker containers with only the workspace mounted
+and networking disabled. The temporary directory and scrubbed environment used
+by offline fixture tests are not an operating-system sandbox. See
+`evals/ISOLATION.md` for setup and limits.
 
 What it will not do:
 
@@ -37,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -49,6 +56,8 @@ TASK_DIR = EVALS_DIR / "session_tasks"
 
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(EVALS_DIR))
+
+from result_io import allocate_results  # noqa: E402
 
 from manifest import (  # noqa: E402
     build_manifest,
@@ -229,7 +238,7 @@ def scrubbed_env(home: Path) -> dict[str, str]:
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(home),
         "PYTHONHASHSEED": "0",
-        # Say plainly that this is a sandbox, so anything that reads it knows.
+        # Marks an evaluation workspace; this does not enforce isolation.
         "JEV_SESSION_SANDBOX": "1",
     }
 
@@ -267,8 +276,9 @@ def generated_repo(spec: dict[str, Any]) -> dict[str, str]:
 class Workspace:
     """A disposable copy of a task's repository."""
 
-    def __init__(self, task: TaskSpec, root: Path) -> None:
+    def __init__(self, task: TaskSpec, root: Path, container_image: str | None = None) -> None:
         self.task = task
+        self.container_image = container_image
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -308,7 +318,7 @@ class Workspace:
     def _inside(self, name: str) -> Path:
         """Refuse a path that would escape the workspace."""
         path = (self.root / name).resolve()
-        if not str(path).startswith(str(self.root.resolve())):
+        if not path.is_relative_to(self.root.resolve()):
             raise ValueError(f"path escapes the workspace: {name}")
         return path
 
@@ -335,6 +345,20 @@ class Workspace:
         return f"wrote {path} ({len(content)} characters)"
 
     def run_command(self, command: list[str], timeout: float = 120.0) -> str:
+        container = f"jev-eval-{uuid.uuid4().hex}" if self.container_image else None
+        if container:
+            command = [
+                "docker", "run", "--rm", "--name", container,
+                "--pull", "never", "--network", "none", "--read-only",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                "--pids-limit", "128", "--memory", "512m", "--cpus", "1",
+                "--user", f"{os.getuid()}:{os.getgid()}",
+                "--tmpfs", "/tmp:rw,nosuid,nodev,size=128m",
+                "--mount", f"type=bind,src={self.root.resolve()},dst=/workspace",
+                "--workdir", "/workspace", "--env", "HOME=/tmp",
+                "--env", "PYTHONDONTWRITEBYTECODE=1",
+                self.container_image, *command,
+            ]
         try:
             done = subprocess.run(
                 command,
@@ -342,12 +366,21 @@ class Workspace:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=scrubbed_env(self.root),
+                # The trusted Docker CLI needs its host context. Container
+                # environment is restricted to the explicit --env arguments.
+                env=None if container else scrubbed_env(self.root),
             )
         except subprocess.TimeoutExpired:
             return "error: the command timed out"
         except (OSError, ValueError) as exc:
             return f"error: could not run it: {type(exc).__name__}"
+        finally:
+            if container:
+                # Killing the CLI on timeout does not stop its container.
+                subprocess.run(
+                    ["docker", "rm", "--force", container],
+                    capture_output=True, timeout=15,
+                )
         return f"exit {done.returncode}\n{done.stdout[-8000:]}{done.stderr[-4000:]}"
 
     # --- the check ----------------------------------------------------
@@ -501,6 +534,7 @@ async def run_task(
     caps: Caps,
     repeat: int = 0,
     workspace_root: Path | None = None,
+    container_image: str | None = None,
 ) -> SessionResult:
     """One session: resolve once, then work the turns until a cap stops it."""
     arm = POLICY_ARMS.get(arm_name) or {}
@@ -513,7 +547,7 @@ async def run_task(
         turns_total=len(task.user_turns()),
     )
     root = Path(workspace_root or tempfile.mkdtemp(prefix=f"jev-session-{task.id}-"))
-    workspace = Workspace(task, root)
+    workspace = Workspace(task, root, container_image)
     started = time.perf_counter()
     try:
         workspace.materialise()
@@ -756,6 +790,19 @@ async def main_async(args: argparse.Namespace) -> int:
                   f"{' '.join(task.check.command)}")
         return 0
 
+    if not args.container_image:
+        print("live evaluations require --container-image; see evals/ISOLATION.md", file=sys.stderr)
+        return 2
+    # Check the runtime before spending any model calls.
+    probe = subprocess.run(
+        ["docker", "run", "--rm", "--pull", "never", "--network", "none",
+         args.container_image, "python", "-c", "import pytest"],
+        capture_output=True, timeout=30,
+    )
+    if probe.returncode:
+        print("evaluation container unavailable; see evals/ISOLATION.md", file=sys.stderr)
+        return 2
+
     caps = Caps(max_calls=args.max_calls, wall_clock_seconds=args.wall_clock)
     client = build_client(args)
     results: list[SessionResult] = []
@@ -764,7 +811,8 @@ async def main_async(args: argparse.Namespace) -> int:
             for arm in arms:
                 for task in tasks:
                     result = await run_task(
-                        task, arm, client, caps=caps, repeat=repeat
+                        task, arm, client, caps=caps, repeat=repeat,
+                        container_image=args.container_image
                     )
                     results.append(result)
                     print(
@@ -778,8 +826,7 @@ async def main_async(args: argparse.Namespace) -> int:
         if close is not None:
             await close()
 
-    out_dir = EVALS_DIR / "results" / f"sessions-{int(time.time())}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = allocate_results(EVALS_DIR / "results", f"sessions-{int(time.time())}")
     (out_dir / "sessions.json").write_text(
         json.dumps([r.to_dict() for r in results], indent=2)
     )
@@ -801,7 +848,8 @@ async def main_async(args: argparse.Namespace) -> int:
                 "per_task": {t.id: t.caps for t in tasks},
             },
             graders={"programmatic": "the task's own check command"},
-            extra={"arms": {a: POLICY_ARMS[a] for a in arms}},
+            extra={"arms": {a: POLICY_ARMS[a] for a in arms},
+                   "container_image": args.container_image},
             unfinished=[r.to_dict() for r in results if r.unfinished],
         ),
     )
@@ -821,6 +869,7 @@ def main() -> int:
                    help="hard cap on model calls per session")
     p.add_argument("--wall-clock", type=float, default=300.0,
                    help="hard cap in seconds per session")
+    p.add_argument("--container-image", help="local Docker image for isolated commands and checks")
     p.add_argument("--router", default="http://127.0.0.1:8318")
     p.add_argument("--timeout", type=float, default=300.0)
     p.add_argument(

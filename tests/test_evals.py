@@ -378,3 +378,27 @@ def test_discordance_of_nothing_is_empty():
     import run_outcomes as ro
 
     assert ro.discordance([{"routes": [_route("glm(none)", 5.0, 1.0)]}])["n"] == 0
+
+
+def test_concurrent_result_writers_preserve_each_run_and_latest(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from run_eval import allocate_results, publish_latest
+
+    writers = 12
+    barrier = Barrier(writers)
+    def write_run(index):
+        barrier.wait(timeout=10)
+        directory = allocate_results(tmp_path, "same-second")
+        (directory / "result.txt").write_text(str(index))
+        publish_latest(directory)
+        # Every published target must already contain a complete result.
+        assert (tmp_path / "latest" / "result.txt").read_text().isdigit()
+        return directory
+
+    with ThreadPoolExecutor(max_workers=writers) as pool:
+        directories = list(pool.map(write_run, range(writers)))
+    assert len(set(directories)) == writers
+    assert {int((d / "result.txt").read_text()) for d in directories} == set(range(writers))
+    assert (tmp_path / "latest").resolve() in directories
+    assert not list(tmp_path.glob(".latest-*"))
