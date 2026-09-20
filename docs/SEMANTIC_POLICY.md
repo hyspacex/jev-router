@@ -25,7 +25,8 @@ behaves exactly as it did.
 packet against 4.1% for `b1_coding_state`, and the three extra questions cost
 about 900 input tokens and 2 ms of median Jev latency. Nothing was promoted:
 `coding_state_v1` is still a variant, extra questions remain offline,
-and `distribution_policy` is still `shadow`. Experiment 22 in
+and distribution routing was not promoted. The current shipped config uses
+`distribution_policy: off`; the `shadow` example below is opt-in. Experiment 22 in
 [`../evals/EXPERIMENTS.md`](../evals/EXPERIMENTS.md) has the detail and the
 limits.
 
