@@ -527,6 +527,17 @@ class Observation:
         return self.status == "completed"
 
     @property
+    def terminal(self) -> bool:
+        """The provider said how this response ended.
+
+        `response.created` sets a status too, and it is not this: a stream cut
+        after it has told us a response started and nothing whatever about how
+        it finished. Only one of the statuses a terminal event carries counts,
+        and only if nothing went wrong reading the reply afterwards.
+        """
+        return self.status in TERMINAL_STATUSES and not self.parse_failed
+
+    @property
     def known(self) -> bool:
         return bool(self.response_id) and bool(self.status) and not self.parse_failed
 
@@ -547,6 +558,10 @@ TERMINAL_EVENTS = (
     "response.incomplete",
     "response.cancelled",
 )
+
+# The statuses those events carry. `in_progress`, which `response.created`
+# reports, is deliberately not one of them.
+TERMINAL_STATUSES = ("completed", "failed", "incomplete", "cancelled")
 
 
 class Observer:
