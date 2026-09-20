@@ -281,8 +281,9 @@ def select(
       6. the chosen profile, the reasons, the exclusions and the choice that
          would have been made at pressure zero
 
-    With no lanes configured this is `evaluate` plus a counterfactual, which
-    is exactly what the router did before lanes existed.
+    Strict aliases match semantic rules at zero pressure, even without lanes.
+    Legacy aliases retain quota-shifted thresholds; without lanes they are
+    `evaluate` plus a counterfactual.
 
     `evaluate_rules` is the rule pass this composes over. It defaults to
     `evaluate`; a caller with its own pass passes that one instead.
