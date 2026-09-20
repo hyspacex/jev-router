@@ -903,12 +903,12 @@ that the fast model is good enough; it has shown that the spec cannot tell the
 routes apart. `--apply-labels` was not run. The right fix is a harder rubric on
 those three cases, not a label change.
 
-## Milestone B machinery, 2026-09-19. Nothing measured yet.
+## Milestone B machinery, 2026-09-19
 
-This entry records what was added, not what it is worth. **No run has been
-made.** Every number below is absent on purpose; filling them in is the next
-piece of work, and until then none of this has earned a place in the shipped
-packet.
+This entry records what was added, not what it is worth. It was written before
+anything had been run. The runs are experiments 21 to 24 in the third round
+below; the verdict there is a tie and nothing was promoted, so everything named
+here is still a variant, a shadow question or an off switch.
 
 What is now runnable:
 
@@ -975,11 +975,15 @@ keep an unused signal.
 
 ## Milestone C: the between-turn effort experiment
 
-**Nothing about this has been measured.** No number in this section comes from
-a live run, no deployment has been qualified, and the shipped `router.yaml`
-has `experiments.adaptive_effort.mode: "off"` with an empty
-`qualified_profiles` list. What exists is the machinery and the offline
-comparison, and both say so.
+**Whether this is worth doing has not been measured.** No number in this
+section comes from a live run, and the shipped `router.yaml` keeps
+`experiments.adaptive_effort.mode: "off"` with an empty `qualified_profiles`
+list. What exists is the machinery and the offline comparison, and both say so.
+One deployment has since had a provisional protocol test, written up in
+`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md` and
+summarised in experiment 25. It establishes that the wire protocol works on
+that one path. It does not establish that changing effort between turns
+produces better work than leaving it alone.
 
 ### What was added
 
@@ -1015,8 +1019,8 @@ what each turn needs. They are not observations of any model.
 
 Paired by session, `jev_hysteresis` separates from `fixed_low` and
 `fixed_medium` (p = 0.000 in both directions) and does not separate from
-`fixed_high` (p = 0.602), `simple_rule` (p = 0.220), `jev_no_hysteresis`
-(p = 1.000) or `jev_upward_step` (p = 1.000).
+`fixed_high` (p = 0.612), `simple_rule` (p = 0.155), `jev_no_hysteresis`
+(p = 1.000) or `jev_upward_step` (p = 0.614).
 
 ### The upward jump (owner decision, 2026-09-19)
 
@@ -1027,27 +1031,27 @@ the rung the evidence asks for. `jev_upward_step` is the old mechanic, kept
 as an arm.
 
 The `cold-start-hard` fixture was added with this change, because the twelve
-sessions that existed could not tell the two apart at all: they had no turn
+sessions that existed before it could not tell the two apart at all: they had no turn
 that was hard from a standing start. With it, the jump serves one more turn
 adequately in two fewer changes and costs 0.01 rungs more overshoot per turn.
 
 **That is a demonstration, not a measurement.** The fixture was written by the
 person who wanted the jump, on the same day, to show the case the jump is
 for; a paired bootstrap over thirteen synthetic sessions cannot separate the
-two arms (p = 1.000) and would not be worth believing if it could. What
+two arms (p = 0.614) and would not be worth believing if it could. What
 decides between them is a live comparison of answer quality at a fixed model
 on real work, which still does not exist for any rung of this ladder.
 
 **Read that as almost nothing.** The labels and the policy were written by the
 same person on the same day, so the policy agreeing with the labels is closer
-to a unit test than to evidence. Twelve synthetic sessions cannot separate two
-policies that are close. The one thing the table does show is the shape of the
-trade: `fixed_high` is adequate everywhere and spends 1.29 rungs per turn over
-what the labels ask for, and the adaptive arms reach the same adequacy at a
-quarter of that. Whether that is true of a real model on real work is exactly
+to a unit test than to evidence. Thirteen synthetic sessions cannot separate
+two policies that are close. The one thing the table does show is the shape of
+the trade: `fixed_high` is adequate everywhere and spends 1.27 rungs per turn
+over what the labels ask for, and the adaptive arms reach the same adequacy at
+a quarter of that. Whether that is true of a real model on real work is exactly
 what has not been measured.
 
-Hysteresis costs four effort changes across the twelve sessions and buys no
+Hysteresis costs five effort changes across the thirteen sessions and buys no
 adequacy in this fixture set. That is a reason to keep comparing it, not a
 reason to drop it: the thing hysteresis is for — not flapping between rungs on
 a noisy classifier — is not in these fixtures, because the fixtures have no
@@ -1076,3 +1080,179 @@ noise in them.
 
 Remain in `shadow` while the evidence is inconclusive. A `request_parameter`
 result is never reported as native cache preservation whatever it shows.
+
+---
+
+# Third round: measuring the r2-session-routing branch, 2026-09-19
+
+The Milestone B and C entries above were written when nothing had been run.
+These four entries are the runs. Read them against those two entries, which
+still describe what the machinery is; where a number here disagrees with an
+"absent on purpose" in them, the number here is newer.
+
+Method, as before: `evals/run_eval.py`, three Jev calls per case, `jev-1.13.0`,
+split 70/30 by seed 20260918 stratified by task label. Every run wrote a
+manifest.
+
+## 21. The branch changes no routing, and all four controls behaved
+
+The first question about a branch this size is whether it moved the thing it
+was not supposed to move. It did not.
+
+Over all 171 cases and all four policies, `main` and the branch produced
+**identical states, identical Jev answers and identical routes**. Not close:
+the same bytes into Jev and the same pair out. The strict-session path, the
+semantic packet, the lanes, the quota windows and the effort experiment are all
+either opt-in or shadow, so the legacy `auto` path had nothing to change.
+
+The four negative controls were rerun on the branch, because the harness gained
+`--packet`, the manifest and two new controls:
+
+| control | expected | observed |
+| --- | --- | --- |
+| constant state | the majority-class rate | 63.2%, which is the majority class exactly |
+| shuffled labels | at chance | 14.0% task accuracy |
+| constant policy | at the fixed-route baseline | at it, no higher |
+| length-only rules | no better than chance on tier | 36.8% tier correct |
+
+Against the router's 92.4% [87.4, 95.5] tier correct. All four failed the way
+they are supposed to, so the numbers in the rest of this round can be read.
+
+The length-only control is the most informative of the four, and it is new.
+It is the strongest router that never reads meaning: cutoffs on request length
+alone. It scores 36.8% where the router scores 92.4%, which says the ladder is
+not length in disguise.
+
+## 22. The four packet arms (spec 13.4): a tie, and nothing promoted
+
+`uv run python evals/run_eval.py --packet --repeats 3`. Four arms over the same
+171 cases: `router_yaml` (the shipped packet), `b1_coding_state` (the bounded
+`coding_state_v1` packet, same policy), `b2_expanded_packet` (b1 plus the three
+shadow questions asked), and `b3_distribution` (the illustrative distribution
+rule of spec 7.4 in a ruleset of its own).
+
+| arm | tier correct |
+| --- | --- |
+| `router_yaml` | 92.4 [87.4, 95.5] |
+| `b1_coding_state` | 90.6 [85.3, 94.2] |
+| `b2_expanded_packet` | 90.6 [85.3, 94.2] |
+| `b3_distribution` | 91.8 [86.7, 95.1] |
+
+Four points separate the best from the worst and every interval covers every
+other arm's point estimate. On 171 cases two independent runs cannot separate a
+difference under about 11 points. This is a tie.
+
+What the bigger packet costs:
+
+| arm | Jev median ms | Jev p95 ms | mean input tokens |
+| --- | ---: | ---: | ---: |
+| `router_yaml` | 121 | 229 | 1705 |
+| `b1_coding_state` | 126 | 249 | 1901 |
+| `b2_expanded_packet` | 124 | 268 | 2781 |
+| `b3_distribution` | 131 | 251 | 2781 |
+
+Asking three more questions over the same state adds about 900 input tokens and
+moves the median latency by 2 ms. That was measured rather than inferred, which
+was the point of running it: the overhead of the shadow questions is real and
+small, and it is not a reason on its own to keep them.
+
+Where the arms actually differ:
+
+- 4 of 171 routes differ between `b1_coding_state` and `b2_expanded_packet`.
+  The extra questions are recorded and read by nothing, so those four are the
+  packet changing the active answers by riding along, not the shadow answers
+  deciding anything.
+- 28 of 171 routes differ between `router_yaml` and `b1_coding_state`. The
+  packet is the variable there, and it is the only pair in this run where a
+  reader could reasonably expect a difference.
+- Under-routing is 1.2% for `router_yaml` against 4.1% for `b1_coding_state`.
+  Under-routing is the expensive error, and it is the one number in this
+  comparison that points clearly at the shipped packet.
+
+**Nothing was promoted.** `coding_state_v1` stays a variant, the three shadow
+questions stay shadow, and `distribution_policy` stays `shadow`. A tie is not a
+reason to change a baseline that has been tuned against, and the under-routing
+row is a reason not to.
+
+One limit worth stating plainly: the per-question agreement numbers rest on a
+`labels:` block that covers 28 of the 171 cases and is one reviewer's
+judgement, written for this purpose. They are not a measurement of anything,
+and no case was relabelled to make a new question score better.
+
+## 23. What the router adds to a request
+
+Measured with an upstream that answers instantly and the no-network `rules`
+decider, so the number is the shim's own overhead and not Jev's or a model's.
+Median and 95th percentile, in milliseconds:
+
+| path | main | the branch |
+| --- | --- | --- |
+| legacy `auto` alias | 1.16 / 1.31 | 1.17 / 1.37 |
+| passthrough, a concrete model | 1.02 / 1.15 | 1.00 / 1.14 |
+| strict managed execution | — | 1.28 / 1.48 |
+
+The branch adds nothing measurable to either legacy path. Strict execution
+costs about 0.3 ms more than passthrough, which buys the binding check, the
+request-id check and the context budget. All three are far below the variance
+of anything downstream: the Jev call in experiment 22 has a median of 121 ms
+and the fastest model route in `evals/outcomes.md` has a median of 3.6 s.
+
+Do not read these as latency the user feels. They are the shim's own cost with
+the rest of the world removed.
+
+## 24. The outcome benchmark over 19 cases
+
+`evals/run_outcomes.py`, k=3, candidate cap 8,000. The run stopped itself at
+256 of 400 calls when `ollama/glm-5.3-flash(high)`'s own median latency went
+from 5.6 s to 16.9 s. Nineteen of the 58 gradeable cases finished; the other 39
+are named in `evals/outcomes.json` under `not_run` and resume from the cache.
+The full tables are in `evals/outcomes.md`.
+
+Three things changed from the ten-case run in experiment 20.
+
+**The judge is worse than it looked.** On the 147 samples that have both a
+programmatic check and a judge score, the two differ by 2 points or more on
+38.8% [31.3, 46.8] and disagree on whether the answer passes on 29.3%
+[22.5, 37.1]. Mean signed difference, judge minus check: -1.90. At ten cases
+those figures were 32.5%, 16.9% and -1.51. More cases made the judge look
+worse, not better, and it is still biased in the direction that makes the fast
+model look weak.
+
+**The winner-flip machinery finally had something to do.** Two of 19 cases are
+unstable (`debug-long-log-trivial-question-12` and
+`debug-spanish-slow-query-18`), against 0 of 10 before. Mean tier flip rate
+0.070, mean route flip rate 0.087. The ten cases in experiment 20 were the ten
+cheapest and nine of them scored 10.0 everywhere, so their winners could not
+have flipped. This run reached cases that could.
+
+**The effort findings hold once more.** `glm-5.3-flash` none to low +0.15, low
+to high -0.40; `gpt-6-astra` low to medium +0.13, medium to high +0.09, high to
+xhigh -0.29. Same shape as both earlier runs: the fast model is best at `none`,
+and `xhigh` costs 29 s median against 11 s for `medium` and buys nothing.
+Truncation is 0.0% on every route.
+
+Seven label changes were proposed and **none were applied**. The proposal table
+in `evals/outcomes.md` prints `yes` in its "applied" column for the clear-cut
+ones, which is a label on the proposal and not a record of a write;
+`--apply-labels` was not run.
+
+## 25. The adaptive-effort live checks
+
+Recorded in
+[`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md`](../docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md),
+not here, because they are about one deployment on one day rather than about
+the policy.
+
+The short version: eight of the ten checks pass, one was not run because Codex
+0.155.1 never produces a `previous_response_id` chain, and one was superseded
+by the owner's compaction decision. The check the experiment rests on — that a
+higher effort does measurably more reasoning work — is **n=2 per arm, twice**,
+with no interval, no counterbalancing and two different prompts. The report's
+own verdict is provisional and it does not authorise the shipped
+configuration.
+
+Nothing about whether adaptive effort is *worth* doing has been measured, at
+any rung. `evals/effort_replay.py` compares the policies over synthetic
+fixtures written by the person who wanted the policy, which is closer to a unit
+test than to evidence, and it says so. The shipped `router.yaml` keeps
+`experiments.adaptive_effort.mode: "off"` and an empty `qualified_profiles`.

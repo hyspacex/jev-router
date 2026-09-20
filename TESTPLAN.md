@@ -51,14 +51,16 @@ Three things the numbers cannot show, however many cases are added:
 
 ## Controls: catching a broken evaluation
 
-Two runs that are supposed to score badly. If either scores well, the harness
-is measuring something other than what it claims, and every other number in
-this plan is void. Both are flags, and both have a unit test in
+Four runs that are supposed to score badly. If any of them scores well, the
+harness is measuring something other than what it claims, and every other
+number in this plan is void. All four are flags, and each has a unit test in
 `tests/test_evals.py`.
 
 ```sh
 uv run python evals/run_eval.py --variants router_yaml --control shuffled-labels
 uv run python evals/run_eval.py --variants router_yaml --control constant-state
+uv run python evals/run_eval.py --variants router_yaml --control constant-policy
+uv run python evals/run_eval.py --variants router_yaml --control length-only
 ```
 
 - **Shuffled labels.** Every case keeps its request and gets another case's
@@ -70,6 +72,12 @@ uv run python evals/run_eval.py --variants router_yaml --control constant-state
   is then a constant router, so routing accuracy must fall to the
   majority-class rate. Measured: 63.2% against a majority class of 63.2%, at a
   mean cost of 14.0 because every case routes to the default.
+- **Constant policy.** The ladder is replaced by one fixed route, so the score
+  must land on the fixed-route baseline and no higher. Rerun 2026-09-19: it
+  did.
+- **Length-only rules.** The policy is replaced by cutoffs on request length
+  alone, which is the most a router can do without reading meaning. Measured
+  2026-09-19: 36.8% tier correct, against the router's 92.4% [87.4, 95.5].
 
 Difficulty accuracy falls less far under both controls (to about 35%) than task
 accuracy does. That is the tolerance band: a case with
@@ -360,6 +368,21 @@ every route scoring 10.0, which does not show the fast model is good enough; it
 shows the grading spec cannot tell the routes apart. Those three specs need a
 harder rubric.
 
+### The 2026-09-19 resume, over 19 cases
+
+The run was resumed the same day and reached 19 of the 58 gradeable cases
+before stopping itself at 256 of 400 calls, when `ollama/glm-5.3-flash(high)`'s
+own median latency went from 5.6 s to 16.9 s. `evals/outcomes.md` has the
+tables and `evals/outcomes.json` names the 39 cases that did not run.
+
+Three things changed with the extra nine cases. The judge looks worse, not
+better: it differs from the programmatic check by 2 points or more on 38.8%
+[31.3, 46.8] of the 147 samples that have both, against 32.5% at ten cases,
+with a mean signed difference of -1.90. The winner-flip machinery finally had
+something to measure: 2 of 19 cases are unstable against 0 of 10. And the
+effort findings held for a third time. Nothing was written back into
+`cases.yaml`; experiment 24 in `evals/EXPERIMENTS.md` has the rest.
+
 ## Layer 3b: public traffic, as an out-of-distribution check
 
 The cases in `cases.yaml` were written, not sampled, which means they can only
@@ -454,6 +477,118 @@ Review schedule: weekly for the first month, then monthly. Stop tuning a setting
 ## Layer 6: the service itself
 
 Offline CI covers features, state builders, rules, effort rewriting, pins, hard eligibility, upstream fallback, shadow mode, feedback and raw stream fidelity. `tests/test_hardening*.py` adds real gzip decoding, malformed HTTP-200 Jev answers, failed pin commits, alias/client scoping, capability changes, failed replacement attempts, stream failure/disconnect, ingress limits and admin authentication. These tests gate deployment; paid evaluation requires a separate call budget.
+
+### The R2 contract IDs
+
+`docs/R2_SPEC.md` numbers the strict-session contract cases C01-C34 and the
+between-turn effort cases F01-F20. Every one has at least one test. The table
+says which file holds it; the test names carry the id, so
+`uv run pytest -k c18` finds it.
+
+| ID | What it holds the router to | Where |
+| --- | --- | --- |
+| C01 | Strict execution without a session id and a binding acknowledgement is rejected | `tests/test_strict_execution.py` |
+| C02 | A fresh resolve selects once; an identical retry returns the stored contract | `tests/test_sessions.py` |
+| C03 | Concurrent fresh resolves commit one binding; a conflicting payload is 409 | `tests/test_sessions.py` |
+| C04 | A prepared profile does not change after a rejected first inference | `tests/test_strict_execution.py` |
+| C05 | An active session survives a restart and the legacy pin TTL | `tests/test_strict_execution.py` |
+| C06 | An unknown, pruned or closed id never silently becomes a new session | `tests/test_sessions.py` |
+| C07 | Model, account and protocol changes are rejected for an existing binding | `tests/test_sessions.py`, `tests/test_strict_execution.py` |
+| C08 | An upstream token refresh inside the same account does not reclassify | `tests/test_strict_execution.py` |
+| C09 | Quota changes affect new sessions only | `tests/test_strict_execution.py` |
+| C10 | A 429, 5xx or timeout never falls through to another model | `tests/test_strict_execution.py` |
+| C11 | A temporary Jev failure at admission binds the fallback and keeps it | `tests/test_sessions.py` |
+| C12 | Unmanaged concrete requests keep the legacy passthrough contract | `tests/test_strict_execution.py` |
+| C13 | Managed requests cannot bypass the binding, eligibility or logging | `tests/test_strict_execution.py` |
+| C14 | A static envelope admits one compatible pool and advertises its minimum | `tests/test_sessions.py` |
+| C15 | Resolved limits that disagree with the acknowledged ones are rejected | `tests/test_sessions.py` |
+| C16 | Budget boundaries: exact fit, one over, output reserve, invalid numbers | `tests/test_sessions.py` |
+| C17 | Tool schemas, long code, CJK, images and deltas all count towards the budget | `tests/test_sessions.py` |
+| C18 | Overflow blocks the same profile instead of repinning | `tests/test_strict_execution.py` |
+| C19 | A maintenance request keeps session identity and triggers no admission | `tests/test_strict_execution.py` |
+| C20 | Revocation and reduced limits block; harmless config changes do not | `tests/test_strict_execution.py` |
+| C21 | Routing metadata never changes system text, tools or historic messages | `tests/test_strict_execution.py` |
+| C22 | Two difficulty distributions with equal means can decide differently | `tests/test_semantic_packet.py` |
+| C23 | Uncertainty between action-equivalent labels does not force escalation | `tests/test_semantic_packet.py` |
+| C24 | Malformed, partial, NaN or unsolicited Jev data uses the validated fallback | `tests/test_shadow.py` |
+| C25 | Shadow questions never change execution and never weaken validation | `tests/test_shadow.py`, `tests/test_turn_shadow.py`, `tests/test_turn_plan.py` |
+| C26 | The same packet is reused across a pressure sweep | `tests/test_shadow.py` |
+| C27 | Missing, errored and stale snapshots stay visible as unknown | `tests/test_quota_windows.py` |
+| C28 | Overlapping windows keep matching usage and reset fields; the max wins | `tests/test_quota_windows.py` |
+| C29 | Pressure never promotes an unqualified pair merely because it has capacity | `tests/test_lanes.py` |
+| C30 | Acceptance, transport EOF, provider completion and task success stay apart | `tests/test_strict_execution.py` |
+| C31 | Repeated or ambiguous execution ids never cause a duplicate upstream call | `tests/test_strict_execution.py` |
+| C32 | Control tokens are stripped; unauthorized session access is denied | `tests/test_sessions.py` |
+| C33 | The additive migration preserves existing pins, decisions and feedback | `tests/test_sessions.py` |
+| C34 | A bound session continues when the selector is unavailable afterwards | `tests/test_strict_execution.py` |
+| F01 | `off` adds no per-turn Jev call and never changes effort | `tests/test_turn_plan.py` |
+| F02 | `shadow` logs a recommendation and sends the fixed-effort request | `tests/test_turn_plan.py` |
+| F03 | An unverified profile or unsupported protocol cannot activate it | `tests/test_turn_plan.py` |
+| F04 | A qualified update changes effective effort and nothing else | `tests/test_turn_plan.py` |
+| F05 | No update during execution, an unresolved tool loop or an unknown boundary | `tests/test_turn_plan.py` |
+| F06 | A tool continuation keeps the turn and makes no fresh decision | `tests/test_effort_execution.py` |
+| F07 | Duplicate turn-plan requests are idempotent, including two at once | `tests/test_turn_plan.py`, `tests/test_turn_plan_race.py` |
+| F08 | The item sits before the right user message and never beside another | `tests/test_effort_execution.py` |
+| F09 | A full replay preserves every prior update's order and anchor | `tests/test_effort_execution.py` |
+| F10 | A chain neither drops an accepted update nor duplicates it | `tests/test_effort_execution.py` |
+| F11 | A reply's `reasoning.effort` never overwrites the effective ledger | `tests/test_effort_execution.py` |
+| F12 | Headers-only acceptance is not confirmation | `tests/test_effort_execution.py`, `tests/test_reconcile.py` |
+| F13 | Client and gateway never both inject; a manual update is rejected | `tests/test_effort_execution.py` |
+| F14 | A classifier timeout keeps the current effort, not a cheaper guess | `tests/test_effort_policy.py`, `tests/test_turn_plan.py` |
+| F15 | Downshift confirmations and protected floors hold across a resume | `tests/test_effort_execution.py`, `tests/test_turn_plan.py` |
+| F16 | Disabling adaptation preserves applied items and effective effort | `tests/test_effort_execution.py` |
+| F17 | Compaction and truncation handling (see the owner decision below) | `tests/test_effort_execution.py` |
+| F18 | Approaching the context limit stops the experiment without erasing it | `tests/test_turn_plan.py`, `tests/test_effort_execution.py` |
+| F19 | The bounded SSE observer preserves raw bytes; a parse failure is unknown | `tests/test_effort_execution.py` |
+| F20 | A `request_parameter` result is not reported as native cache preservation | `tests/test_effort_execution.py` |
+
+### Two owner decisions of 2026-09-19
+
+Both override what was built first, and the second overrides the spec. The
+tests were changed with them, so a reader who finds the code disagreeing with
+`docs/R2_SPEC.md` is looking at a deliberate difference.
+
+- **An upward effort change jumps.** Spec 10.5 was first read as one rung per
+  turn. An upward change now goes straight to the rung `targets` asks for, so
+  `low` to `high` in one move when the turn deserves it. `upward: step`
+  restores the old mechanic and `evals/effort_replay.py` keeps it as the
+  `jev_upward_step` arm. Downward still moves one rung and still needs its
+  confirmations.
+- **F17 is superseded in part.** A compaction the client asks for is supported
+  and opens a compaction epoch. Automatic compaction and `truncation: auto`
+  are still refused. `tests/test_effort_execution.py` holds both halves.
+
+### What ran live, and what is fixtures
+
+Everything in the table above is offline. Jev and the upstream are mocked with
+respx, the strict-session cases drive a fake client through
+`tests/session_harness.py`, and `evals/effort_replay.py` replays synthetic turn
+sequences from `evals/effort_fixtures.yaml`. None of it is evidence that a real
+endpoint behaves as the contract assumes.
+
+One deployment has been exercised live, on 2026-09-19, and the write-up is
+[`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md`](docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md).
+`evals/qualify_effort.py` did not run: its allowlist is empty and live mode
+needs `--confirm-live` and `JEV_ROUTER_QUALIFY_LIVE=1`. The report is a hand
+test against the same template, and it calls itself provisional.
+
+| Check | Live result |
+| --- | --- |
+| Q01 the endpoint accepts the base effort with no item | pass |
+| Q02 an update item before the new user message is accepted | pass, with an invented-type control |
+| Q03 the reply still reports the base effort | pass |
+| Q04 a full replay carrying earlier updates is accepted | pass |
+| Q05 a `previous_response_id` chain | not run; Codex 0.155.1 never produces one |
+| Q06 a second adjacent update is rejected | partial; the resend half needs a chain |
+| Q07 the higher effort does measurably more reasoning work | weak, n=2 per arm, twice |
+| Q08 a tool continuation keeps the effort with no new item | pass, observed once |
+| Q09 `truncation: auto` and the compaction endpoint | superseded by the owner decision |
+| Q10 the terminal SSE status and usage are readable | pass |
+
+Q07 is the row the whole experiment rests on and it is four samples of the arm
+that matters, with no interval and no counterbalancing. Read it as consistent
+with the update taking effect, not as a measurement. Whether adaptive effort is
+worth doing is untested at every rung.
 
 Live smoke test through the real proxy:
 
