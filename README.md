@@ -65,6 +65,32 @@ router skip a provider that is failing, and lean on one subscription when
 another is being spent too fast. See
 [Quota-aware routing](#quota-aware-routing).
 
+### The other two paths
+
+Everything above is the legacy `auto` path and it has not changed. Two more
+sit beside it, both opt-in, and an alias that does not ask for them behaves
+exactly as it did.
+
+- **Strict sessions.** A coding harness sizes its history against one model's
+  window and holds a prompt cache, so a model that changes halfway through a
+  task is a bug rather than a saving. A strict alias resolves one profile
+  through `POST /router/resolve` and never moves it: no repin, no TTL, no
+  cross-model fallback. A request that no longer fits is refused with a
+  machine-readable code. See [`docs/SESSION_ROUTING.md`](docs/SESSION_ROUTING.md).
+- **Between-turn effort.** Inside a strict session, at a reported new-user-turn
+  boundary, the router may change the reasoning effort of the model the session
+  is already bound to. The model, the provider, the negotiated limits and the
+  base effort all stay put. It is an experiment, it is off in the shipped
+  `router.yaml`, and no deployment there is qualified for it. See
+  [`docs/ADAPTIVE_EFFORT.md`](docs/ADAPTIVE_EFFORT.md).
+
+What chooses a strict binding in the first place is in
+[`docs/SEMANTIC_POLICY.md`](docs/SEMANTIC_POLICY.md): the semantic packet, the
+shadow questions that are measured and read by nothing, the quality lanes that
+bound what quota pressure may do, the coherent quota windows, and replaying a
+decision from its own row.
+[`docs/README.md`](docs/README.md) is the index, and it lists the known issues.
+
 ## Quick start
 
 ```sh
@@ -113,8 +139,14 @@ uv run jev-router explain request.json --pressure openai=0.8
 uv run jev-router quota --poll              # quota snapshots and pressure per provider
 uv run jev-router quota --poll --json
 uv run jev-router decisions -n 20           # tail the decision log
-uv run jev-router decisions --json
+uv run jev-router decisions replay last     # re-run one decision from its own row
 uv run jev-router feedback last too_weak --model gpt-6-astra --effort high
+uv run jev-router sessions list             # strict session bindings
+uv run jev-router sessions show <id>
+uv run jev-router sessions close <id>
+uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
+uv run jev-router prune --older-than-days 30   # irreversible
+uv run jev-router adapter --alias <strict-alias> --port 18320
 ```
 
 Every command takes `-c/--config` for the path to `router.yaml`, which also
@@ -132,36 +164,52 @@ and shows what the decision would be.
 shows the configuration and nothing else; with it, each enabled source runs
 once.
 
+`decisions replay` re-runs a stored decision from the row alone: the config
+hash, the answers, the request facts and the pressure it was taken under. No
+Jev call, no quota poll, no prompt. It says so when the config hash has moved
+rather than claiming a match. `sessions` and `adapter` belong to strict
+sessions; see [`docs/SESSION_ROUTING.md`](docs/SESSION_ROUTING.md) and
+[`docs/ADAPTIVE_EFFORT.md`](docs/ADAPTIVE_EFFORT.md).
+
 ### Endpoints
 
-| Path | Behaviour |
-| --- | --- |
-| `POST /v1/chat/completions` | aliases are routed, everything else is forwarded unchanged |
-| `POST /v1/responses` | a managed session executes against a Responses binding; everything else is forwarded unchanged |
-| `GET /v1/models` | the upstream list plus one entry per alias |
-| `GET /router/health` | mode, upstream, aliases, models, decider, whether a Jev key is set, uptime |
-| `GET /router/providers` | circuit breaker state and the pressure per provider |
-| `GET /router/quota` | quota snapshots, pressures, staleness and the last error per provider |
-| `GET /router/decisions?limit=N` | recent decisions as JSON |
-| `POST /router/feedback` | record what you thought of a decision |
-| `GET /router/feedback?limit=N` | recent feedback, joined to its decision |
-| `POST /router/resolve` | resolve or resume a strict session binding |
-| `GET /router/sessions` | strict session bindings, newest first |
-| `GET /router/sessions/{id}` | one binding: identity, limits, efforts and state |
-| `POST /router/sessions/{id}/close` | end a session deliberately |
-| `POST /router/turn-plan` | an effort-only decision for a new user turn (experimental) |
-| `POST /router/turn-plan/{id}/reconcile` | say what happened to an ambiguous effort update |
-| anything else | streamed through to the upstream, method and path unchanged |
+| Path | Method | Behaviour |
+| --- | --- | --- |
+| `/v1/chat/completions` | POST | aliases are routed; a strict session executes here; everything else is forwarded unchanged |
+| `/v1/responses` | POST | a strict session whose profile speaks the Responses protocol executes here; everything else is forwarded unchanged |
+| `/v1/responses/compact` | POST | a standalone compaction, forwarded as maintenance for the bound session |
+| `/v1/models` | GET | the upstream list plus one entry per alias |
+| `/router/health` | GET | mode, upstream, aliases, models, providers, routes, unhealthy providers, decider, whether a Jev key is set, uptime |
+| `/router/providers` | GET | circuit breaker state and the pressure per provider |
+| `/router/quota` | GET | quota snapshots, pressures, staleness and the last error per provider |
+| `/router/decisions?limit=N` | GET | recent decisions as JSON |
+| `/router/feedback` | POST | record what you thought of a decision |
+| `/router/feedback?limit=N` | GET | recent feedback, joined to its decision |
+| `/router/resolve` | POST | resolve or resume a strict session binding |
+| `/router/sessions?limit=N` | GET | strict session bindings, newest first |
+| `/router/sessions/{id}` | GET | one binding: identity, limits, efforts and state |
+| `/router/sessions/{id}/close` | POST | end a session deliberately |
+| `/router/turn-plan` | POST | an effort-only decision for a new user turn (experimental) |
+| `/router/turn-plan/{id}/reconcile` | POST | say what happened to an ambiguous effort update |
+| anything else | any | streamed through to the upstream, method and path unchanged |
 
 An alias name on any other POST endpoint returns 400 with a message saying so.
 
+Every `/router/*` path needs `X-Router-Admin-Token` once the environment
+variable named by `settings.admin_token_env` is set; without one, only direct
+loopback callers are accepted. The strict-session paths need that credential
+always, loopback included, and there is no setting that turns it off:
+`resolve`, `turn-plan`, `sessions`, and any managed execution on `/v1/*`.
+
 ### Response headers
+
+On an alias request:
 
 | Header | Meaning |
 | --- | --- |
 | `X-Router-Model` | the model name sent upstream, effort included |
 | `X-Router-Effort` | the effort that was chosen |
-| `X-Router-Rule` | the rule that fired, or `pin`, `default` or `fallback` |
+| `X-Router-Rule` | the rule that fired, or `pin`, `low_confidence`, `default` or `fallback` |
 | `X-Router-Route` | the named route the rule pointed at, when it used one |
 | `X-Router-Pinned` | whether this came from a pin |
 | `X-Router-Decision` | the decision id, for `jev-router feedback` |
@@ -169,6 +217,34 @@ An alias name on any other POST endpoint returns 400 with a message saying so.
 | `X-Router-Pressure` | the pressure per provider, only when it changed the outcome |
 | `X-Router-Decider-Fallback` | the decision came from the fallback decider, not from Jev |
 | `X-Router-Shadow-Model` | in shadow mode, what would have been chosen |
+
+On a strict session's execution:
+
+| Header | Meaning |
+| --- | --- |
+| `X-Router-Model` | the bound profile's wire model |
+| `X-Router-Effort` | the **base** effort, which never moves for the life of the session |
+| `X-Router-Session` | the session id |
+| `X-Router-Binding` | the binding revision that served it |
+| `X-Router-Session-State` | `active` once accepted, otherwise the stored state |
+| `X-Router-Decision` | the decision id the binding was taken under |
+| `X-Router-Effective-Effort` | only when adaptation is on: the effort this request really ran at |
+| `X-Router-Compaction-Epoch` | only when adaptation is on: how many times the history has been folded up |
+
+### Environment
+
+| Variable | Read by | What it does |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | the router, `evals/` | The Jev key. Named by `settings.jev_api_key_env`. Unset means the `rules` decider and a fallback flag on every decision. |
+| `JEV_ROUTER_UPSTREAM` | the router, `evals/` | Overrides `settings.upstream_base_url` whenever it is set and non-empty. The environment wins over the file. |
+| `JEV_ROUTER_CONFIG` | the CLI | The default for `-c/--config`, on every subcommand. Defaults to `router.yaml` in the working directory. |
+| `JEV_ROUTER_ADMIN_TOKEN` | the router, the adapter, `evals/run_sessions.py`, `evals/qualify_effort.py` | The `/router/*` credential, sent as `X-Router-Admin-Token`. Named by `settings.admin_token_env`. Required for every strict-session request. |
+| `UPSTREAM_API_KEY` | `evals/run_outcomes.py`, `evals/qualify_effort.py` | The proxy's own key, for the scripts that call candidate models. The router never reads it: it forwards the client's `Authorization`. |
+| `JEV_ROUTER_QUALIFY_LIVE` | `evals/qualify_effort.py` | Must be `1`, alongside `--confirm-live`, before that script makes a real call. |
+| `JEV_ROUTER_QUALIFY_ALLOW` | `evals/qualify_effort.py` | Comma-separated profiles the qualification may touch, on top of the in-file allowlist, which is empty. |
+| `JEV_EVAL_JUDGE_MODEL` | `evals/run_outcomes.py` | The judge model for the outcome benchmark. Defaults to `gpt-5.6-sol(high)`. |
+
+`.env.example` has the four the router itself cares about.
 
 ## Configuring router.yaml
 
@@ -198,6 +274,27 @@ decider or a new quota source needs Python.
 | `max_concurrent_requests` | in-flight request and upstream connection bound; default 64 |
 | `admin_token_env` | router endpoint token variable; default `JEV_ROUTER_ADMIN_TOKEN` |
 | `breaker` | the default circuit breaker, which a provider may override |
+
+Every key in every block is checked. An unknown one anywhere is a config error,
+not a silently ignored line.
+
+Beside `settings`, `providers`, `models`, `routes`, `questions`, `policy`,
+`rulesets`, `aliases` and `clients`, four top-level blocks configure the newer
+parts. All four default to off, and a `router.yaml` written before them behaves
+exactly as it did.
+
+| Block | What it is | Default |
+| --- | --- | --- |
+| `session_routing` | the strict session service | `enabled: false` |
+| `semantic_policy` | which questions decide and which only ride along | no shadow questions, `distribution_policy: off` |
+| `quality_lanes` | the model and effort pairs somebody measured per kind of work, each with its evidence | none configured |
+| `experiments.adaptive_effort` | between-turn effort changes | `mode: "off"`, `qualified_profiles: []` |
+
+An alias opts into the first with `session_mode: strict` and into the last with
+`adaptive_effort: true`; a rule joins a lane with `lane: <name>`. The shipped
+`router.yaml` enables `session_routing`, gives `auto-session` a strict mode,
+runs `distribution_policy: shadow`, declares four lanes, and keeps the effort
+experiment off.
 
 ### A provider
 
@@ -599,13 +696,210 @@ and `effort` are what the router would have sent, not what was sent.
 Run it for a week, read the log, fix the question wording, then switch to
 `active`.
 
+## Strict sessions
+
+A legacy alias decides per conversation, pins for six hours, and may replace
+the model when the conversation stops fitting it. That is right for a chat
+window. A coding session wants the opposite, so a strict alias resolves one
+execution profile once and keeps it.
+
+```sh
+curl -s localhost:8318/router/resolve \
+  -H "X-Router-Admin-Token: $JEV_ROUTER_ADMIN_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"schema_version":"1","intent":"new","session_id":"session-2f766788",
+       "request_id":"resolve-0001","alias":"auto-session","client":"my-cli",
+       "request":{"messages":[{"role":"user","content":"Add quoted CSV fields."}]}}'
+```
+
+The answer is one fixed profile: the model key, the provider, the wire model,
+the protocol, the negotiated context window and output ceiling, the initial
+effort, and a `binding_revision` to acknowledge. Size your history against that
+window from then on. Every execution request carries four headers:
+`X-Router-Admin-Token`, `X-Router-Session`, `X-Router-Binding` and
+`X-Router-Request-Id`. All four are stripped before forwarding.
+
+What that buys, and what it costs:
+
+- The model and the provider never change. Not on an overflow, not on a lost
+  capability, not on a 429, not on a timeout, not on a classifier outage.
+- The binding does not expire on `pin_ttl_seconds`. It ends when you close it,
+  when you prune it, or when a resolved but unused contract runs past
+  `prepared_ttl_seconds`.
+- A request that no longer fits is refused with a machine-readable code and the
+  binding is kept. The router does not compact, widen the window or reach for a
+  bigger model. Growth is the client's side of the contract.
+- There is one entry in the execution plan, so a 429 or a 5xx is reported to
+  you on the bound profile. Configured fallback lists do not apply.
+- One request per session is in flight. A second concurrent one is a conflict,
+  not a queue.
+
+Errors are a structured body with a stable code:
+
+```json
+{"error": {"type": "session_error", "code": "CONTEXT_BUDGET_EXCEEDED", "message": "..."}}
+```
+
+There are thirteen: `INVALID_ROUTER_INPUT` (400), `ROUTER_UNAUTHORIZED` (401),
+`SESSION_CONFLICT`, `SESSION_UNKNOWN`, `PROFILE_CHANGED`,
+`REQUEST_ALREADY_COMPLETED`, `EXECUTION_OUTCOME_UNKNOWN`, `TURN_NOT_SETTLED`
+and `EFFORT_HISTORY_MISMATCH` (409), `SESSION_CLOSED` (410), and
+`NO_SAFE_ADMISSION`, `CONTEXT_BUDGET_EXCEEDED` and `UNSUPPORTED_PROFILE` (422).
+None of them is ever turned into a cheaper request.
+
+```sh
+uv run jev-router sessions list
+uv run jev-router sessions show session-2f766788
+uv run jev-router sessions close session-2f766788
+```
+
+The whole contract is in
+[`docs/SESSION_ROUTING.md`](docs/SESSION_ROUTING.md): the resolve schema,
+retries and resume, the context budget, request ids, and what the router cannot
+check on a client's behalf.
+
+## The packet, the lanes and the windows
+
+Three things decide a binding, and they are deliberately separate.
+
+**The packet** is what Jev is asked. Some questions decide and the rest are
+measured. `semantic_policy.shadow_questions` ride along in the same batched
+call, are validated one at a time, are recorded as bare values, and cannot
+reach the routing path. A malformed shadow answer is dropped and counted; it
+can neither rescue a bad packet nor weaken a good one. The two sets may not
+overlap, and an alias that routes on a question may not also be measuring it.
+Every packet carries a version string hashing the question wording, the state
+builder and the Jev model together, because all three have to move for an
+answer to keep meaning what it meant.
+
+**Quality lanes** are the model and effort pairs somebody measured for one kind
+of work, each with a reference to where the evidence is. Capability and
+adequacy are different filters: a model that supports tools is not thereby
+qualified to finish a tool-driven coding task. So a rule may name a lane, and
+then quota pressure may move the request **only between pairs in that lane**. A
+threshold shift or an `equivalent` promotion that lands outside it is refused,
+the adequate provider is kept, and the decision records the deferral. A
+capability replacement is drawn from the lane, or the request is refused rather
+than served by a model nobody measured. A lane entry with no
+`qualification_ref` is a guess, and config load refuses it. A route's failure
+fallbacks are not lane members: reaching one after a 429 is not a claim that it
+was good enough.
+
+**Quota windows.** A provider that publishes overlapping limits, a five-hour
+one and a weekly one say, gets one record per window under `quota.config`'s
+`windows:` list. Pressure is computed per window from that window's own
+numbers, and the highest wins. One window's usage is never read against
+another's reset time. A source that reports a single limit writes the same
+fields one level up and is read exactly as it always was.
+
+Every snapshot reports one word: `fresh`, `stale`, `unknown` or `error`. Only
+`fresh` contributes a number; the other three contribute 0 and stay visible as
+themselves in `explain`, in `quota`, on the resolve response and on the
+decision row. **Unknown is never reported as unused capacity.**
+
+```sh
+uv run jev-router decisions replay 760392c45528
+```
+
+A decision is replayable from its own row and nothing else: the config hash,
+the stored answers, the request facts and the pressure it was taken under. No
+prompt is kept, and none is needed. Replaying at the recorded pressure is the
+point — a deliberate quota saving replayed at pressure zero would look like a
+routing bug.
+
+[`docs/SEMANTIC_POLICY.md`](docs/SEMANTIC_POLICY.md) has the configuration, the
+distribution-aware rules, the action-equivalence gate and the full replay
+output.
+
+## Between-turn effort
+
+Off by default, and an experiment. Inside a strict session, at a reported
+new-user-turn boundary, the router may change the reasoning effort of the model
+the session is already bound to. Nothing else moves: not the model, not the
+provider, not the account, not the negotiated limits, not the request-level
+base effort.
+
+Three modes. `off` is the default and an omitted `experiments:` block means
+`off`.
+
+| Mode | Jev call per turn | What the client sends | What moves |
+| --- | --- | --- | --- |
+| `off` | none | the fixed-effort request | nothing |
+| `shadow` | one | the fixed-effort request, unchanged | nothing |
+| `active` | one | the planned update item as well | the effective effort |
+
+`shadow` needs three opt-ins to agree: `experiments.adaptive_effort.mode`, the
+alias's `adaptive_effort: true` on a strict alias, and the client's
+`turn_boundary_reporting: true` at resolve. Any one missing means `off`, the
+mode is agreed once at resolve and stored on the session row, and a session
+never gains it later.
+
+`active` needs all of that plus a deployment somebody has qualified:
+`effort_control.between_turn` naming a tested strategy, `qualification:
+verified`, a `qualification_ref` that resolves to a file that exists, at least
+two rungs on the ladder, and, for the native strategy, the base effort
+carried as a request field rather than as a suffix on the model name.
+`check-config` refuses it otherwise. No model in the shipped `router.yaml`
+claims any of that.
+
+The policy is `effort.plan_turn`, which is pure: a ladder and some evidence in,
+one rung out. It never chooses a model.
+
+- **Upward acts at once and jumps.** `thresholds` decide whether a turn wants
+  more; `targets` decides how far, and the answer goes straight there — `low`
+  to `high` in one move when the turn deserves it. `upward: step` restores the
+  older single rung.
+- **Downward moves one rung and needs confirming.** A drop needs low-risk
+  evidence and `downgrade_confirmations` consecutive recommendations for the
+  same rung, and a turn that recommends something else breaks the run. The
+  asymmetry is deliberate: underserving a turn costs one turn's quality and is
+  corrected at the next boundary, while a drop that is too deep is only noticed
+  after the weak answer has been given.
+- At most one change per user turn. A tool continuation is part of the same
+  turn and never gets a decision of its own. A short "continue" is not evidence
+  for anything. A classifier timeout keeps the current effort rather than
+  guessing a cheaper one. Floors hold, and quota may only resolve an undecided
+  turn downward, above every floor.
+
+The ledger is one row per plan, holding hashes and identifiers and no
+transcript: `planned` (decided, nothing sent), `accepted` (2xx headers, and
+nothing more than that), `confirmed` (a valid provider completion carried it),
+`rejected` (refused before acceptance, and retryable) and `outcome_unknown`.
+Only a `confirmed` change moves the session's effective effort. An
+`outcome_unknown` plan blocks the next change until somebody who can check the
+provider reconciles it.
+
+**Compaction.** A compaction the client asks for is passed through and opens a
+compaction epoch. The router never compacts, summarises or rewrites a provider
+item, and never changes model. In the new epoch, updates from earlier epochs
+stop being position-validated and stop being required, because the positions
+they were anchored at no longer name anything; the expected and confirmed
+effort go back to the base effort; and the next eligible turn may plan again. `truncation:
+auto` and the automatic-management fields are still refused.
+
+**The adapter.** `jev-router adapter` is a small client shim that speaks the
+session contract on behalf of a client that cannot, so Codex can drive the
+experiment. It is a client, not policy: every item it inserts came out of a
+turn plan, every refusal goes straight back, and it never retries on another
+model.
+
+```
+codex exec  ->  adapter :18320  ->  jev-router :18318  ->  the proxy
+```
+
+[`docs/ADAPTIVE_EFFORT.md`](docs/ADAPTIVE_EFFORT.md) has the settings, the
+protocol contract, what Codex actually puts on the wire, the reconciliation
+rules and the rollback story. Read it before turning anything on.
+
 ## Feedback and what is stored
 
-The sqlite file (`settings.sqlite_path`, WAL mode) holds three tables.
+The sqlite file (`settings.sqlite_path`, WAL mode) holds six tables. Three are
+the legacy path and three belong to strict sessions.
 
 `pins` — `conversation_key`, `model`, `effort`, `created`, `decision_id`.
 
-`decisions` — one row per alias request:
+`decisions` — one row per alias request, and one per strict admission and
+execution:
 
 | Column | Notes |
 | --- | --- |
@@ -630,14 +924,38 @@ The sqlite file (`settings.sqlite_path`, WAL mode) holds three tables.
 | `shifted` | every threshold quota pressure moved, with the numbers |
 | `reordered` | whether quota pressure changed the route's order |
 
-The last seven columns were added after the first release. They are nullable,
-and an existing database gains them the next time the router opens it. Rows
-written before then read back with NULL, which is what "this decision predates
-the feature" means. Nothing is dropped or rewritten.
+Later releases added more: `event_type` (`admission`, `execution` or
+`effort_plan`), `session_id`, `turn_id`, `request_id` and `quality_lane` for
+sessions; and `packet_version`, `shadow_packet_version`, `shadow_answers`,
+`action`, `experiment_routes`, `quota_snapshot`, `quota_status`,
+`counterfactual`, `exclusions`, `evidence` and `qualification_ref` for the
+semantic packet and the lane guard.
+
+Every added column is nullable, defaults to NULL, and an existing database
+gains it the next time the router opens the file. Rows written before then read
+back NULL, which is what "this decision predates the feature" means. Nothing is
+dropped, rewritten or retyped, ever.
 
 `feedback` — many rows per decision: `decision_id`, `ts`, `verdict` (one of
 `right`, `too_weak`, `too_strong`, `too_slow`), `better_model`,
 `better_effort`, `note`, `source` (`api` or `cli`).
+
+`sessions` — one row per strict binding: the profile identity, the negotiated
+limits, the binding revision, the base, effective, expected and confirmed
+effort, the adaptation mode, the state (`prepared`, `active`, `blocked`,
+`closed`), the quality lane, the versions a replay would need, and the last
+reply's input and output token counts. `sha256` hashes for the owner and the
+request fingerprint, and nothing recoverable.
+
+`session_requests` — one row per execution attempt: `in_flight`, `accepted`,
+`completed`, `rejected`, `stream_failed` or `unknown`. The history is bounded
+per session, but a row whose outcome nobody can state is never dropped, so a
+forgotten request id is never read as proof it did not execute.
+
+`turn_plans` — the effort ledger, one row per turn plan: the ids, the sequence,
+from and to effort, the history anchor or parent response id, expected and
+confirmed effort, the status, the compaction epoch it was made in, and the
+recommendation. No transcript, no message text, no reasoning text, no keys.
 
 Record a verdict from the command line:
 
@@ -680,7 +998,9 @@ are made on the 120 tuning cases and reported on the 51 held-out ones. A slice
 can also be held out whole, which is a harder test than a row split, because a
 row split leaves near-duplicates of a held-out case in the tuning half.
 
-Four scripts. The first three need `TYPESAFE_API_KEY`:
+The scripts that cost quota need `TYPESAFE_API_KEY`; `run_outcomes.py` also
+needs `UPSTREAM_API_KEY` and `JEV_ROUTER_UPSTREAM`, because it calls the
+candidate models for real.
 
 ```sh
 # Does Jev classify the request, and does the policy route it?
@@ -705,6 +1025,49 @@ uv sync --group evals
 uv run python evals/import_public.py --limit 25
 uv run python evals/run_eval.py --variants router_yaml --public evals/cases_public.yaml
 ```
+
+Two more controls, and the four packet arms:
+
+```sh
+uv run python evals/run_eval.py --variants router_yaml --control constant-policy
+uv run python evals/run_eval.py --variants router_yaml --control length-only
+uv run python evals/run_eval.py --packet --repeats 3
+```
+
+Four scripts do no live work of their own, or none by default:
+
+```sh
+uv run python evals/quota_sim.py --demo         # simulated; never an observed delta
+uv run python evals/effort_replay.py            # offline, synthetic turn fixtures
+uv run python evals/qualify_effort.py --profile <key> --plan   # prints the plan and stops
+uv run python evals/run_sessions.py --list
+uv run python evals/run_sessions.py --dry-run
+uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
+```
+
+`quota_sim.py` replays a clock, a set of quota windows, their resets and
+whatever telemetry failures you give it through the router's own pure
+functions. Everything it prints is labelled `simulated`, and it never claims a
+quota saving from `ROUTE_COST`: those weights order routes, they do not measure
+a subscription.
+
+`run_sessions.py` runs the eight pilot coding tasks in `evals/session_tasks/`,
+each in a disposable directory with a scrubbed environment and hard call and
+wall-clock caps. `--list` and `--dry-run` need no credentials; anything else
+needs a router and an upstream. Eight tasks cannot separate two close policies
+and the report says so.
+
+`effort_replay.py` compares the between-turn effort policies over synthetic
+turn sequences and makes no calls. `qualify_effort.py` plans by default;
+running it live needs `--confirm-live`, `JEV_ROUTER_QUALIFY_LIVE=1`, an
+allowlisted profile, credentials and a call budget. The allowlist is empty.
+
+Every run writes `manifest.json` and `manifest.md` beside it: the repo SHA, the
+question and policy hashes, the packet version, the candidate profiles, the
+case ids and splits, the seeds, the cache condition, the caps and everything
+that did not finish. A run that answered entirely out of the cache is labelled
+`policy_replay`, which says what the policy does with answers somebody else
+paid for. It is not a live classifier measurement and not a latency one.
 
 `run_eval.py` scores Jev's answers against the labels and then feeds those
 answers through `policy.py` to score the route. It writes
@@ -843,6 +1206,18 @@ builder, and the tuner after that. The cutoffs only mean anything against one
 wording. `settings.jev_model` is pinned to an exact version so a model update
 on TypeSafe's side cannot move routing without a rerun.
 
+The newer machinery has been measured and none of it was promoted. Over all 171
+cases and all four policies, this branch and the release before it produced
+identical states, identical Jev answers and identical routes: everything new is
+opt-in or shadow. The four packet arms of spec 13.4 came out a tie —
+`router_yaml` 92.4 [87.4, 95.5], `b1_coding_state` 90.6 [85.3, 94.2],
+`b2_expanded_packet` 90.6 [85.3, 94.2], `b3_distribution` 91.8 [86.7, 95.1] —
+with under-routing at 1.2% for the shipped packet against 4.1% for the
+alternative, so the shipped one stayed. Asking three more questions over the
+same state costs about 900 input tokens and 2 ms of median latency. Experiments
+21 to 25 in `evals/EXPERIMENTS.md` have the rest, including the four negative
+controls, the router's own added latency and the limits on every number.
+
 ## Limitations
 
 - Only `/v1/chat/completions` understands an alias. Every other path is
@@ -864,6 +1239,15 @@ on TypeSafe's side cannot move routing without a rerun.
 - The evaluation is a benchmark of one deployment, not of models. Two specific
   models, one specific proxy, and a cost model in `evals/common.py` that nobody
   measured. Change `ROUTE_COST` first before reusing any of this.
+- One service process per database. The router refuses a second strict session
+  service on the same file inside one process, but that guard is in memory and
+  cannot see another process. Two services sharing `router.db` would each hold
+  their own in-flight claims.
+- Between-turn effort is an experiment and nobody has shown it is worth doing.
+  One deployment has a provisional protocol test; there is no quality
+  comparison against a fixed effort, at any rung.
+- Open bugs are listed under "Known issues" in
+  [`docs/README.md`](docs/README.md#known-issues).
 
 ## Transport, privacy and deployment
 
@@ -889,6 +1273,19 @@ never sent upstream. `Authorization` remains the model API's credential and is
 forwarded unchanged. Do not proxy remote traffic into loopback without setting an
 admin token. Non-loopback serving also needs trusted ingress/Tailscale ACLs: upstream
 authentication happens after classification, so it does not protect Jev quota.
+
+Strict sessions are stricter. Every control and execution request needs that
+credential, loopback included, and `session_routing.require_control_token:
+false` is a config error rather than a way off: a session is scoped to the
+owner of the credential, so there has to be one to scope it to. Everyone
+holding it is the same owner. This is a single-owner local tool and it claims
+no tenant isolation between people who share a token. Nothing recoverable is
+stored: the owner and every request fingerprint are sha256 hashes.
+
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) is how this is actually run: a
+launchd job, a `run.sh` that exports the four environment variables, upgrading
+with `check-config` before the restart, what the additive migration does on
+first start, and rolling back.
 
 Body/concurrency limits return 413/503. For chunked passthrough uploads, the size
 limit is enforced as bytes arrive; an upstream may receive a prefix before rejection.
@@ -921,6 +1318,13 @@ configuration as it was before providers existed over a grid of synthetic
 answers and asserts an identical model and effort for every one. The other
 builds a database with the original schema and checks that it gains the new
 columns, keeps its rows, and takes new ones.
+
+The strict-session and effort contracts are numbered C01-C34 and F01-F20 in
+[`docs/R2_SPEC.md`](docs/R2_SPEC.md), and every one has a test. `TESTPLAN.md`
+maps each id to its file, and `uv run pytest -k c18` finds one by id. All of it
+is offline: a fake client, mocked Jev, mocked upstream, synthetic fixtures. The
+one deployment that has been exercised live is written up in
+[`docs/qualification/`](docs/qualification/), and it calls itself provisional.
 
 ## License
 
