@@ -37,3 +37,17 @@ JEV_TEST_DOCKER_IMAGE=jev-eval:local uv run pytest -q tests/test_eval_isolation_
 
 This checks host-file and environment isolation, disabled networking, a
 read-only root filesystem, writable task files, and recovery after a timeout.
+
+The three baseline arms need the upstream client credential in
+`UPSTREAM_API_KEY` and the router control credential in
+`JEV_ROUTER_ADMIN_TOKEN`. Neither is passed into task containers. Configure
+`auto-session-rules` as a copy of `auto-session` with `decider: rules` for the
+deterministic arm. Use a separate router configuration and SQLite file for
+benchmark-only aliases; the live client verifies the rules decision source.
+The Jev arm uses `auto-session` and records any admission fallback.
+
+All arms receive the same tools and a 4,096-token output limit. Admission sees
+the actual tool schemas. Task-specific call and time caps still apply; CLI
+caps may tighten them. The runner rotates arm order by task, closes strict
+sessions, and saves a checkpoint after each session. Provider token usage is
+recorded when returned; it is not a measurement of subscription quota savings.
