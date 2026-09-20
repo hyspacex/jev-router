@@ -28,3 +28,12 @@ and does not fall back to host execution when Docker fails.
 File-tool containment rejects resolved paths outside the workspace, including
 sibling names with a shared prefix and symlink escapes. That check is separate
 from command isolation. Results retain the selected image name in the manifest.
+
+Verify the Docker boundary without any model calls:
+
+```sh
+JEV_TEST_DOCKER_IMAGE=jev-eval:local uv run pytest -q tests/test_eval_isolation_live.py
+```
+
+This checks host-file and environment isolation, disabled networking, a
+read-only root filesystem, writable task files, and recovery after a timeout.

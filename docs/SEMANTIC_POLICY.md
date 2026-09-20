@@ -222,8 +222,9 @@ not thereby qualified to finish a tool-driven coding task. So:
 Config load refuses a rule that routes outside the lane it names, and a
 conservative default that is not in its own lane.
 
-With no lanes configured the selection is what it always was, plus a
-counterfactual.
+Without lanes, legacy selection stays unchanged and records a counterfactual.
+Strict aliases still match semantic rules at zero pressure, but cannot claim
+measured qualification without configured lanes.
 
 ### Evidence
 
