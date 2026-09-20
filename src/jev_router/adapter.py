@@ -121,6 +121,32 @@ CODEX_COMPACTION_KIND = "compaction"
 TURN_TEXT_CHARS = 4000
 
 
+class ClosingStream(StreamingResponse):
+    """A streamed reply whose body generator is always finalized.
+
+    The same guarantee the router makes for its own replies, made here
+    because this hop is deliberately not built on the router's process. When
+    the client goes away, Starlette cancels the sending task. If that lands
+    while the generator is suspended at the `yield`, waiting for the socket
+    to take a chunk, the generator is never resumed and its `finally` never
+    runs: the router's reply is left open and nothing reads what the tap saw,
+    so the turn is never recorded as unfinished. Closing it on the way out of
+    the ASGI call runs that `finally` while the request is still being
+    handled, whatever ended it.
+    """
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            closing = getattr(self.body_iterator, "aclose", None)
+            if closing is not None:
+                try:
+                    await closing()
+                except Exception:  # noqa: BLE001 - the reply is already over
+                    log.exception("could not close a streamed reply")
+
+
 class AdapterError(Exception):
     """Something this hop can state plainly, in the router's error shape."""
 
@@ -190,6 +216,12 @@ class Conversation:
     pending_plan: dict[str, Any] = field(default_factory=dict)
     # Whether the previous response stream reached a terminal provider event.
     settled: bool = True
+    # The turn whose reply this hop did not see finish, until somebody or
+    # something says what became of it. It is kept apart from `settled` on
+    # purpose: one is "is that turn still running here", which is a lifecycle
+    # fact this hop owns, and the other is "did its response finish", which is
+    # an outcome fact the router's ledger owns.
+    unfinished_turn: str = ""
     # The effort this hop expects the session to be running at. The router's
     # ledger is the record; this is for the trace line.
     effective_effort: str = ""
@@ -634,11 +666,19 @@ class Adapter:
         Everything reported here is something this hop actually knows: it saw
         the previous response stream reach a terminal event, and it can count
         the tool calls in the history it was handed. Nothing else is asserted.
+
+        When it did not see the last reply finish it says so, and goes on
+        saying so until the router's own record says that turn is no longer
+        outstanding. It never decides that for itself and it never waits it
+        out: see `_router_settled`.
         """
         waiting = pending_tool_calls(items)
+        settled = conv.settled
+        if not settled and waiting == 0 and conv.unfinished_turn:
+            settled = await self._router_settled(conv)
         previous = {
             "id": conv.last_turn_id,
-            "settled": bool(conv.settled and waiting == 0),
+            "settled": bool(settled and waiting == 0),
             "pending_tool_calls": waiting,
             "active_requests": 0,
         }
@@ -674,6 +714,68 @@ class Adapter:
         if answer.status_code != 200:
             raise RouterRefused(answer)
         return answer.json()
+
+    async def _router_settled(self, conv: Conversation) -> bool:
+        """Ask the router whether the turn it did not see finish is outstanding.
+
+        A reply that stops half way through leaves this hop with one thing it
+        cannot find out: whether the provider ran that turn. It will not
+        pretend to know, so it never calls such a turn settled on its own
+        account, and it never simply forgets that it happened. What it can do
+        is ask the side that keeps the ledger.
+
+        The router records an interrupted attempt as an ambiguous one and
+        holds the next effort change until somebody who can ask the provider
+        says what became of it. While it is holding one, the turn stays
+        unsettled here too and the trace says exactly what closes it. Once the
+        router's record is clear - because nothing was in the air, or because
+        somebody reconciled what was - the turn is over on both sides, and
+        what this hop then reports is the router's record, not a guess of its
+        own. A router that cannot be read says nothing, which leaves the turn
+        unsettled.
+        """
+        turn = conv.unfinished_turn
+        try:
+            report = await self.http.get(
+                f"/router/sessions/{conv.session_id}", headers=self.control_headers()
+            )
+            row = report.json() if report.status_code == 200 else {}
+        except (httpx.HTTPError, ValueError):
+            row = {}
+        if not row:
+            self.trace(
+                f"conv={conv.short} turn={turn or '-'} WARNING its reply never "
+                "reached a terminal event and the router's record could not be "
+                "read; reporting the turn unsettled"
+            )
+            return False
+        if int(row.get("in_flight") or 0):
+            self.trace(
+                f"conv={conv.short} turn={turn or '-'} the router is still "
+                "executing this session; reporting the turn unsettled"
+            )
+            return False
+        update = row.get("unsettled_update") or {}
+        if update:
+            plan_id = update.get("plan_id")
+            self.trace(
+                f"conv={conv.short} turn={turn or '-'} WARNING its reply never "
+                f"reached a terminal event and the router still holds plan "
+                f"{plan_id} ({update.get('status')}) for turn "
+                f"{update.get('turn_id')}. Settle it with `jev-router sessions "
+                f"reconcile {conv.session_id} --plan {plan_id} --outcome "
+                "applied|not_applied`, or POST "
+                f"/router/turn-plan/{plan_id}/reconcile, and send this turn again"
+            )
+            return False
+        self.trace(
+            f"conv={conv.short} turn={turn or '-'} its reply never reached a "
+            "terminal event; the router's record has nothing outstanding for "
+            "this session, so the turn is over on both sides"
+        )
+        conv.unfinished_turn = ""
+        conv.settled = True
+        return True
 
     # --- the body this hop sends ----------------------------------------
 
@@ -841,6 +943,7 @@ class Adapter:
             conv.updates.sort(key=lambda u: u.position)
         conv.pending_plan = {}
         conv.settled = False
+        conv.unfinished_turn = turn_id or conv.last_turn_id
         # The router says what effort it forwarded this at. Its word, not this
         # hop's arithmetic, and the reply's own `reasoning.effort` is the base
         # effort and is never read as this.
@@ -878,10 +981,13 @@ class Adapter:
                     observer.feed(chunk)
                     yield chunk  # exactly the bytes the router sent
             finally:
-                await response.aclose()
+                # Read what the tap saw first. It is what records an
+                # unfinished turn, and closing a connection must not be able
+                # to come between the reply ending and that being written down.
                 self._settle(conv, observer, turn_id, started)
+                await response.aclose()
 
-        return StreamingResponse(
+        return ClosingStream(
             stream(),
             status_code=response.status_code,
             headers=out_headers,
@@ -894,6 +1000,10 @@ class Adapter:
         """Read what the tap saw, and say so in one line. Counts only."""
         seen = observer.finish()
         conv.settled = seen.completed
+        # A reply that stopped before the provider said how it ended. The turn
+        # it belongs to is remembered so the next one can ask the router what
+        # became of it rather than assume either answer.
+        conv.unfinished_turn = "" if seen.completed else (turn_id or conv.last_turn_id)
         total = seen.usage.get("total_tokens")
         if isinstance(total, (int, float)):
             conv.last_total_tokens = int(total)

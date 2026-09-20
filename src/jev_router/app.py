@@ -1164,7 +1164,7 @@ class Router:
     ) -> dict[str, Any]:
         """One turn's effort decision, made once and written down once."""
         current = row["effective_effort"] or row["base_effort"]
-        self._require_settled_turn(req)
+        self._require_settled_turn(req, row)
         blocked_because = self._adaptation_blocked(req, row)
         if blocked_because:
             return _keep_response(req, row, mode, blocked_because, action="blocked")
@@ -1267,21 +1267,34 @@ class Router:
         )
         return _plan_response(stored, row, mode)
 
-    def _require_settled_turn(self, req: S.TurnPlanRequest) -> None:
-        """No plan while anything about the last turn is still moving."""
+    def _require_settled_turn(
+        self, req: S.TurnPlanRequest, row: dict[str, Any] | None = None
+    ) -> None:
+        """No plan while anything about the last turn is still moving.
+
+        Every refusal here says what would settle it. A client whose reply was
+        cut off reports the turn unsettled and keeps reporting it, so a bare
+        "not settled" is a dead end: it names nothing to do and nothing to
+        wait for. What the router knows about the session goes in the message
+        instead, along with the command that closes it.
+        """
         previous = req.previous_turn
         if self.sessions.inflight(req.session_id):
             raise SessionError(
                 S.TURN_NOT_SETTLED,
                 "an execution for this session is in flight; a turn boundary is "
-                "not a boundary until the turn has finished",
+                "not a boundary until the turn has finished. A request whose "
+                "reply was interrupted gives its claim up as soon as the router "
+                "is done with that reply, so this plan can simply be asked for "
+                "again",
             )
         if not previous.id:
             return  # the first turn of a session has no previous one
         if not previous.settled:
             raise SessionError(
                 S.TURN_NOT_SETTLED,
-                f"the client reports turn {previous.id!r} is not settled",
+                f"the client reports turn {previous.id!r} is not settled"
+                + self._how_to_settle(req.session_id, row),
             )
         if previous.pending_tool_calls or previous.active_requests:
             raise SessionError(
@@ -1290,6 +1303,53 @@ class Router:
                 f"{previous.pending_tool_calls} pending tool call(s) and "
                 f"{previous.active_requests} active request(s)",
             )
+
+    def _how_to_settle(self, session_id: str, row: dict[str, Any] | None) -> str:
+        """What the router's own record says is outstanding, and what closes it.
+
+        The client is the authority on its own tool loop, so this never
+        overrides what it reported. It says what the other side of the
+        conversation is holding, because that is the half a client cannot see
+        and the half somebody may have to go and settle by hand.
+        """
+        try:
+            open_row = (
+                E.open_change(self._plans_this_epoch(session_id, row))
+                if row is not None
+                else None
+            )
+            if open_row is not None:
+                plan_id = open_row["plan_id"]
+                how = (
+                    f"; the router is holding plan {plan_id} for turn "
+                    f"{open_row['turn_id']}, which is {open_row['status']}"
+                )
+                if open_row["status"] == E.OUTCOME_UNKNOWN:
+                    return how + (
+                        ". It was submitted and nobody can say what ran, which "
+                        "the router will not guess. Somebody who can ask the "
+                        "provider settles it with `jev-router sessions reconcile "
+                        f"{session_id} --plan {plan_id} --outcome "
+                        "applied|not_applied`, or POST "
+                        f"/router/turn-plan/{plan_id}/reconcile, and then this "
+                        "plan can be asked for again"
+                    )
+                return how
+            unresolved = self.sessions.unresolved(session_id)
+            if unresolved:
+                return (
+                    f"; the router has {unresolved} attempt(s) on this session "
+                    "with no settled outcome, and no effort update in the air. "
+                    "Nothing has to be reconciled before the client reports "
+                    "this turn settled"
+                )
+        except Exception:  # noqa: BLE001 - an explanation may never fail a refusal
+            log.exception("could not describe what is holding this session")
+            return ""
+        return (
+            "; the router's own record has nothing outstanding for this "
+            "session, so this is the client's turn state to finish"
+        )
 
     def _adaptation_blocked(
         self, req: S.TurnPlanRequest, row: dict[str, Any]
@@ -1317,7 +1377,10 @@ class Router:
                 raise SessionError(
                     S.EXECUTION_OUTCOME_UNKNOWN,
                     f"plan {open_row['plan_id']} was submitted and its outcome is "
-                    "unknown; reconcile it before planning another change",
+                    "unknown; reconcile it before planning another change, with "
+                    f"`jev-router sessions reconcile {req.session_id} --plan "
+                    f"{open_row['plan_id']} --outcome applied|not_applied` or "
+                    f"POST /router/turn-plan/{open_row['plan_id']}/reconcile",
                     detail={"plan_id": open_row["plan_id"]},
                 )
             return (
@@ -3135,6 +3198,28 @@ def session_report(router: Router, row: dict[str, Any]) -> dict[str, Any]:
         "last_seen": row["last_seen"],
         "in_flight": router.sessions.inflight(row["session_id"]),
         "unresolved_requests": router.sessions.unresolved(row["session_id"]),
+        # The effort change, if any, that is still in the air on this side of
+        # the last compaction. It is what blocks the next one, so a client
+        # that has to decide whether it may carry on can read it here rather
+        # than work the rule out again from the ledger.
+        "unsettled_update": _unsettled_update(router, row),
+    }
+
+
+def _unsettled_update(router: Router, row: dict[str, Any]) -> dict[str, Any] | None:
+    """The open effort change, said in the four fields a caller needs."""
+    try:
+        open_row = E.open_change(router._plans_this_epoch(row["session_id"], row))
+    except Exception:  # noqa: BLE001 - a report may never fail on its own extras
+        log.exception("could not read this session's open update")
+        return None
+    if open_row is None:
+        return None
+    return {
+        "plan_id": open_row["plan_id"],
+        "turn_id": open_row["turn_id"],
+        "status": open_row["status"],
+        "to_effort": open_row["to_effort"],
     }
 
 

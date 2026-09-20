@@ -421,3 +421,219 @@ async def test_a_chat_client_that_disconnects_mid_stream_releases_the_claim(
     assert [
         row["status"] for row in request_rows(chat_service, caller.session_id)
     ] == ["unknown"]
+
+
+# --- 4. the same, through the adapter -------------------------------------
+#
+# The adapter is a client, so here it runs in front of the real router, which
+# runs in front of a fake upstream. Nothing is mocked but the provider.
+
+
+@pytest.fixture
+async def rig(service):
+    """An adapter in front of the real router, and a client in front of it."""
+    from jev_router.adapter import Adapter, create_adapter_app
+
+    lines: list[str] = []
+    adapter = Adapter(
+        router_url="http://router.test",
+        alias="auto-adaptive",
+        admin_token=ADMIN,
+        http=httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=service.app),
+            base_url="http://router.test",
+        ),
+        trace=lines.append,
+    )
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_adapter_app(adapter)),
+        base_url="http://adapter.test",
+    )
+    client.trace = lines  # type: ignore[attr-defined]
+    client.adapter = adapter  # type: ignore[attr-defined]
+    client.service = service  # type: ignore[attr-defined]
+    yield client
+    await client.aclose()
+    await adapter.aclose()
+
+
+def turn_body(*texts: str) -> dict[str, Any]:
+    return {
+        "model": "vendor/astra",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}],
+                "id": f"msg_{i}",
+            }
+            for i, text in enumerate(texts)
+        ],
+        "reasoning": {"effort": "low"},
+        "stream": True,
+    }
+
+
+async def ask(rig, *texts: str) -> httpx.Response:
+    return await rig.post(
+        "/v1/responses",
+        json=turn_body(*texts),
+        headers={"content-type": "application/json", "session-id": "conv-broken"},
+    )
+
+
+def only_conversation(rig):
+    return next(iter(rig.adapter.conversations.values()))
+
+
+@respx.mock
+async def test_the_adapter_never_calls_an_unfinished_turn_settled(rig):
+    turn_jev(difficulty=0.2)
+    H.responses_upstream(body_override=created_only())
+
+    first = await ask(rig, "Tidy the docstring.")
+    assert first.status_code == 200
+    conv = only_conversation(rig)
+    assert conv.settled is False
+    assert conv.unfinished_turn == "turn-0001"
+
+
+@respx.mock
+async def test_an_unfinished_turn_does_not_brick_the_next_one(rig):
+    turn_jev(difficulty=0.2)  # a keep plan: nothing is left in the air
+    H.responses_upstream(body_override=created_only())
+    assert (await ask(rig, "Tidy the docstring.")) .status_code == 200
+
+    H.responses_upstream()  # the provider comes back
+    second = await ask(rig, "Tidy the docstring.", "Now rename the parser.")
+    assert second.status_code == 200, second.text
+
+    conv = only_conversation(rig)
+    assert conv.unfinished_turn == ""
+    assert conv.settled is True
+    assert any("nothing outstanding for this session" in line for line in rig.trace)
+
+
+@respx.mock
+async def test_an_unfinished_change_holds_the_next_turn_and_says_how_to_settle(rig):
+    turn_jev(difficulty=1.9)  # a change: this one really is in the air
+    H.responses_upstream(body_override=created_only())
+    assert (await ask(rig, "Investigate the escaped-quote failure.")).status_code == 200
+
+    H.responses_upstream()
+    blocked = await ask(
+        rig, "Investigate the escaped-quote failure.", "Now try the other branch."
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "TURN_NOT_SETTLED"
+    message = blocked.json()["error"]["message"]
+    assert "outcome_unknown" in message
+    assert "jev-router sessions reconcile" in message
+    assert "/reconcile" in message
+    assert any("Settle it with" in line for line in rig.trace)
+
+
+@respx.mock
+async def test_the_adapter_carries_on_once_the_update_is_reconciled(rig):
+    turn_jev(difficulty=1.9)
+    H.responses_upstream(body_override=created_only())
+    assert (await ask(rig, "Investigate the escaped-quote failure.")).status_code == 200
+
+    service = rig.service
+    conv = only_conversation(rig)
+    plan_id = service.sessions.plans(conv.session_id)[-1]["plan_id"]
+    settled = await service.client.post(
+        f"/router/turn-plan/{plan_id}/reconcile",
+        json={"schema_version": "1", "outcome": "applied"},
+        headers={"x-router-admin-token": ADMIN},
+    )
+    assert settled.status_code == 200, settled.text
+
+    H.responses_upstream()
+    turn_jev(difficulty=0.2)
+    again = await ask(
+        rig, "Investigate the escaped-quote failure.", "Now try the other branch."
+    )
+    assert again.status_code == 200, again.text
+    assert only_conversation(rig).unfinished_turn == ""
+
+
+@respx.mock
+async def test_a_client_that_disconnects_from_the_adapter_records_the_turn(rig):
+    turn_jev(difficulty=0.2)
+    H.responses_upstream(body_override=long_stream())
+
+    from jev_router.adapter import create_adapter_app
+
+    app = create_adapter_app(rig.adapter)
+    call = Caller(
+        app,
+        asgi_scope("/v1/responses", {"session-id": "conv-broken"}),
+        json.dumps(turn_body("Tidy the docstring.")).encode(),
+    )
+    await asyncio.wait_for(call.run(), timeout=5)
+    assert call.status == 200
+
+    conv = only_conversation(rig)
+    assert conv.settled is False
+    assert conv.unfinished_turn == "turn-0001"
+    # The router let its own claim go as well, so the session is usable.
+    assert rig.service.sessions.inflight(conv.session_id) == 0
+
+
+@respx.mock
+async def test_the_same_turn_can_be_sent_again_after_an_unfinished_reply(rig):
+    turn_jev(difficulty=0.2)
+    H.responses_upstream(body_override=created_only())
+    first = await ask(rig, "Tidy the docstring.")
+    assert first.status_code == 200
+    plans = len(only_conversation(rig).pending_plan)
+
+    H.responses_upstream()
+    again = await ask(rig, "Tidy the docstring.")  # the same turn, sent again
+    assert again.status_code == 200, again.text
+    assert plans == 0
+    conv = only_conversation(rig)
+    assert conv.last_turn_id == "turn-0001"  # no second turn was opened
+    rows = request_rows(rig.service, conv.session_id)
+    assert [row["status"] for row in rows] == ["unknown", "completed"]
+
+
+# --- the ledger after an ambiguous change (spec 10.6) ---------------------
+
+
+@respx.mock
+async def test_an_ambiguous_change_keeps_expected_and_confirmed_apart(service):
+    turn_jev(difficulty=1.9)
+    H.responses_upstream(body_override=created_only())
+    caller = await started(service)
+
+    plan, response = await caller.turn("Investigate the escaped-quote failure.")
+    assert plan["action"] == "change_effort"
+    assert response.status_code == 200
+
+    row = service.sessions.get(caller.session_id)
+    assert row["expected_effort"] == "medium"   # what the plan asked for
+    assert row["confirmed_effort"] == "low"     # nothing carried the change back
+    assert row["effective_effort"] == "low"     # so the session did not move
+
+
+@respx.mock
+async def test_a_competing_change_is_blocked_until_the_first_is_reconciled(service):
+    turn_jev(difficulty=1.9)
+    H.responses_upstream(body_override=created_only())
+    caller = await started(service)
+
+    plan, response = await caller.turn("Investigate the escaped-quote failure.")
+    assert response.status_code == 200
+
+    blocked = await caller.plan("And now the other branch.")
+    assert blocked["_status"] == 409
+    assert blocked["error"]["code"] == "EXECUTION_OUTCOME_UNKNOWN"
+    assert "jev-router sessions reconcile" in blocked["error"]["message"]
+    assert f"/router/turn-plan/{plan['plan_id']}/reconcile" in blocked["error"]["message"]
+
+    assert (await caller.reconcile(plan["plan_id"], "not_applied")).status_code == 200
+    caller.turns -= 1
+    after = await caller.plan("And now the other branch.")
+    assert after["_status"] == 200, after
