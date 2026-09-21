@@ -1303,3 +1303,150 @@ any rung. `evals/effort_replay.py` compares the policies over synthetic
 fixtures written by the person who wanted the policy, which is closer to a unit
 test than to evidence, and it says so. The shipped `router.yaml` keeps
 `experiments.adaptive_effort.mode: "off"` and an empty `qualified_profiles`.
+
+## 26. Skipping the confidence gate when a score's top level is noise
+
+`e16_gate_skip_off` is the gate as it was: every low `difficulty` confidence
+escalates. `router_yaml` is what commit 0077787 shipped, now behind its own
+`low_confidence.skip_when_top_is_noise: [difficulty]` and
+`score_top_min_mass: 0.1`. A low confidence on a listed score question escalates
+only when the highest rubric level still holds that much mass. Everything else
+is identical, including the state builder, the questions and the Jev answers.
+
+Both arms are a **policy replay**: `uv run python evals/run_eval.py --variants
+router_yaml,e16_gate_skip_off --repeats 1`, 171 cache hits, 0 live Jev calls,
+manifest kind `policy_replay` in `evals/results/20260921-162057/`. It says what
+the policy does with answers somebody else paid for. It is not a live
+classifier run.
+
+All 171 cases:
+
+| | tier ok | under | over | effort ±1 | cost | gate fired |
+| --- | --- | --- | --- | --- | --- | --- |
+| before, skip off | 91.8 [86.7, 95.1] | 1.2 [0.3, 4.2] | 7.0 [4.1, 11.9] | 86.1 | 10.5 | 14/171 |
+| after, as shipped | 92.4 [87.4, 95.5] | 1.8 [0.6, 5.0] | 5.8 [3.2, 10.4] | 85.1 | 10.3 | 10/171 |
+
+The `before` arm is not a reconstruction. Every row it produces matches the
+live run at `89d9bd8` in `evals/results/20260919-231742/`, which predates the
+change, on all three splits and on every column. An empty
+`skip_when_top_is_noise` really is the router as it was.
+
+Paired bootstrap on the same 171 cases: **p = 0.594** on tier correct and
+**p = 0.648** on under-routing. Per split:
+
+| split | tier ok | under | over | cost | paired p |
+| --- | --- | --- | --- | --- | --- |
+| tuning, before | 92.5 [86.4, 96.0] | 0.8 [0.1, 4.6] | 6.7 | 10.5 | - |
+| tuning, after | 93.3 [87.4, 96.6] | 0.8 [0.1, 4.6] | 5.8 | 10.4 | 0.627 |
+| held-out, before | 90.2 [79.0, 95.7] | 2.0 [0.3, 10.3] | 7.8 | 10.5 | - |
+| held-out, after | 90.2 [79.0, 95.7] | 3.9 [1.1, 13.2] | 5.9 | 10.0 | 1.000 |
+
+Four routes moved, and they are worth reading one at a time:
+
+| case | split | before | after | wanted | verdict |
+| --- | --- | --- | --- | --- | --- |
+| adv-enterprise-cron-93 | tune | frontier medium | fast none | fast | over-route fixed |
+| adv-compose-indent-90 | held-out | frontier medium | fast none | fast | over-route fixed |
+| adv-jargon-allergen-menu-108 | held-out | frontier medium | fast none | frontier | **new under-route** |
+| quick-drug-interaction-73 | tune | frontier medium | frontier medium | fast | same route, `high_harm` instead of `low_confidence` |
+
+So the change buys two over-routes and 0.2 quota units, and pays for them with
+one under-route on the held-out split. The gate had been catching
+`adv-jargon-allergen-menu-108` by accident: the difficulty answer put almost
+nothing on the top level, so the skip lets it through and only the mean is
+left to place it, and the mean is too low.
+
+**The evidence does not support the change.** Four moved cases out of 171
+cannot be separated from noise — p = 0.594, and the two headline intervals sit
+on top of each other. TESTPLAN.md puts under-routing first, and under-routing
+is the one thing that moved in the wrong direction. This is the opposite of
+experiment 14, which moved seven cases all one way at p = 0.012.
+
+**Kept as shipped, flagged for the owner.** It is behind a named, scoped
+config field now, so the off arm is an empty list in `router.yaml` rather than
+a code change, and `skip_when_top_is_noise: []` routes exactly as the router
+did before 0077787. What would settle it is more cases where the difficulty
+mass is split low but the right tier is frontier; there are too few here to
+tell.
+
+The four controls were rerun because the ladder moved, all as policy replays
+with 0 live calls:
+
+| control | expected | observed |
+| --- | --- | --- |
+| shuffled labels | at chance | 57.9% tier against chance 54.6% [48.0, 61.4], permutation p = 0.19 |
+| constant state | no better than the majority class | 46.2%, against a majority class of 63.2% |
+| constant policy | at the fixed-route baseline | 63.2%, exactly `always_astra_medium` |
+| length-only rules | no better than chance on tier | 36.8%, below the cost-matched random router |
+
+Against the router's 92.4% [87.4, 95.5]. All four failed the way they are
+supposed to.
+
+Under the constant-state control the router now lands on the fast tier rather
+than the frontier one, because the one bland state it is given has a low
+difficulty confidence with nothing on the top level, so the skip fires. The
+control still passes — it has to sit at or below the majority class, and 46.2%
+is below 63.2% — but the number moved from 63.2% to 46.2% between rounds, and
+this is why.
+
+## 27. One shipped alias, and what that removed
+
+Not an experiment. No case was rerun and nothing here is measured. It is the
+record of a configuration change that commit 1f03f99 made without one.
+
+`router.yaml` used to ship four aliases. It now ships one: `auto`, strict. The
+commit deleted `auto-fast` (the last-message-only, low-effort alias),
+`auto-code` (coding only, skipping the `task` question) and `auto-session`
+(the strict example), and with `auto-code` the `code_only` ruleset that was
+the only entry under `rulesets`. `auto` took `auto-session`'s
+`session_mode: strict` and its `admission_fallback`, so the name that used to
+be legacy is now the strict entry.
+
+The reason is the owner's: production exposes one entry, and an experiment
+gets a configuration of its own. The cost is worth writing down. Legacy
+routing — a TTL pin the router may replace, cross-model fallback on 429 and
+5xx, quota shifting a rule cutoff — is not reachable from the shipped file any
+more. The code still supports all of it, `session_mode` still defaults to
+legacy, and an existing legacy configuration keeps routing byte for byte as it
+did. But you now have to write the alias yourself
+([`docs/guides/legacy-routing.md`](../docs/guides/legacy-routing.md)), and
+nothing in the shipped file exercises that path. `code_only` was never scored:
+the eval set only ever drove `auto`, so removing it loses no measurement.
+
+`semantic_policy.distribution_policy` went from `shadow` to `off` in the same
+commit. **Kept `off`.** A distribution condition may only live in a named
+ruleset, `rulesets` is now empty, and `policy.evaluate` computes the
+experimental route only when the ruleset actually holds one. With no such
+condition anywhere in the file, `shadow` and `off` route identically and log
+identically; `shadow` would only claim a measurement nothing takes. The four
+packet arms of spec 13.4 are unaffected — experiment 22 ran them from
+`evals/variants.yaml`, and the `jev_packet` session arm sets
+`distribution_policy: active` in its own benchmark configuration. Turning the
+shadow comparison back on means shipping a ruleset with a `p_hard_*` or
+`p_nontrivial_*` condition, and that is a change with numbers attached.
+
+What the consolidation broke, fixed here:
+
+- `evals/run_sessions.py` pointed `jev_mean`, `jev_packet` and
+  `fixed_effort_vs_adaptive` at `auto-session`. They now name `auto`.
+  `evals/ISOLATION.md` says what a benchmark configuration has to define:
+  `auto`, which the shipped file already has, and `auto-session-rules`, a copy
+  of it with `decider: rules`.
+- `evals/quota_sim.py --demo` admitted against `auto`, which is strict, and a
+  strict binding is never moved by quota. The demo showed a flat table with
+  nothing to see. It now admits against `auto-legacy-demo`, a legacy copy of
+  `auto` that `demo_config()` adds for the demo alone, and the report says so
+  in its header. A scenario loaded from a file still runs against the shipped
+  configuration unchanged.
+- `tests/test_eval_milestone_b.py` had been rewritten to assert that pressure
+  does *not* move an admission, which only held because the demo alias had
+  become strict. The original assertion is back, against the legacy demo
+  config.
+- `tests/test_tool_tiers.py` asserted a no-op: its pressure case ran against
+  strict `auto`, where `select` ignores pressure, so it duplicated
+  `test_lanes.py::test_strict_quality_requirement_does_not_move_with_quota`
+  and could not fail. It now runs a legacy copy and checks the legacy half:
+  with the `hard` cutoff shifted out of reach, a tool-bearing request falls
+  through to `moderate_tools` and lands on the pair that lane qualified. Six
+  rows of its table copied thresholds the tuned ladder already owns and said
+  nothing about the tool rule; they are gone.

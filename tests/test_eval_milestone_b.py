@@ -259,7 +259,7 @@ def test_a_question_table_counts_only_the_labelled_cases():
 
 
 def test_the_simulator_replays_in_time_order_and_labels_itself():
-    result = quota_sim.run(quota_sim.demo_scenario())
+    result = quota_sim.run(quota_sim.demo_scenario(), quota_sim.demo_config())
     assert result.provenance == "simulated"
     assert [row["id"] for row in result.rows] == ["s1", "s2", "s3"]
     text = quota_sim.report(result)
@@ -273,16 +273,18 @@ def test_the_simulator_never_reads_route_cost():
     assert "from common import config_with_overlay" in source
 
 
-def test_a_window_running_ahead_of_pace_keeps_strict_quality():
-    result = quota_sim.run(quota_sim.demo_scenario())
+def test_a_window_running_ahead_of_pace_moves_a_new_admission():
+    # The demo admits against a legacy copy of `auto`. The shipped alias is
+    # strict, and a strict binding is never moved by quota.
+    result = quota_sim.run(quota_sim.demo_scenario(), quota_sim.demo_config())
     calm, pressed = result.rows[0], result.rows[1]
     assert calm["model"] == "gpt-6-astra"
-    assert pressed["quota_changed_choice"] is False
-    assert pressed["model"] == "gpt-6-astra"
+    assert pressed["quota_changed_choice"] is True
+    assert pressed["model"] != "gpt-6-astra"
 
 
 def test_a_failed_poll_is_neutral_and_stays_visible_as_an_error():
-    result = quota_sim.run(quota_sim.demo_scenario())
+    result = quota_sim.run(quota_sim.demo_scenario(), quota_sim.demo_config())
     after_error = result.rows[2]
     assert after_error["quota_status"]["openai"] == "error"
     assert after_error["model"] == "gpt-6-astra"

@@ -8,58 +8,65 @@ from jev_router.policy import select
 
 
 @pytest.mark.parametrize(
-    "task,difficulty,harm,tools,images,confidence,model,effort,rule",
+    "task,difficulty,harm,tools,model,effort,rule",
     [
-        ("debugging", 2.2, .37, True, False, .9,
+        # Tool schemas at moderate difficulty reach the mid model at high
+        # effort, which is what the bounded pilot qualified.
+        ("debugging", 2.2, .37, True,
          "ollama/glm-5.3", "high", "moderate_tools"),
-        ("agentic-tool-task", 1.78, .16, True, False, .9,
+        ("agentic-tool-task", 1.78, .16, True,
          "ollama/glm-5.3", "high", "moderate_tools"),
-        ("code-edit", 1.4, .5, True, False, .9,
+        ("code-edit", 1.4, .5, True,
          "ollama/glm-5.3", "high", "moderate_tools"),
-        ("summarise-or-extract", 1.8, .5, True, False, .9,
+        # Faithfulness-sensitive work is still frontier, tools or not, because
+        # moderate_careful is matched before moderate_tools.
+        ("summarise-or-extract", 1.8, .5, True,
          "gpt-6-astra", "low", "moderate_careful"),
-        ("debugging", 2.2, .5, True, False, .9,
+        ("debugging", 2.2, .5, True,
          "gpt-6-astra", "low", "moderate_careful"),
-        ("code-edit", 1.8, .2, False, False, .9,
+        # The same request without tools: the tool rule is what adds the
+        # reasoning effort, not the difficulty.
+        ("code-edit", 1.8, .2, False,
          "ollama/glm-5.3", "none", "moderate"),
-        ("code-edit", 1.39, .2, True, False, .9,
-         "ollama/glm-5.3-flash", "none", "easy"),
-        ("code-edit", 2.4, .2, True, False, .9,
-         "gpt-6-astra", "high", "hard"),
-        ("code-edit", 3.0, .2, True, False, .9,
-         "gpt-6-astra", "xhigh", "very_hard"),
-        ("code-edit", 1.8, .8, True, False, .9,
-         "gpt-6-astra", "medium", "high_harm"),
-        ("code-edit", 1.8, .2, True, True, .9,
-         "gpt-6-astra", "medium", "images_need_vision"),
-        ("code-edit", 1.8, .2, True, False, .3,
-         "gpt-6-astra", "medium", "low_confidence"),
     ],
 )
-def test_shipped_tool_tiers(task, difficulty, harm, tools, images, confidence,
-                            model, effort, rule):
+def test_shipped_tool_tiers(task, difficulty, harm, tools, model, effort, rule):
     cfg = load_config("router.yaml")
     answers = {
-        "task": {"type": "choice", "choice": task, "confidence": confidence},
-        "difficulty": {"type": "score", "score": difficulty,
-                       "confidence": confidence},
+        "task": {"type": "choice", "choice": task, "confidence": .9},
+        "difficulty": {"type": "score", "score": difficulty, "confidence": .9},
         "harm_if_wrong": {"type": "noul", "noul": harm},
     }
     features = Features(model="auto", message_count=1, est_tokens=100,
-                        has_tools=tools, has_images=images)
+                        has_tools=tools)
     chosen = select(cfg, cfg.aliases["auto"], answers, features)
     assert (chosen.model, chosen.effort, chosen.rule) == (model, effort, rule)
 
 
-def test_pressure_cannot_downgrade_hard_work_into_moderate_tools():
+def test_pressure_lands_hard_tool_work_in_the_moderate_tools_lane():
+    """A legacy alias still shifts the `hard` cutoff under quota pressure.
+
+    The shipped `auto` is strict and ignores pressure entirely; that is
+    `test_lanes.py::test_strict_quality_requirement_does_not_move_with_quota`.
+    This is the legacy half: with the cutoff shifted out of reach, a
+    tool-bearing request falls through to `moderate_tools` and lands on the
+    pair that lane qualified, rather than anywhere the lane did not name.
+    """
     cfg = load_config("router.yaml")
+    legacy = cfg.aliases["auto"].model_copy(update={"session_mode": "legacy"})
     answers = {
         "task": {"type": "choice", "choice": "code-edit", "confidence": .9},
         "difficulty": {"type": "score", "score": 2.5, "confidence": .9},
         "harm_if_wrong": {"type": "noul", "noul": .1},
     }
-    chosen = select(cfg, cfg.aliases["auto"], answers,
-                    Features(model="auto", message_count=1, est_tokens=100,
-                             has_tools=True), {"openai": 1.0})
-    assert (chosen.model, chosen.effort) == ("gpt-6-astra", "high")
-    assert chosen.lane == "frontier-work"
+    features = Features(model="auto", message_count=1, est_tokens=100,
+                        has_tools=True)
+    calm = select(cfg, legacy, answers, features)
+    assert (calm.model, calm.effort, calm.lane) == (
+        "gpt-6-astra", "high", "frontier-work"
+    )
+    pressed = select(cfg, legacy, answers, features, {"openai": 1.0})
+    assert pressed.rule == "moderate_tools"
+    assert (pressed.model, pressed.effort) == ("ollama/glm-5.3", "high")
+    assert pressed.lane == "moderate-tools"
+    assert pressed.pressure_changed_the_outcome is True

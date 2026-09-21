@@ -349,6 +349,9 @@ session_routing:
 semantic_policy:
   active_questions: [task, difficulty, harm_if_wrong]
   shadow_questions: []
+  # `off`, not `shadow`: a distribution condition may only live in a named
+  # ruleset, `rulesets` below is empty, and there is nothing to shadow. Saying
+  # `shadow` here would claim a measurement nothing takes. Experiment 27.
   distribution_policy: "off"
 
 # Experimental gates. Everything here is off in the shipped file.
@@ -595,11 +598,14 @@ policy:
     # Difficulty is not the same signal. A low confidence there often means
     # the mass is split across the lower levels, with noise on the top one.
     # That is an easy or moderate request whose mean the rules already place.
-    # The gate escalates a score only when the top level still holds at least
-    # `equivalence_min_mass` (0.1). No probability vector still escalates.
+    # So on difficulty the gate escalates only when the top rubric level still
+    # holds at least `score_top_min_mass`. No probability vector still
+    # escalates, and `task` is a choice, so it is not listed here.
     min_confidence: 0.4
     questions: [task, difficulty]
     use: {route: frontier_medium}
+    skip_when_top_is_noise: [difficulty]
+    score_top_min_mass: 0.1
 
   # A rule may name a model and an effort, as every rule here did before
   # routes existed, or name a route. Both forms work.
@@ -693,7 +699,12 @@ policy:
   default: {route: frontier_medium}
 
 # Production exposes one strict entry. Experiments use separate configurations.
+# `auto-fast`, `auto-code` and `auto-session`, and the `code_only` ruleset they
+# used, were dropped here in experiment 27. Legacy aliases and extra rulesets
+# still load and behave as they always did; they are simply not shipped. Write
+# your own if you want one: docs/guides/legacy-routing.md.
 rulesets: {}
+
 aliases:
   auto:
     description: Choose once for fresh work; keep the model and effort for the session.
@@ -702,6 +713,9 @@ aliases:
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
     allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    # What admission binds when Jev is down. Without this an admission with no
+    # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
+    # whatever it binds here is as fixed as any other binding.
     admission_fallback: {route: frontier_medium}
 
 # Floors per X-Router-Client header value. Never keyed by an API key.

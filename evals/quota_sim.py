@@ -135,6 +135,7 @@ def features_from(spec: dict[str, Any]) -> Features:
 @dataclass
 class SimResult:
     scenario: str
+    description: str = ""
     provenance: str = PROVENANCE
     rows: list[dict[str, Any]] = field(default_factory=list)
     unknown_at_admission: int = 0
@@ -164,7 +165,7 @@ class SimResult:
 def run(scenario: Scenario, config: RouterConfig | None = None) -> SimResult:
     """Replay the scenario in time order. Pure: the clock comes from the file."""
     config = config or config_with_overlay()
-    result = SimResult(scenario=scenario.name)
+    result = SimResult(scenario=scenario.name, description=scenario.description)
 
     # The last reading per provider, and the pressure it produced. Pressure is
     # carried forward exactly as the live poller carries it, hysteresis and
@@ -266,6 +267,10 @@ def report(result: SimResult) -> str:
         "number here is a measured quota saving: `ROUTE_COST` is a relative "
         "weight for ordering routes and is deliberately not used.",
         "",
+    ]
+    if result.description:
+        lines += [result.description, ""]
+    lines += [
         f"- admissions: {summary['admissions']}",
         f"- blocked: {summary['blocked']}",
         f"- deferred under pressure (kept the adequate provider): "
@@ -295,9 +300,31 @@ def report(result: SimResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+# The shipped `auto` is strict, and a strict binding is never moved by quota:
+# admitting the demo against it would show a flat table and teach nothing. So
+# the demo admits against a legacy copy of the same alias, which is how the
+# router routed before strict sessions and how a legacy deployment still
+# routes. A scenario loaded from a file runs against the shipped configuration
+# unchanged, alias names and all.
+DEMO_ALIAS = "auto-legacy-demo"
+
+
+def demo_config() -> RouterConfig:
+    """The shipped config plus one legacy copy of `auto`, for the demo only."""
+    config = config_with_overlay()
+    config.aliases[DEMO_ALIAS] = config.aliases["auto"].model_copy(
+        update={"session_mode": "legacy", "admission_fallback": None}
+    )
+    return config
+
+
 DEMO = {
     "name": "demo: a weekly window runs ahead and the telemetry goes stale",
-    "description": "Synthetic. No account was observed to produce it.",
+    "description": (
+        "Synthetic. No account was observed to produce it. Admissions go to "
+        f"`{DEMO_ALIAS}`, a legacy copy of the shipped `auto`: the shipped "
+        "alias is strict, and a strict binding ignores quota by design."
+    ),
     "stale_after_seconds": 1800,
     "readings": [
         {
@@ -323,15 +350,15 @@ DEMO = {
         {"at": 7200, "provider": "openai", "error": "the command timed out"},
     ],
     "admissions": [
-        {"at": 60, "id": "s1", "answers": {
+        {"at": 60, "id": "s1", "alias": DEMO_ALIAS, "answers": {
             "task": {"type": "choice", "choice": "code-edit", "confidence": 0.9},
             "difficulty": {"type": "score", "score": 2.6, "confidence": 0.9},
             "harm_if_wrong": {"type": "noul", "noul": 0.2}}},
-        {"at": 3660, "id": "s2", "answers": {
+        {"at": 3660, "id": "s2", "alias": DEMO_ALIAS, "answers": {
             "task": {"type": "choice", "choice": "code-edit", "confidence": 0.9},
             "difficulty": {"type": "score", "score": 2.6, "confidence": 0.9},
             "harm_if_wrong": {"type": "noul", "noul": 0.2}}},
-        {"at": 7260, "id": "s3", "answers": {
+        {"at": 7260, "id": "s3", "alias": DEMO_ALIAS, "answers": {
             "task": {"type": "choice", "choice": "code-edit", "confidence": 0.9},
             "difficulty": {"type": "score", "score": 2.6, "confidence": 0.9},
             "harm_if_wrong": {"type": "noul", "noul": 0.2}}},
@@ -357,15 +384,16 @@ def main() -> int:
     p.add_argument("--out", help="write the report to this file too")
     args = p.parse_args()
 
+    config = None
     if args.scenario:
         scenario = load_scenario(Path(args.scenario))
     elif args.demo:
-        scenario = demo_scenario()
+        scenario, config = demo_scenario(), demo_config()
     else:
         print("give --scenario FILE or --demo", file=sys.stderr)
         return 2
 
-    result = run(scenario)
+    result = run(scenario, config)
     if args.json:
         print(json.dumps(
             {"summary": result.summary(), "rows": result.rows}, indent=2, default=str
