@@ -819,6 +819,18 @@ def _pick_route(
             conf = ans.get("confidence")
             if conf is None or conf >= lc.min_confidence:
                 continue
+            tail = _score_top_mass(config, qid, ans)
+            # A score split across the lower levels is not a frontier request.
+            # The mean is what the rules already know how to place. No vector
+            # leaves the gate alone: absence is not evidence the top is empty.
+            if tail is not None and tail < lc.equivalence_min_mass:
+                if notes is not None:
+                    notes.append(
+                        f"{qid} confidence {conf:.2f} is below {lc.min_confidence}, "
+                        f"but only {tail:.2f} of the mass is on the top level, "
+                        "so the mean score decides"
+                    )
+                continue
             if lc.action_equivalent and _action_equivalent(
                 config, ruleset, answers, features, pressures, qid, lc, running
             ):
@@ -870,6 +882,32 @@ def _match_rules(
 
     default = ruleset.default or config.settings.default_route
     return default, "default", "no rule matched", True
+
+
+def _score_top_mass(
+    config: RouterConfig, qid: str, answer: dict[str, Any]
+) -> float | None:
+    """Mass on a score's highest rubric level, or nothing when unread.
+
+    Levels are ``0 .. len(criteria) - 1``. A vector that simply omits the top
+    key put no mass there. A missing or malformed vector returns ``None``,
+    which the gate treats as "escalate", the behaviour it had before this
+    existed.
+    """
+    if answer.get("type") != "score":
+        return None
+    if not isinstance(answer.get("probabilities"), dict):
+        return None
+    probs = probabilities(answer)
+    if not probs:
+        return None
+    try:
+        criteria = config.question(qid).get("criteria")
+    except KeyError:
+        return None
+    if not isinstance(criteria, list) or len(criteria) < 2:
+        return None
+    return probs.get(str(len(criteria) - 1), 0.0)
 
 
 def candidate_labels(answer: dict[str, Any], min_mass: float) -> list[Any]:
