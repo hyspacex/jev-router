@@ -4,35 +4,58 @@ import { stream as streamChat } from "@earendil-works/pi-ai/api/openai-completio
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { StrictClient, ContractError } from "./client.mjs";
+import { StrictClient, ContractError, RouterError, readErrorCode, DEFAULT_MAX_OUTPUT_TOKENS } from "./client.mjs";
 
 const PROVIDER = "jev-router";
 const ENTRY = "jev-router.binding.v1";
 const COST = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0};
 
+type PiRouterConfig = {
+  origin?: string;
+  adminTokenFile?: string;
+  adminTokenEnv?: string;
+  maxOutputTokens?: number;
+};
+
+/** Where the extension config lives. `JEV_ROUTER_PI_CONFIG` overrides it. */
+export function configPath(): string {
+  return process.env.JEV_ROUTER_PI_CONFIG || join(homedir(), ".pi/agent/jev-router.json");
+}
+
+function readConfig(): PiRouterConfig | undefined {
+  try { return JSON.parse(readFileSync(configPath(), "utf8")); }
+  catch { return undefined; } // Report on use, not during unrelated provider startup.
+}
+
+/** The negotiated profile, reflected onto whatever model object Pi holds. */
+function applyBinding(model: any, execution: any) {
+  model.contextWindow = execution.context_window;
+  model.maxTokens = execution.max_output_tokens;
+  model.input = execution.supports_vision ? ["text", "image"] : ["text"];
+}
+
 /** Thin Pi client. Fixed effort only; experimental Responses adaptation lives elsewhere. */
 export default function (pi: ExtensionAPI) {
   let ctx: ExtensionContext | undefined;
   let client: StrictClient | undefined;
-  let config: {origin: string; adminTokenFile?: string; adminTokenEnv?: string} | undefined;
-  try {
-    config = JSON.parse(readFileSync(join(homedir(), ".pi/agent/jev-router.json"), "utf8"));
-  } catch { /* Report on use, not during unrelated provider startup. */ }
+  const config = readConfig();
   const origin = config?.origin || "http://127.0.0.1:8318";
+  const configuredOutput = config?.maxOutputTokens;
+  // The placeholder the picker shows before admission. A bad value is
+  // refused by the client when the session is initialized, not here, so one
+  // typo cannot stop unrelated providers loading.
+  const placeholderOutput = Number.isSafeInteger(configuredOutput) && (configuredOutput as number) > 0
+    ? configuredOutput as number : DEFAULT_MAX_OUTPUT_TOKENS;
   const base = {
     id: "auto", name: "auto · strict session", reasoning: false,
     input: ["text", "image"] as ("text" | "image")[], cost: COST,
-    contextWindow: 32768, maxTokens: 8192,
+    contextWindow: 32768, maxTokens: placeholderOutput,
     compat: {supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: false, maxTokensField: "max_tokens" as const},
   };
   function status() {
     if (!ctx) return;
     const binding = client?.state.binding;
-    if (binding && ctx.model?.provider === PROVIDER) {
-      ctx.model.contextWindow = binding.execution.context_window;
-      ctx.model.maxTokens = binding.execution.max_output_tokens;
-      ctx.model.input = binding.execution.supports_vision ? ["text", "image"] : ["text"];
-    }
+    if (binding && ctx.model?.provider === PROVIDER) applyBinding(ctx.model, binding.execution);
     ctx.ui.setStatus("jev-router", ctx.model?.provider === PROVIDER
       ? binding ? `Jev · ${binding.execution.model_key} · ${binding.execution.initial_effort || "none"} · ${client?.state.pending ? "outcome unresolved" : "strict"}` : "Jev · awaiting fresh admission"
       : undefined);
@@ -42,12 +65,16 @@ export default function (pi: ExtensionAPI) {
     const piSessionId = ctx.sessionManager.getSessionId();
     const entries = ctx.sessionManager.getEntries();
     const saved = [...entries].reverse().find(entry => entry.type === "custom" && entry.customType === ENTRY && (entry.data as any)?.piSessionId === piSessionId);
+    // The environment variable wins. A configured token file is the fallback,
+    // so a test run or a one-off can hold the deployment's file at arm's
+    // length instead of reading the real credential.
     let adminToken = process.env[config?.adminTokenEnv || "JEV_ROUTER_ADMIN_TOKEN"] || "";
-    if (config?.adminTokenFile) {
+    if (!adminToken && config?.adminTokenFile) {
       try { adminToken = readFileSync(config.adminTokenFile, "utf8").trim(); }
       catch { throw new ContractError("Cannot read the configured router admin token file."); }
     }
     client = new StrictClient({origin, piSessionId, adminToken, state: saved?.type === "custom" ? saved.data : undefined,
+      maxOutputTokens: configuredOutput ?? DEFAULT_MAX_OUTPUT_TOKENS,
       save: (state: unknown) => pi.appendEntry(ENTRY, state)});
     status();
   }
@@ -86,18 +113,25 @@ export default function (pi: ExtensionAPI) {
     streamSimple(model, transcript, options) {
       const output = createAssistantMessageEventStream();
       const active = client;
+      // A refusal the router named. Kept here because the stream may report
+      // it as an event rather than raise it out of the fetch call.
+      let refusal: RouterError | undefined;
       void (async () => {
         let acquired = false;
         try {
           if (!active || !ctx) throw new ContractError("Pi session is not initialized.");
+          // The Pi-side half of the fresh-work rule. The client cannot see
+          // this lineage; it only sees the messages.
           if (!active.state.binding && (ctx.sessionManager.getHeader()?.parentSession || ctx.sessionManager.getEntries().some(entry => entry.type === "compaction" || entry.type === "branch_summary"))) {
             throw new ContractError("Strict auto cannot admit a fork or compacted import as fresh work. Use /new.");
           }
           active.startRequest(); acquired = true;
           // Use Pi's serializer for admission; the probe is forbidden from doing network I/O.
+          // `base` restores the placeholder limits, so admission is serialized
+          // against the unbound profile rather than a previous binding's.
           let request: any;
           const probe = streamChat({...model, ...base, provider: PROVIDER, api: "openai-completions"}, transcript, {
-            ...options, maxRetries: 0, maxTokens: 8192,
+            ...options, maxRetries: 0, maxTokens: base.maxTokens,
             fetch: async () => { throw new ContractError("Admission serializer attempted network I/O."); },
             onPayload: (payload) => { request = payload; throw new ContractError("Serialization complete"); },
           });
@@ -105,13 +139,11 @@ export default function (pi: ExtensionAPI) {
           if (!request) throw new ContractError("Could not serialize admission request.");
           const binding = await active.bind(request, options?.signal);
           const e = binding.execution;
-          const boundModel = {...model, ...base, provider: PROVIDER, api: "openai-completions" as const,
-            id: e.wire_model, baseUrl: `${origin}/v1`, contextWindow: e.context_window, maxTokens: e.max_output_tokens,
-            input: e.supports_vision ? ["text", "image"] as ("text" | "image")[] : ["text"] as ("text" | "image")[]};
+          const boundModel = {...model, provider: PROVIDER, api: "openai-completions" as const,
+            id: e.wire_model, baseUrl: `${origin}/v1`};
+          applyBinding(boundModel, e);
           // Reflect negotiated limits to Pi before inference; transport never uses the placeholder limits.
-          model.contextWindow = e.context_window;
-          model.maxTokens = e.max_output_tokens;
-          model.input = boundModel.input;
+          applyBinding(model, e);
           status();
           const actual = streamChat(boundModel, transcript, {
             ...options, maxRetries: 0, maxTokens: e.max_output_tokens,
@@ -125,7 +157,18 @@ export default function (pi: ExtensionAPI) {
               if (url !== `${origin}/v1/chat/completions`) throw new ContractError("Refusing unexpected execution destination.");
               const headers = new Headers(init?.headers);
               for (const [key, value] of Object.entries(active.executionHeaders())) headers.set(key, String(value));
-              return globalThis.fetch(input, {...init, headers, redirect: "error"});
+              const response = await globalThis.fetch(input, {...init, headers, redirect: "error"});
+              if (!response.ok) {
+                // Only the machine code is read. A code the router raises
+                // before it forwards frees the request id; anything else
+                // leaves an outcome nobody here can state.
+                const code = await readErrorCode(response);
+                refusal = new RouterError(code, active.noteExecutionRefusal(code)
+                  ? "The provider never ran this request, so it was released and the next one may go ahead."
+                  : "The outcome of this request is unresolved, so automatic retry is blocked. Inspect /jev status.");
+                throw refusal;
+              }
+              return response;
             },
           });
           let completed = false;
@@ -136,17 +179,23 @@ export default function (pi: ExtensionAPI) {
               event.message.responseModel = e.wire_model;
               event.message.model = "auto";
             }
-            if (event.type === "error") { active.finish(false); acquired = false; }
+            if (event.type === "error") {
+              active.finish(false); acquired = false;
+              // The stream reports a refused fetch as a generic connection
+              // error. Put the router's own code back in its place.
+              if (refusal && event.error) event.error.errorMessage = refusal.message;
+            }
             output.push(event);
           }
           if (acquired) { active.finish(completed); acquired = false; }
           output.end();
         } catch (error) {
           if (acquired) { active?.finish(false); acquired = false; }
+          const named = refusal ?? (error instanceof ContractError ? error : undefined);
           const message = {role: "assistant" as const, content: [], api: model.api, provider: PROVIDER, model: "auto",
             usage: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: {...COST, total: 0}},
             stopReason: "error" as const, timestamp: Date.now(),
-            errorMessage: error instanceof ContractError ? error.message : "Strict router integration failed; no automatic model replacement. Inspect /jev status."};
+            errorMessage: named ? named.message : "Strict router integration failed; no automatic model replacement. Inspect /jev status."};
           output.push({type: "error", reason: "error", error: message});
           output.end();
         } finally {
