@@ -205,10 +205,15 @@ Request conditions read the request instead of a Jev answer: `has_tools`,
 a single entry in `FEATURE_CONDITIONS` in `policy.py`.
 
 `policy.low_confidence` is checked before the rules: when any question it lists
-comes back under `min_confidence`, its route is used instead. A score question
-is the exception. If its probability vector puts less than `equivalence_min_mass`
-(default 0.1) on the highest rubric level, that question does not escalate and
-the mean score is left to the rules. A score with no vector still escalates.
+comes back under `min_confidence`, its route is used instead.
+
+`skip_when_top_is_noise` names the score questions that are an exception to
+that. For a question it lists, if the probability vector puts less than
+`score_top_min_mass` (default 0.1) on the highest rubric level, that question
+does not escalate and the mean score is left to the rules. A score with no
+vector still escalates. The default is an empty list, which is the gate
+without this. A name in the list must be a score question and must also be in
+`questions`, or config load refuses it.
 
 ### A ruleset
 

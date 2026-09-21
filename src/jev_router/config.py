@@ -411,10 +411,18 @@ class LowConfidence(Base):
     and effort is not a reason to escalate. It needs the answer's probability
     vector, so with a provider that sends none it also changes nothing.
 
-    A score is different, and that part is always on. Low confidence escalates
-    only when the highest rubric level still holds at least
-    `equivalence_min_mass`. Below that the mass is noise, the mean score falls
-    through to the rules, and a missing vector still escalates.
+    `skip_when_top_is_noise` is a separate opt-in, and it names the score
+    questions it applies to. For a question it lists, a low confidence
+    escalates only when the highest rubric level still holds at least
+    `score_top_min_mass`. Below that the mass on the top level is noise, the
+    mean score falls through to the rules, and a missing vector still
+    escalates. The default is an empty list, which routes exactly as the gate
+    always has.
+
+    The two masses are separate numbers on purpose. `equivalence_min_mass`
+    asks whether a label is a candidate at all, and raising it escalates more.
+    `score_top_min_mass` asks whether the top level is a real reading, and
+    raising it escalates less. One number for both pushes in two directions.
     """
 
     min_confidence: float = 0.0
@@ -424,6 +432,13 @@ class LowConfidence(Base):
     # How much mass a label needs before it counts as one the answer is torn
     # between. Below this it is noise, not a second reading.
     equivalence_min_mass: float = Field(default=0.1, ge=0.0, le=1.0)
+    # The gated score questions whose top rubric level may be read as noise.
+    # Empty means off. Every name here must also be in `questions`, because
+    # the check only ever runs on a question the gate reads.
+    skip_when_top_is_noise: list[str] = Field(default_factory=list)
+    # How much mass the highest rubric level needs before the gate believes
+    # it. Below this the level is noise and the gate stands down.
+    score_top_min_mass: float = Field(default=0.1, ge=0.0, le=1.0)
 
 
 class Ruleset(Base):
@@ -907,6 +922,23 @@ class RouterConfig(Base):
                     if qid not in self.questions:
                         problems.append(
                             f"{where}.low_confidence: unknown question {qid!r}"
+                        )
+                # The skip reads a rubric's top level, so the question has to
+                # be a score, and it has to be one this gate looks at at all.
+                at = f"{where}.low_confidence.skip_when_top_is_noise"
+                for qid in rs.low_confidence.skip_when_top_is_noise:
+                    if qid not in self.questions:
+                        problems.append(f"{at}: unknown question {qid!r}")
+                    elif self.questions[qid].get("type") != "score":
+                        problems.append(
+                            f"{at}: {qid!r} is a "
+                            f"{self.questions[qid].get('type')!r} question, and only a "
+                            "score has a top rubric level"
+                        )
+                    if qid not in rs.low_confidence.questions:
+                        problems.append(
+                            f"{at}: {qid!r} is not in {where}.low_confidence.questions, "
+                            "so the gate never reads it"
                         )
             for rule in rs.rules:
                 check_route(rule.use, f"{where}.rules[{rule.name}].use")

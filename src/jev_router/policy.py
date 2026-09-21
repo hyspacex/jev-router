@@ -819,15 +819,21 @@ def _pick_route(
             conf = ans.get("confidence")
             if conf is None or conf >= lc.min_confidence:
                 continue
-            tail = _score_top_mass(config, qid, ans)
             # A score split across the lower levels is not a frontier request.
             # The mean is what the rules already know how to place. No vector
             # leaves the gate alone: absence is not evidence the top is empty.
-            if tail is not None and tail < lc.equivalence_min_mass:
+            # Only the questions the config names are read this way; with the
+            # default empty list nothing here changes a route.
+            top = (
+                _score_top_mass(config, qid, ans)
+                if qid in lc.skip_when_top_is_noise
+                else None
+            )
+            if top is not None and top < lc.score_top_min_mass:
                 if notes is not None:
                     notes.append(
                         f"{qid} confidence {conf:.2f} is below {lc.min_confidence}, "
-                        f"but only {tail:.2f} of the mass is on the top level, "
+                        f"but only {top:.2f} of the mass is on the top level, "
                         "so the mean score decides"
                     )
                 continue
@@ -889,25 +895,26 @@ def _score_top_mass(
 ) -> float | None:
     """Mass on a score's highest rubric level, or nothing when unread.
 
-    Levels are ``0 .. len(criteria) - 1``. A vector that simply omits the top
-    key put no mass there. A missing or malformed vector returns ``None``,
-    which the gate treats as "escalate", the behaviour it had before this
-    existed.
+    Levels are ``0 .. len(criteria) - 1``. The caller has already checked that
+    the config lists this question for the skip, and config load refuses a
+    listed question that is not a known score question, so the rubric is a
+    list of at least two levels here.
+
+    ``None`` means the mass could not be read, and the gate treats that as
+    "escalate", the behaviour it had before this existed. An answer that is
+    not a score, or carries no vector, reads that way. So does a vector with
+    no key for the top level: the validator only accepts a complete vector, so
+    a missing top key means the answer was validated against a rubric of a
+    different length, which `decisions replay` can hand us after the levels
+    change. That is unreadable, not zero.
     """
     if answer.get("type") != "score":
-        return None
-    if not isinstance(answer.get("probabilities"), dict):
         return None
     probs = probabilities(answer)
     if not probs:
         return None
-    try:
-        criteria = config.question(qid).get("criteria")
-    except KeyError:
-        return None
-    if not isinstance(criteria, list) or len(criteria) < 2:
-        return None
-    return probs.get(str(len(criteria) - 1), 0.0)
+    criteria = config.question(qid).get("criteria")
+    return probs.get(str(len(criteria) - 1))
 
 
 def candidate_labels(answer: dict[str, Any], min_mass: float) -> list[Any]:

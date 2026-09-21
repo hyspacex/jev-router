@@ -76,6 +76,13 @@ class Ladder:
     harm_threshold: float = 0.6     # harm_if_wrong at or above this -> frontier
     faith_threshold: float = OFF    # needs_faithfulness at or above this -> frontier
 
+    # Carried from router.yaml, not searched. They are part of the gate, so a
+    # run that dropped them would score a policy nobody ships. A tuple, not a
+    # list, because a Ladder is frozen and used as a cache key.
+    skip_top_noise: tuple[str, ...] = ()   # low_confidence.skip_when_top_is_noise
+    score_top_min_mass: float = 0.1        # low_confidence.score_top_min_mass
+
+    # Only the fields in here are moved by the search.
     GRID = {
         "conf_floor": [0.0, 0.25, 0.35, 0.4, 0.45, 0.55],
         "model_cutoff": [1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
@@ -160,11 +167,17 @@ class Ladder:
             "default": {"model": "gpt-6-astra", "effort": "medium"},
         }
         if self.conf_floor > 0:
-            block["low_confidence"] = {
+            gate: dict[str, Any] = {
                 "min_confidence": self.conf_floor,
                 "questions": ["task", "difficulty"],
                 "use": {"model": "gpt-6-astra", "effort": "medium"},
             }
+            if self.skip_top_noise:
+                # Carry the shipped setting. Leaving it out would tune against
+                # a gate that escalates more than the running one does.
+                gate["skip_when_top_is_noise"] = list(self.skip_top_noise)
+                gate["score_top_min_mass"] = self.score_top_min_mass
+            block["low_confidence"] = gate
         return block
 
 
@@ -542,7 +555,9 @@ def search(
 
     best, best_metrics = start, measure(start)
     for _ in range(samples):
-        cand = Ladder(**{f: rng.choice(Ladder.GRID[f]) for f in fields})
+        # `replace`, not `Ladder(...)`: a field the grid does not search keeps
+        # the value the shipped config gave `start` instead of the default.
+        cand = replace(start, **{f: rng.choice(Ladder.GRID[f]) for f in fields})
         if not cand.sane():
             continue
         m = measure(cand)
@@ -614,6 +629,8 @@ def current_ladder_from_config(path: Path | None = None) -> Ladder:
     lc = cfg.policy.low_confidence
     return Ladder(
         conf_floor=lc.min_confidence if lc else 0.0,
+        skip_top_noise=tuple(lc.skip_when_top_is_noise) if lc else (),
+        score_top_min_mass=lc.score_top_min_mass if lc else 0.1,
         model_cutoff=gte("moderate", 1.0),
         hard_min=gte("hard", 1.8),
         very_hard_min=gte("very_hard", 2.6),

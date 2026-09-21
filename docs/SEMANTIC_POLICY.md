@@ -174,6 +174,8 @@ low_confidence:
   use: {route: frontier_medium}
   action_equivalent: true       # off by default
   equivalence_min_mass: 0.1     # below this a label is noise, not a reading
+  skip_when_top_is_noise: [difficulty]   # empty by default
+  score_top_min_mass: 0.1       # below this the top rubric level is noise
 ```
 
 Turned on, the gate first substitutes each label the answer put real mass on
@@ -182,12 +184,23 @@ escalate and says so in the decision's notes. It needs the probability vector,
 so with a provider that sends none it changes nothing. Left off, which is the
 default, that check changes nothing.
 
-A score question does not wait for that flag. Low confidence escalates only
-when the highest rubric level still holds at least `equivalence_min_mass`.
-Below that line the top level is noise: a split across the lower levels is
-left to the mean score and the ordinary rules. No vector still escalates.
-Substituting a middle level and asking where it would route is a different
-question, and `action_equivalent` does not answer this one.
+`skip_when_top_is_noise` is a second, separate opt-in, and it names the score
+questions it applies to. For a question it lists, low confidence escalates only
+when the highest rubric level still holds at least `score_top_min_mass`. Below
+that line the top level is noise: a split across the lower levels is left to
+the mean score and the ordinary rules. No vector still escalates. The default
+is an empty list, which routes as the gate always has. Config load refuses a
+name that is not a score question, or that the gate does not read.
+
+The two masses are separate numbers because they push in opposite directions.
+`equivalence_min_mass` asks whether a label is a candidate at all, and raising
+it escalates more. `score_top_min_mass` asks whether the top level is a real
+reading, and raising it escalates less. Substituting a middle level and asking
+where it would route is a different question, and `action_equivalent` does not
+answer this one.
+
+The shipped config turns it on for `difficulty`. `evals/EXPERIMENTS.md` 26 has
+the replay numbers, and they do not separate it from the gate without it.
 
 ## Quality lanes
 

@@ -239,7 +239,7 @@ groups:
   state_shape: [e5_faith_q, e6_facts_first, e6_no_facts, e6_no_system_prompt, e6_one_string, e6_squeeze_only, e6_code_aware]
   # One variable at a time on the 171-case set. `router_yaml` is the baseline
   # every row in this group is measured against.
-  expanded: [router_yaml, e11_output_length, e12_lang_domain, e13_router_instructions, e14_gate_040]
+  expanded: [router_yaml, e11_output_length, e12_lang_domain, e13_router_instructions, e14_gate_040, e16_gate_skip_off]
   draft: [router_yaml, e15_draft]
   # The four arms of spec 13.4, in order: baseline packet, the same policy on
   # the new packet, each new question activated, distribution against mean.
@@ -834,6 +834,22 @@ variants:
       policy:
         low_confidence:
           min_confidence: 0.4
+
+  # 16. The gate as it was before the top-level check: it escalates every low
+  #     difficulty confidence, however little mass sits on the top rubric
+  #     level. This is the `before` arm for experiment 16. Same state builder
+  #     and same questions as `router_yaml`, so both arms read the same cached
+  #     Jev answers and only the gate differs.
+  e16_gate_skip_off:
+    group: expanded
+    state_builder: continuation_aware_v1
+    questions: [task, difficulty, harm_if_wrong]
+    task_space: ten
+    faith_question: harm_if_wrong
+    overlay:
+      policy:
+        low_confidence:
+          skip_when_top_is_noise: []
 
   # 15. AutoMix-style: a short draft from the fast model, and a question asking
   #     whether it already answers the request. The draft is fetched by

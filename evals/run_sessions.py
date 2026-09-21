@@ -78,6 +78,9 @@ FAMILIES = (
 
 # The policies of the 13.5 table. `alias` is what the arm resolves against and
 # `model`/`effort` pin an arm that does not use the router's choice at all.
+# The aliases name a benchmark configuration, not a deployment: `auto` is the
+# shipped strict alias, and `auto-session-rules` is a copy of it with
+# `decider: rules`. See evals/ISOLATION.md.
 #
 # Running all of them at once is not the plan: qualify the core path first,
 # then compare admission policies, then hold the model fixed and vary effort.
@@ -114,18 +117,18 @@ POLICY_ARMS: dict[str, dict[str, Any]] = {
     },
     "jev_mean": {
         "purpose": "the shipped Jev mean-and-confidence policy",
-        "alias": "auto-session",
+        "alias": "auto",
     },
     "jev_packet": {
         "purpose": "the expanded packet with the distribution policy promoted",
-        "alias": "auto-session",
+        "alias": "auto",
         "distribution_policy": "active",
     },
     "fixed_effort_vs_adaptive": {
         "purpose": "same model, fixed effort against adaptive effort. The "
         "model is held fixed; only the effort varies, so a result here is "
         "never a cross-model gain.",
-        "alias": "auto-session",
+        "alias": "auto",
         "model": "gpt-6-astra",
         "effort": "medium",
         "adaptive_effort": True,
@@ -368,7 +371,6 @@ class Workspace:
     def run_command(self, command: list[str], timeout: float = 120.0) -> str:
         container = f"jev-eval-{uuid.uuid4().hex}" if self.container_image else None
         if container:
-            assert self.container_image is not None
             command = [
                 "docker", "run", "--rm", "--name", container,
                 "--pull", "never", "--network", "none", "--read-only",
