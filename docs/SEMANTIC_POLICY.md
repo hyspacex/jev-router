@@ -180,7 +180,14 @@ Turned on, the gate first substitutes each label the answer put real mass on
 and checks whether they all pick the same route. If they do, it does not
 escalate and says so in the decision's notes. It needs the probability vector,
 so with a provider that sends none it changes nothing. Left off, which is the
-default, the gate behaves exactly as it always has.
+default, that check changes nothing.
+
+A score question does not wait for that flag. Low confidence escalates only
+when the highest rubric level still holds at least `equivalence_min_mass`.
+Below that line the top level is noise: a split across the lower levels is
+left to the mean score and the ordinary rules. No vector still escalates.
+Substituting a middle level and asking where it would route is a different
+question, and `action_equivalent` does not answer this one.
 
 ## Quality lanes
 

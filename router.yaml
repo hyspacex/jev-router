@@ -591,6 +591,12 @@ policy:
     # from 88.3% to 92.4% (paired p = 0.012) and under-routing does not move.
     # The gate still earns its place: on the `task` question, answers below
     # 0.55 are right 35% of the time against 78% above it.
+    #
+    # Difficulty is not the same signal. A low confidence there often means
+    # the mass is split across the lower levels, with noise on the top one.
+    # That is an easy or moderate request whose mean the rules already place.
+    # The gate escalates a score only when the top level still holds at least
+    # `equivalence_min_mass` (0.1). No probability vector still escalates.
     min_confidence: 0.4
     questions: [task, difficulty]
     use: {route: frontier_medium}

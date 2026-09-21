@@ -404,12 +404,17 @@ class Rule(Base):
 class LowConfidence(Base):
     """Fires before the rules when a gated answer is not confident enough.
 
-    `action_equivalent` is opt-in and off by default, so the gate behaves
+    `action_equivalent` is opt-in and off by default, so that check behaves
     exactly as it always has unless a config asks for more. Turned on, the gate
     first checks whether the labels the answer is torn between would all route
     the same way; being unsure between two labels that lead to the same model
     and effort is not a reason to escalate. It needs the answer's probability
     vector, so with a provider that sends none it also changes nothing.
+
+    A score is different, and that part is always on. Low confidence escalates
+    only when the highest rubric level still holds at least
+    `equivalence_min_mass`. Below that the mass is noise, the mean score falls
+    through to the rules, and a missing vector still escalates.
     """
 
     min_confidence: float = 0.0

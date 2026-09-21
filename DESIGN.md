@@ -81,8 +81,9 @@ against CLIProxyAPI, but nothing in it is specific to that proxy.
    three: what kind of work this is, how much thinking it needs, and whether a
    small mistake would cause real harm.
 6. Run the answers through the rules in `router.yaml`. First match wins. A
-   confidence gate runs before the rules and sends low-confidence answers to a
-   safe default.
+   confidence gate runs before the rules. A score whose top level is only
+   noise falls through to those rules; every other low-confidence answer goes
+   to a safe default.
 7. Apply the alias's effort cap, any client floor, and the capability filter
    again. Rewrite `model`, forward, and stream the upstream bytes back
    unmodified.
