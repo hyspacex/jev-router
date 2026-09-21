@@ -6,7 +6,11 @@
   "pi": { "extensions": ["./index.ts"] },
   "scripts": { "test": "node --test test/*.test.mjs" },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.86.0",
-    "@earendil-works/pi-coding-agent": "^0.86.0"
+    "@earendil-works/pi-ai": "^0.87.0",
+    "@earendil-works/pi-coding-agent": "^0.87.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.87.0",
+    "@earendil-works/pi-coding-agent": "^0.87.0"
   }
 }
