@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev Router · Audit</title>
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+  <script src="/dashboard/assets/dashboard.js" defer></script>
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">JEV ROUTER / OBSERVABILITY</p><h1>Where did the work go?</h1><p class="muted">Routing events, session identity, and the judgments behind each choice.</p></div>
+    <div class="connection"><span id="connection" role="status">Not connected</span><button id="pause" type="button">Pause</button><button id="refresh" type="button">Refresh</button></div>
+  </header>
+  <section class="auth" aria-label="Connection settings">
+    <label for="token">Router admin token <span class="muted">(if configured)</span></label>
+    <input id="token" type="password" autocomplete="off" placeholder="Kept in memory only">
+    <button id="connect" type="button">Connect</button><button id="disconnect" type="button">Disconnect & clear</button>
+    <span class="muted">Blank works only for direct loopback access when no token is configured.</span>
+  </section>
+  <p id="error" role="alert" hidden></p>
+  <main>
+    <section class="stats" aria-label="Loaded window summary">
+      <article><span>Loaded events</span><strong id="total">—</strong><small id="window">Latest 300 · refreshes every 2s</small></article>
+      <article><span>Session / conversation groups</span><strong id="groups">—</strong><small>Within the loaded window</small></article>
+      <article><span>Models</span><strong id="models">—</strong><small>Recorded selections, not billing</small></article>
+      <article><span>Fallback events</span><strong id="fallbacks">—</strong><small>Classifier or upstream fallback</small></article>
+    </section>
+    <section class="filters" aria-label="Filter events">
+      <label>Search<input id="search" type="search" placeholder="Client, session, request, decision, rule…"></label>
+      <label>Alias<select id="alias"><option value="">All aliases</option></select></label>
+      <label>Model<select id="model"><option value="">All models</option></select></label>
+      <label>Event<select id="event"><option value="">All events</option></select></label>
+      <label>Window<select id="limit"><option value="100">Latest 100</option><option value="300" selected>Latest 300</option><option value="500">Latest 500</option></select></label>
+      <button id="reset" type="button">Reset filters</button>
+    </section>
+    <div class="workspace">
+      <aside class="sessions"><h2>Sessions & conversations</h2><p class="muted">Strict session IDs or hashed legacy conversations. Not client-native session names.</p><div id="session-list"></div></aside>
+      <section class="feed"><div class="section-heading"><h2>Request timeline</h2><span id="count" class="muted">0 events</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Time / event</th><th>Client / session</th><th>Model / effort</th><th>Rule</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table></div>
+        <p id="empty" class="empty">Connect to load routing events.</p>
+      </section>
+      <aside class="detail" aria-label="Selected event"><h2>Decision detail</h2><div id="detail"><p class="muted">Select an event to inspect its Jev answers, identity and routing evidence.</p></div></aside>
+    </div>
+    <footer>Read-only · No prompt text · No provider calls · Shows logged alias routing, strict admission/execution and effort plans, not concrete-model passthrough or requests rejected before logging. New events appear when the router writes their decision; this is not an ingress trace. Only the latest selected window is loaded.</footer>
+  </main>
+</body>
+</html>

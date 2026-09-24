@@ -35,9 +35,15 @@ What the routing eval added after the models went in:
   above on the frontier model. Code edits are exempt. With the rule, the 171
   cases score tier 92.4%, under-routed 1.2%, over-routed 6.4%, at a slightly
   lower cost than before.
-- The shipped tool rule keeps moderate tool-bearing requests on frontier.
-  The GLM pilot below adds bounded tool-loop evidence, but does not authorize
-  broad promotion. The agentic slice contains 46 of the 171 cases.
+- Before the 2026-09-20 reasoning qualification below, `tool_loop` sent
+  requests with tool schemas to the
+  frontier model when difficulty reaches its threshold (1.4 at zero pressure).
+  Tools alone do not force frontier routing: the
+  [strict-session pilot](evals/reports/2026-09-19-session-pilot/summary.md)
+  supplied tool schemas and completed some tasks on Flash. That pilot did not
+  test the mid model. The later GLM tool pilot below adds bounded tool-loop
+  evidence but does not authorize broad promotion. The agentic slice
+  contains 46 of the 171 classification cases.
 - Only `acceptable_tiers` on the admission cases is a measured `mid` label. For
   other cases `evals/common.py` accepts mid where both neighbours are
   acceptable, or where the case is frontier-labelled at difficulty 2 or lower

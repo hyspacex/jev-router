@@ -30,6 +30,8 @@ from . import effort as E
 from . import protocols as P
 from . import sessions as S
 from .config import AliasCfg, RouterConfig
+from .dashboard import asset as dashboard_asset
+from .dashboard import audit, dashboard
 from .deciders import build_decider
 from .deciders.base import Decision
 from .features import Features, estimate_input, extract_features
@@ -3330,6 +3332,10 @@ async def _lifespan(app: Starlette) -> AsyncIterator[None]:
 def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
     methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
     routes = [
+        Route("/dashboard", dashboard, methods=["GET"]),
+        Route("/dashboard/", dashboard, methods=["GET"]),
+        Route("/dashboard/assets/{name}", dashboard_asset, methods=["GET"]),
+        Route("/router/audit", audit, methods=["GET"]),
         Route("/v1/chat/completions", chat_completions, methods=["POST"]),
         Route("/v1/responses", responses, methods=["POST"]),
         Route("/v1/responses/compact", compact_responses, methods=["POST"]),

@@ -52,19 +52,30 @@ uv run python evals/import_public.py --limit 25
 uv run python evals/run_eval.py --variants router_yaml --public evals/cases_public.yaml
 ```
 
-These two do no live work of their own. The session runner needs a router and
-an upstream to do anything; `--list` and `--dry-run` need neither.
+The simulator and effort replay are offline; qualification plans by default.
+The session runner's `--list` and `--dry-run` need no services or credentials.
 
 ```sh
 uv run python evals/quota_sim.py --demo        # simulated, never an observed delta
 uv run python evals/run_sessions.py --list
 uv run python evals/run_sessions.py --dry-run
-uv run python evals/run_sessions.py --arms fixed_strong,jev_packet --repeats 2
-uv run python evals/run_sessions.py --arms fixed_effort_vs_adaptive \
-    --allow-adaptive-effort                    # needs a qualified profile
 uv run python evals/effort_replay.py           # offline, synthetic fixtures
 uv run python evals/qualify_effort.py --profile <key> --plan
 ```
+
+Live sessions spend provider quota and require a router, an upstream and a
+local Docker image. See `evals/ISOLATION.md` for credentials and the required
+`auto-session-rules` alias; use a separate benchmark configuration and database.
+
+```sh
+docker build -t jev-eval:local -f evals/Dockerfile .
+uv run python evals/run_sessions.py --container-image jev-eval:local \
+    --arms fixed_strong,simple_rules,jev_mean --repeats 2
+```
+
+`jev_packet` is the experimental distribution-policy arm. The live
+`fixed_effort_vs_adaptive` arm is not implemented; use `effort_replay.py` for
+the offline comparison until a qualified deployment and live arm are available.
 
 ## Architecture
 
