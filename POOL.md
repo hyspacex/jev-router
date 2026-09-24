@@ -116,6 +116,41 @@ again: pressure only chooses between qualified pairs inside a lane, and
 today every frontier lane has one. The unused `shift_with` on `hard` went
 too; strict admission ignores it.
 
+## grok effort for auto-conserve (2026-09-23)
+
+`auto-conserve` sends grok-4.6 the work `auto` gives astra below the hardest
+band. grok had only ever been configured and tested at `(low)`, picked for a
+2.5 s first token. The `conserve` step in `evals/ADMISSION.md` asked whether a
+higher effort earns its time: 17 frontier-labelled cases below the xhigh band,
+all graded by their programmatic checks, 2 samples per route. Nothing was sent
+to OpenAI, since that allowance was nearly spent; the astra reference is the
+astra `(low)` scores earlier steps stored for 15 of the cases.
+
+| grok-4.6 | mean, 17 cases | 95% CI | median latency | median out tokens |
+|---|---|---|---|---|
+| `(low)` | 9.15 | [8.52, 9.79] | 16.5 s | 799 |
+| `(medium)` | 9.28 | [8.78, 9.79] | 46.1 s | 2555 |
+| `(high)` | 9.34 | [8.89, 9.80] | 74.9 s | 4166 |
+
+Paired against `(low)`, over all 17 cases neither higher effort is separable:
+high +0.19 [-0.10, +0.53], p = 0.24. The gain sits on the six difficulty-3
+cases, which is the population the `hard` rule routes: high +0.75
+[+0.17, +1.39], paired bootstrap p = 0.034, better on 3 and worse on none.
+Medium there is +0.54 [-0.20, +1.32], p = 0.14. On the 11 difficulty-2 cases
+high is -0.12 [-0.30, 0.00] and takes three to five times as long. Six cases is
+a small population, so treat the hard-band result as the best evidence there
+is, not a settled one.
+
+Verdict: in the `conserve` ruleset `hard` goes to grok `(high)` on the new
+`frontier_grok_high` route, and every other rule that moved off astra stays on
+grok `(low)`. Against the stored astra `(low)` scores, grok `(high)` sits
++0.17 [-0.40, +0.64] on the 15 shared cases and 8.95 against 9.03 on the six
+hard ones. None of this qualifies grok for a lane, and those rules still record
+`evidence: weak`: the `auto` rules use astra at medium and high, not low.
+
+glm-5.3 `(high)` was a fourth route. It returned empty replies on two of the
+first nine cases, which stops a run, and was dropped.
+
 ## Evidence so far
 
 Measured through the proxy on 2026-09-19. One streamed 400-token coding prompt

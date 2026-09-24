@@ -53,7 +53,7 @@ def test_shipped_tool_tiers(task, difficulty, harm, tools, model, effort, rule):
         (3.2, .1, True, "gpt-6-astra", "xhigh"),
         (2.6, .9, False, "gpt-6-astra", "medium"),
         # The rest of what `auto` sends to astra goes to grok, unqualified.
-        (2.6, .1, False, "grok-4.6", "low"),
+        (2.6, .1, False, "grok-4.6", "high"),
         (2.0, .1, True, "grok-4.6", "low"),
         (1.8, .5, False, "grok-4.6", "low"),
     ],
