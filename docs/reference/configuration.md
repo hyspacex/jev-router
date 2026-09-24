@@ -48,7 +48,8 @@ exactly as it did.
 
 An alias opts into the first with `session_mode: strict` and into the last with
 `adaptive_effort: true`; a rule joins a lane with `lane: <name>`. The shipped
-`router.yaml` enables `session_routing` and exposes one strict alias, `auto`.
+`router.yaml` enables `session_routing` and exposes two strict aliases, `auto`
+and `auto-conserve`.
 It configures quality lanes, keeps `distribution_policy: off`, asks no extra
 shadow questions, and keeps the effort experiment off.
 

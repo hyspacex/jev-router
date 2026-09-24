@@ -181,6 +181,25 @@ spent provider.
 `exhausted_at: 100` refuses only a fully spent window. Lower it to keep a
 reserve for sessions already running.
 
+### Saving a provider on purpose
+
+Pressure never lowers the quality bar for `auto`. When you would rather keep
+working on a weaker model than stop, say so by resolving `auto-conserve`
+instead. It asks Jev the same questions and routes the same way except for
+the work `auto` sends to astra:
+
+| work | `auto` | `auto-conserve` |
+|---|---|---|
+| very hard (difficulty 3.0 and up) | astra xhigh | astra xhigh |
+| high harm if wrong | astra medium | astra medium |
+| hard, hard image, careful moderate | astra | grok low |
+| Jev unsure, Jev down, no rule matched | astra medium | grok low |
+
+grok is not qualified for that work, so those decisions record
+`evidence: weak`. The choice is yours and is made per session: no quota
+reading switches it on, and an open session keeps what it was bound to. For
+the Codex adapter, restart it with `--alias auto-conserve`.
+
 ### Seeing it
 
 ```sh
