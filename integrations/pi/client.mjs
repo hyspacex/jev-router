@@ -13,6 +13,13 @@ export class RouterError extends ContractError {
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 /**
+ * The strict aliases the picker offers. `auto-conserve` keeps astra for the
+ * hardest and high-harm work and sends the rest of astra's work to grok; the
+ * router owns what that means, the client only names it.
+ */
+export const ALIASES = ["auto", "auto-conserve"];
+
+/**
  * Router codes that mean the request was definitively refused before the
  * provider saw it (`docs/SESSION_ROUTING.md`: "Definitively rejected before
  * acceptance: retried normally"). Everything else keeps the block: a
@@ -29,20 +36,33 @@ export const PRE_ACCEPTANCE_CODES = new Set([
   "NO_SAFE_ADMISSION",
   "CONTEXT_BUDGET_EXCEEDED",
   "UNSUPPORTED_PROFILE",
+  "PROVIDER_UNAVAILABLE",
 ]);
 
 /**
- * The machine code of a refused response, and nothing else from its body.
- * Provider and router message text is never read out, so it cannot reach a
- * transcript, a log line or an error message.
+ * The machine code of a refused response and, when the router gave one, the
+ * whole seconds until the provider can serve again. Nothing else is read from
+ * the body: provider and router message text never reach a transcript, a log
+ * line or an error message.
  */
-export async function readErrorCode(response) {
+export async function readRefusal(response) {
+  let code = `HTTP_${response.status}`, retryAfterSeconds;
   try {
-    const body = await response.json();
-    const code = body?.error?.code;
-    if (typeof code === "string" && /^[A-Z][A-Z_]{2,63}$/.test(code)) return code;
+    const error = (await response.json())?.error;
+    if (typeof error?.code === "string" && /^[A-Z][A-Z_]{2,63}$/.test(error.code)) code = error.code;
+    const wait = error?.retry_after_seconds;
+    if (Number.isSafeInteger(wait) && wait >= 0) retryAfterSeconds = wait;
   } catch { /* not a structured router error */ }
-  return `HTTP_${response.status}`;
+  return {code, retryAfterSeconds};
+}
+
+/** The machine code of a refused response, and nothing else from its body. */
+export async function readErrorCode(response) {
+  return (await readRefusal(response)).code;
+}
+
+function waitText(seconds) {
+  return seconds < 3600 ? `${Math.max(1, Math.ceil(seconds / 60))} min` : `${Math.ceil(seconds / 3600)} h`;
 }
 
 const CONTRACT_FIELDS = ["model_key", "wire_model", "protocol", "context_window",
@@ -106,13 +126,20 @@ export class StrictClient {
       body: JSON.stringify(payload), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
     });
     if (!response.ok) {
-      throw new RouterError(await readErrorCode(response), "No new binding was created by the client.");
+      const {code, retryAfterSeconds} = await readRefusal(response);
+      throw new RouterError(code, retryAfterSeconds === undefined
+        ? "No new binding was created by the client."
+        : `No binding was created. The chosen model's quota resets in about ${waitText(retryAfterSeconds)}.`);
     }
     return response.json();
   }
-  async bind(request, signal) {
+  async bind(request, signal, alias = "auto") {
     if (this.state.closed) throw new ContractError("This binding is closed. Start a new Pi session.");
+    if (!ALIASES.includes(alias)) throw new ContractError(`Unknown router alias; expected one of ${ALIASES.join(", ")}.`);
     if (this.state.binding) {
+      // A binding made before aliases were recorded was made under `auto`.
+      const bound = this.state.alias ?? "auto";
+      if (bound !== alias) throw new ContractError(`This session is bound under ${bound}. Use /new to work under ${alias}.`);
       if (!this.resumed) {
         const value = await this.control("/router/resolve", {schema_version: "1", intent: "resume", session_id: this.state.sessionId, request_id: randomUUID(), client: "pi"}, signal);
         const binding = validateBinding(value, this.state.sessionId);
@@ -129,9 +156,10 @@ export class StrictClient {
       throw new ContractError("Strict auto requires fresh work. Imported/forked or previously started conversations cannot be admitted as new; use /new.");
     }
     // Persist the session ID before admission so an interrupted resolve cannot create a second binding.
+    this.state.alias = alias;
     this.persist();
     const value = await this.control("/router/resolve", {
-      schema_version: "1", intent: "new", session_id: this.state.sessionId, request_id: "admission", alias: "auto", client: "pi",
+      schema_version: "1", intent: "new", session_id: this.state.sessionId, request_id: "admission", alias, client: "pi",
       client_contract: {dynamic_metadata: true, protocols: ["openai-chat"], fresh_execution_context: true, turn_boundary_reporting: false},
       request, limits: {max_output_tokens: this.maxOutputTokens},
     }, signal);
