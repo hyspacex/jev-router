@@ -1,0 +1,77 @@
+:root { color-scheme: dark; --bg: #0c111b; --panel: #141c29; --line: #2a3749; --text: #e5edf8; --muted: #9aaec5; --accent: #83dec8; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; }
+header { padding: 32px 32px 20px; display: flex; justify-content: space-between; gap: 24px; align-items: center; }
+h1 { margin: 8px 0; font-size: clamp(24px, 3vw, 36px); letter-spacing: -.035em; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+h3 { margin: 24px 0 10px; font-size: 14px; }
+p { line-height: 1.6; }
+.eyebrow { color: var(--accent); letter-spacing: .16em; font-size: 11px; font-weight: 700; }
+.muted, small, footer { color: var(--muted); }
+.connection { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#connection { color: var(--accent); font-size: 12px; min-width: 140px; }
+button, input, select { font: inherit; border: 1px solid var(--line); background: #101824; color: var(--text); border-radius: 7px; padding: 9px 11px; }
+button { cursor: pointer; }
+button:hover { background: #213548; border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.auth { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 32px; border-block: 1px solid var(--line); background: #101824; }
+.auth .muted { font-size: 12px; }
+#token { width: 230px; }
+#connect { color: var(--accent); }
+#error { margin: 16px 32px; padding: 12px; background: #39251f; color: #ffd2b8; border-radius: 7px; }
+main { padding: 24px 32px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stats article { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 18px 20px; }
+.stats span { display: block; font-size: 12px; color: var(--muted); }
+.stats strong { display: block; font-size: 32px; font-weight: 550; margin: 8px 0; }
+.stats small { font-size: 11px; }
+.filters { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; }
+.filters label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 12px; }
+.filters label:first-child { flex: 1; min-width: 220px; }
+.filters input, .filters select { height: 38px; }
+.workspace { display: grid; grid-template-columns: 210px minmax(0, 1fr) 350px; gap: 16px; align-items: start; }
+.sessions, .feed, .detail { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.sessions, .detail { padding: 18px; max-height: 78vh; overflow-y: auto; }
+.sessions p { font-size: 12px; }
+.group { display: block; width: 100%; text-align: left; margin: 8px 0; font-size: 12px; overflow-wrap: anywhere; }
+.selected { background: #203d43; }
+button.selected { border-color: var(--accent); color: var(--accent); }
+.section-heading { padding: 18px; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.section-heading h2 { margin: 0; }
+.section-heading span { font-size: 12px; }
+.table-scroll { overflow: auto; max-height: 70vh; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+th { color: var(--muted); background: #192434; font-size: 11px; font-weight: 500; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+th, td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td { max-width: 250px; overflow-wrap: anywhere; }
+td small { display: block; margin-top: 6px; font-size: 10px; }
+td button { font-size: 11px; padding: 5px 8px; }
+.empty { padding: 18px; color: var(--muted); }
+.pair { margin: 10px 0; }
+dt { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+dd { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.notice { padding: 10px 12px; background: #1c303b; border-left: 2px solid var(--accent); font-size: 12px; }
+.detail .muted { font-size: 12px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #0e1622; border: 1px solid var(--line); border-radius: 7px; padding: 12px; font-size: 11px; line-height: 1.6; }
+summary { cursor: pointer; color: var(--accent); margin-top: 20px; }
+.decision-hero { background: #19343b; border: 1px solid #38645e; border-radius: 9px; padding: 16px; }
+.decision-hero h3 { font-size: 22px; margin: 10px 0 14px; overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge { padding: 5px 8px; border-radius: 5px; background: #263f50; font-size: 11px; }
+.badge.warning { background: #5a3a24; color: #ffdbb4; }
+.outcome-summary { margin-bottom: 0; font-size: 12px; }
+.judgments { display: grid; gap: 10px; }
+.judgment-card, .rule-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #101b29; }
+.judgment-name { display: block; text-transform: capitalize; color: var(--muted); font-size: 12px; }
+.judgment-value { display: block; font-size: 26px; margin: 8px 0; overflow-wrap: anywhere; }
+.judgment-card small, .rule-card small { display: block; font-size: 11px; line-height: 1.6; }
+.judgment-meter { margin-top: 12px; }
+.meter-heading { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; margin-bottom: 6px; }
+progress { display: block; width: 100%; height: 9px; accent-color: var(--accent); }
+.rule-card { margin-top: 16px; border-left: 3px solid var(--accent); }
+.rule-card h3 { margin-top: 10px; text-transform: capitalize; }
+.conditions { padding-left: 18px; line-height: 1.8; font-size: 13px; }
+.detail details { margin-bottom: 12px; }
+footer { max-width: 1000px; padding: 24px 0; line-height: 1.7; font-size: 12px; }
+@media (max-width: 1350px) { .workspace { grid-template-columns: 190px minmax(0, 1fr); } .detail { grid-column: 1 / -1; max-height: none; } }
+@media (max-width: 750px) { header { flex-direction: column; align-items: flex-start; padding: 20px 16px; } main { padding: 16px; } .auth { padding: 14px 16px; } .stats { grid-template-columns: repeat(2, 1fr); gap: 10px; } .workspace { grid-template-columns: 1fr; } .sessions { max-height: 240px; } .stats article { padding: 14px; } .detail { grid-column: auto; } }
