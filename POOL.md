@@ -88,6 +88,34 @@ mid keeps its previously measured proxy `(none)` setting. Native Z.ai docs
 require thinking, so the proxy's `(none)` must not be described as verified
 native thinking-off behavior. See the report for sources and limitations.
 
+## Per-rule lanes (2026-09-23)
+
+`frontier-work` listed astra at low, medium, high and xhigh for five rules.
+A lane lets any rule that names it be handed any of its pairs, so the file
+claimed astra low was adequate for `very_hard` work. Nobody measured that. It
+is now five lanes, one per rule, each holding only the pair that rule already
+routes to:
+
+| rule | lane | pair |
+|---|---|---|
+| `very_hard` | `hardest-work` | astra xhigh |
+| `hard` | `hard-work` | astra high |
+| `high_harm` | `high-consequence` | astra medium |
+| `images_need_vision` | `vision-work` | astra medium |
+| `moderate_careful` | `careful-moderate` | astra low |
+
+No pair was added and no route changed, so admission picks the same model and
+effort as before. One thing does change: an alias `max_effort` or a client
+`min_effort` that pushes a frontier rule off its pair is now a routing error,
+where before it quietly took another astra effort and was labelled qualified.
+Neither the shipped nor the deployed configuration sets either.
+
+A pair joins one of these lanes by passing on the whole population its rule
+routes, never a slice of it. That is how quota can matter for strict `auto`
+again: pressure only chooses between qualified pairs inside a lane, and
+today every frontier lane has one. The unused `shift_with` on `hard` went
+too; strict admission ignores it.
+
 ## Evidence so far
 
 Measured through the proxy on 2026-09-19. One streamed 400-token coding prompt

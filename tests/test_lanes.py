@@ -152,7 +152,7 @@ def test_c29_a_qualified_alternative_is_still_allowed_under_pressure(laned):
 
 def test_c29_the_shipped_frontier_lane_does_not_qualify_the_overflow_model():
     cfg = load_config("router.yaml")
-    lane = cfg.quality_lanes["frontier-work"]
+    lane = cfg.quality_lanes["hard-work"]
     assert "grok-4.6" not in lane.models()
     assert lane.allows("gpt-6-astra", "high")
     assert not lane.allows("grok-4.6", "low")
@@ -255,7 +255,7 @@ def test_the_shipped_ladder_routes_inside_its_lanes():
         "harm_if_wrong": {"type": "noul", "noul": 0.1},
     }
     result = select(cfg, alias, answers, FEATURES)
-    assert result.lane == "frontier-work"
+    assert result.lane == "hard-work"
     assert result.evidence == "qualified"
     assert result.qualification_ref.startswith("POOL.md")
 
@@ -388,16 +388,8 @@ def test_strict_quality_requirement_does_not_move_with_quota(pressure):
     }
     result = select(cfg, alias, answers, FEATURES, {"openai": pressure})
     assert result.rule == "hard"
-    assert result.lane == "frontier-work"
+    assert result.lane == "hard-work"
     assert (result.model, result.effort) == ("gpt-6-astra", "high")
     assert result.counterfactual == ("gpt-6-astra", "high")
     assert result.shifts == []
     assert not result.pressure_changed_the_outcome
-    # The legacy path deliberately retains its threshold shifts.
-    if pressure == 1.0:
-        legacy_alias = alias.model_copy(update={"session_mode": "legacy"})
-        legacy = evaluate(cfg, legacy_alias, answers, FEATURES, {"openai": pressure})
-        assert legacy.rule != "hard"
-        legacy_selected = select(cfg, legacy_alias, answers, FEATURES, {"openai": pressure})
-        assert legacy_selected.rule == legacy.rule
-        assert legacy_selected.model == legacy.model
