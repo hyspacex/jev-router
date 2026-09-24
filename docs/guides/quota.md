@@ -192,7 +192,8 @@ the work `auto` sends to astra:
 |---|---|---|
 | very hard (difficulty 3.0 and up) | astra xhigh | astra xhigh |
 | high harm if wrong | astra medium | astra medium |
-| hard, hard image, careful moderate | astra | grok low |
+| hard | astra high | grok high |
+| hard image, careful moderate | astra | grok low |
 | Jev unsure, Jev down, no rule matched | astra medium | grok low |
 
 grok is not qualified for that work, so those decisions record

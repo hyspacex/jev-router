@@ -83,6 +83,9 @@ cases were written, not sampled.
 | `astra` | `gpt-6-astra(low)` | openai | True |
 | `luna` | `gpt-5.6-luna(low)` | openai | True |
 | `grok-4.6` | `grok-4.6(low)` | xai | unknown |
+| `grok-4.6-medium` | `grok-4.6(medium)` | xai | unknown |
+| `grok-4.6-high` | `grok-4.6(high)` | xai | unknown |
+| `glm-5.3-high` | `ollama/glm-5.3(high)` | local | False |
 
 `glm-5.3` and `kimi-k3` are never sent without an effort suffix. At their default effort both think until the token budget is gone and can return empty content. `gemma4-31b` has no reasoning mode and takes no suffix. `grok-4.6` without `(low)` takes about 11 seconds to first token.
 
@@ -302,6 +305,53 @@ Worth reading:
 - `grok-4.6` on `other-simple-question-proof-78`: scored 6.0 — contains_all 0.00: missing ['1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5', 'C_?15|Z_?15|Z/15|cyclic of order 15|C_?5[^\\n]{0,12}C_?3|Z_?5[^\\n]{0,12}Z_?3']; cont
 - `astra` on `other-simple-question-proof-78`: scored 6.8 — contains_all 0.50: missing ['1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5']; contains_all 0.00: missing ['trivial(ly)? intersect|intersection is trivial|only the 
 - `grok-4.6` on `other-buy-vs-rent-84`: scored 6.4 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']; contains_all 0.00: missing ['64[,.]?9|63[,.]?\\d|65[,.]?\\d|rent over']
+
+## conserve — Which effort should grok-4.6 take the work auto-conserve moves off astra at?
+
+- run: 2026-09-24T06:50:25+00:00
+- cases: 17 of 17 planned, 2 samples per case per route
+- incumbent: `grok-4.6`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `grok-4.6` | 9.15 | [8.52, 9.79] | 0.13 | 5.0 | 16/17 | 13/17 | 16.5 | 799 | 0.0 | 0 |
+| `grok-4.6-medium` | 9.28 | [8.78, 9.79] | 0.09 | 6.8 | 16/17 | 14/17 | 46.1 | 2555 | 0.0 | 0 |
+| `grok-4.6-high` | 9.34 | [8.89, 9.80] | 0.13 | 6.9 | 16/17 | 14/17 | 74.9 | 4166 | 0.0 | 0 |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `grok-4.6-medium` | fail | 17 | 9.28 | 9.15 | -0.13 | no | 0.36x | no | neither 30% faster nor on another provider |
+| `grok-4.6-high` | fail | 17 | 9.34 | 9.15 | -0.19 | no | 0.22x | no | neither 30% faster nor on another provider |
+
+Per case, mean of the samples:
+
+| case | `grok-4.6` | `grok-4.6-medium` | `grok-4.6-high` |
+|---|---|---|---|
+| code-sql-window-query-05 | 10.0 | 10.0 | 9.6 |
+| code-prose-shaped-really-code-09 | 10.0 | 8.3 | 10.0 |
+| design-index-strategy-26 | 10.0 | 10.0 | 10.0 |
+| writing-medical-discharge-38 | 9.4 | 10.0 | 8.6 |
+| summarise-meeting-notes-dates-61 | 8.6 | 8.6 | 8.6 |
+| summarise-trial-abstract-66 | 10.0 | 10.0 | 10.0 |
+| quick-borrow-checker-misleading-75 | 10.0 | 10.0 | 10.0 |
+| adv-five-second-cron-tz-96 | 10.0 | 10.0 | 10.0 |
+| adv-static-markup-rounding-99 | 8.5 | 8.5 | 8.5 |
+| multiturn-ratelimiter-continue-138 | 10.0 | 10.0 | 10.0 |
+| multilingual-pt-coorte-retencao-161 | 10.0 | 10.0 | 10.0 |
+| debug-go-deadlock-short-40-11 | 10.0 | 10.0 | 10.0 |
+| debug-adversarial-injection-in-log-16 | 9.0 | 10.0 | 10.0 |
+| writing-investor-update-numbers-44 | 7.7 | 8.5 | 9.2 |
+| other-simple-question-proof-78 | 7.5 | 6.8 | 7.5 |
+| other-probability-puzzle-79 | 10.0 | 10.0 | 10.0 |
+| other-buy-vs-rent-84 | 5.0 | 7.2 | 6.9 |
+
+Worth reading:
+
+- `grok-4.6-medium` on `other-simple-question-proof-78`: scored 6.8 — contains_all 0.00: missing ['1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5', 'C_?15|Z_?15|Z/15|cyclic of order 15|C_?5[^\\n]{0,12}C_?3|Z_?5[^\\n]{0,12}Z_?3']; cont
+- `grok-4.6` on `other-buy-vs-rent-84`: scored 5.0 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']; contains_all 0.67: missing ['1,?8\\d\\d|1,?9\\d\\d|2,?0\\d\\d']; contai
+- `grok-4.6-high` on `other-buy-vs-rent-84`: scored 6.9 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']
 
 ## Grading-spec corrections made during the run
 

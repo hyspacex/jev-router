@@ -160,7 +160,7 @@ models:
     context_window: 500000
     supports_tools: true
     supports_vision: true
-    efforts: [low]
+    efforts: [low, medium, high]
     default_effort: low           # at default effort the first token takes about 11 s
     effort_style: suffix
     tags: [frontier, cloud]
@@ -224,6 +224,10 @@ routes:
   frontier_grok:
     description: Frontier-class work while astra is being saved. Only auto-conserve routes here.
     primary: {model: grok-4.6, effort: low}
+
+  frontier_grok_high:
+    description: Hard work while astra is being saved. Only auto-conserve routes here.
+    primary: {model: grok-4.6, effort: high}
 
 # Quality lanes: which model and effort pairs somebody has measured for which
 # kind of work, and where the evidence is.
@@ -748,7 +752,7 @@ rulesets:
   # The owner's trade, chosen per session by resolving `auto-conserve`: astra
   # is kept for the hardest work and for work where a mistake costs more than
   # quota, and the rest of what `auto` sends to astra goes to grok, the other
-  # frontier-class model. grok is not qualified for that work (POOL.md: 0.72
+  # frontier-class model: high for hard work, low for the rest. grok is not qualified for that work (POOL.md: 0.72
   # below astra on nine hard cases), so those rules name no lane and every
   # decision they make records `evidence: weak`. Quota readings never switch
   # this on; the caller does.
@@ -768,10 +772,14 @@ rulesets:
         when:
           has_images: true
         use: {route: frontier_grok}
+      # High, not low, on hard work only: POOL.md, "grok effort for
+      # auto-conserve (2026-09-23)". On the six difficulty-3 cases it scored
+      # 0.75 above low and was never worse; on easier work it gained nothing
+      # and took three to five times as long.
       - name: hard
         when:
           difficulty: {gte: 2.4}
-        use: {route: frontier_grok}
+        use: {route: frontier_grok_high}
       - name: moderate_careful
         when:
           task: {not_in: [code-edit]}

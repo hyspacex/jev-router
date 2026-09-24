@@ -52,6 +52,18 @@ routes:
     upstream: "grok-4.6(low)"
     provider: xai
     vision: unknown
+  grok-4.6-medium:
+    upstream: "grok-4.6(medium)"
+    provider: xai
+    vision: unknown
+  grok-4.6-high:
+    upstream: "grok-4.6(high)"
+    provider: xai
+    vision: unknown
+  glm-5.3-high:
+    upstream: "ollama/glm-5.3(high)"
+    provider: local
+    vision: false
 
 steps:
 
@@ -160,6 +172,39 @@ steps:
 # directory and sent as base64 data URLs; they are never committed. Every
 # expected value below is what the generator drew, so nobody has to read the
 # picture to grade the answer.
+
+  conserve:
+    question: "Which effort should grok-4.6 take the work auto-conserve moves off astra at?"
+    incumbent: grok-4.6
+    # glm-5.3(high) was a fourth route. It returned two empty replies in the
+    # first nine cases, which stops the run, and scored 0 on one of them, so
+    # it was dropped on 2026-09-23 and the step resumed from the cache.
+    routes: [grok-4.6, grok-4.6-medium, grok-4.6-high]
+    # No OpenAI route is called: this step exists because that allowance is
+    # nearly spent. The astra reference is the per-case scores the mid,
+    # faithfulness and frontier steps stored (astra at low, 15 of 17 cases).
+    samples: 2
+    cases:
+      # Every frontier-labelled case below the xhigh band that has
+      # programmatic checks, so no judge call is made. Tool-bearing cases are
+      # left out: the graded route is sent no tool schemas.
+      - code-sql-window-query-05
+      - code-prose-shaped-really-code-09
+      - design-index-strategy-26
+      - writing-medical-discharge-38
+      - summarise-meeting-notes-dates-61
+      - summarise-trial-abstract-66
+      - quick-borrow-checker-misleading-75
+      - adv-five-second-cron-tz-96
+      - adv-static-markup-rounding-99
+      - multiturn-ratelimiter-continue-138
+      - multilingual-pt-coorte-retencao-161
+      - debug-go-deadlock-short-40-11
+      - debug-adversarial-injection-in-log-16
+      - writing-investor-update-numbers-44
+      - other-simple-question-proof-78
+      - other-probability-puzzle-79
+      - other-buy-vs-rent-84
 
 image_cases:
 
