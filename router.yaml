@@ -350,6 +350,10 @@ quota_policy:
   max_change_per_poll: 0.25     # one poll may not swing routing
   # What pressure does.
   demote_above: 0.6             # a lane entry over this drops behind healthy ones
+  # What a reading can refuse. A fresh window at or above this refuses a new
+  # strict binding to its provider with PROVIDER_UNAVAILABLE and its reset
+  # time. 100 means spent; lower it to keep a reserve.
+  exhausted_at: 100
 
 # Strict sessions. A legacy alias pins a conversation for six hours and may
 # replace the model when the conversation no longer fits it. A strict alias

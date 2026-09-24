@@ -112,6 +112,7 @@ quota_policy:
   hysteresis: 0.05             # a smaller move than this is ignored
   max_change_per_poll: 0.25    # one poll may not swing routing
   demote_above: 0.6            # a route entry over this drops behind healthy ones
+  exhausted_at: 100            # a fresh window at this refuses new strict bindings
 ```
 
 The expected percent comes from the source when it reports one, otherwise from
@@ -131,8 +132,11 @@ the two.
 
 Three things, all bounded.
 
-**It shifts a threshold.** A rule condition may say which provider it is
-sensitive to and by how much:
+**It shifts a threshold, on a legacy alias only.** Strict admission, which
+is what the shipped `auto` uses, matches every cutoff at zero pressure, so
+there pressure can only choose between the pairs a rule's quality lane
+qualifies. A legacy rule condition may say which provider it is sensitive to
+and by how much:
 
 ```yaml
 - name: hard
@@ -160,6 +164,22 @@ protected rules and the top difficulty band. Everything else moves to the next
 entry in its route, or falls through to a cheaper rule.
 
 Pressure never touches a pinned conversation. It affects new decisions only.
+
+### When a window is spent
+
+Pressure is about pace. Whether a provider can serve at all is a separate
+fact: a fresh window used at or above `exhausted_at` means that provider is
+spent until the window resets. A strict binding never moves, so binding one to
+a spent provider would promise a session that can only fail. Strict admission
+refuses it instead with `PROVIDER_UNAVAILABLE` (503), naming the window, its
+`resets_at` and `retry_after_seconds`. The caller decides what next: wait,
+resolve again with `candidate_models` naming another model, or use a concrete
+model. Stale, errored and unknown readings never count as spent, and an
+existing binding is not touched. `quota --poll` prints `EXHAUSTED` beside a
+spent provider.
+
+`exhausted_at: 100` refuses only a fully spent window. Lower it to keep a
+reserve for sessions already running.
 
 ### Seeing it
 

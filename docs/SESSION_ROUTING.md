@@ -319,6 +319,7 @@ Every error is a structured body with a stable machine code:
 | `SESSION_CLOSED` | 410 | Closed, pruned, or a prepared contract that expired. |
 | `PROFILE_CHANGED` | 409 | The profile was revoked or its configured limits fell below the contract. The session is `blocked` and the binding is kept. |
 | `NO_SAFE_ADMISSION` | 422 | No qualified candidate, or no classifier answer and no configured fallback. |
+| `PROVIDER_UNAVAILABLE` | 503 | A fresh quota reading says the chosen model's provider is spent. Carries `window`, `resets_at` and `retry_after_seconds`. Nothing is bound. |
 | `CONTEXT_BUDGET_EXCEEDED` | 422 | `I + O + S` does not fit `C`, or the request asks for more output than the negotiated ceiling. |
 | `UNSUPPORTED_PROFILE` | 422 | Unsupported protocol or endpoint, tools or images the profile cannot take, or the session service switched off. |
 | `REQUEST_ALREADY_COMPLETED` | 409 | A completed request id was sent again. |

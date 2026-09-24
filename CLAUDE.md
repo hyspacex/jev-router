@@ -97,7 +97,7 @@ uv run python evals/qualify_effort.py --profile <key> --plan
 - `sessions.py` — strict session bindings and the bounded request-ID history,
   on the connection `pins.py` owns. Conditional version writes, the in-process
   execution claim, the startup guard, the binding digest, the resolve request
-  schema and the 13 error codes. Legacy pins are never read or written here.
+  schema and the 14 error codes. Legacy pins are never read or written here.
   Also the decision-log columns the semantic packet and the quality guard add,
   in a map of their own, and the `turn_plans` ledger with the session columns
   the effort experiment adds, in another.
@@ -198,7 +198,11 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - Quota pressure may only make a provider harder to reach. Shifts are bounded
   by `max_shift`, monotone in pressure, and one-directional. A `protected`
   rule ignores them. Only an `equivalent: true` entry may be promoted ahead of
-  a route's primary.
+  a route's primary. Strict admission ignores shifts altogether.
+- A spent provider is an availability fact, not pressure. A fresh window at
+  `exhausted_at` refuses a new strict binding to it with
+  `PROVIDER_UNAVAILABLE` and the reset time. A stale, errored or unknown
+  reading never counts as spent, and an existing binding is never touched.
 - Revalidate every pin against current alias/client permitted models, effort
   bounds, tools, vision and context. Only hard infeasibility permits replacing
   a pin, with a new decision id; search all eligible models, not just larger

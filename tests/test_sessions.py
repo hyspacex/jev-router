@@ -22,6 +22,7 @@ from test_app import JEV_URL, jev_answers, mock_jev
 from jev_router.config import RouterConfig, SessionRoutingCfg, load_config
 from jev_router.features import estimate_input, text_tokens
 from jev_router.pins import Store
+from jev_router.quota import QuotaWindow
 from jev_router.policy import MIN_RESERVE_TOKENS, context_budget
 from jev_router.sessions import (
     ERROR_STATUS,
@@ -245,6 +246,25 @@ async def test_an_empty_intersection_has_no_safe_admission(caller):
     assert code(response) == "NO_SAFE_ADMISSION"
     assert jev.call_count == 0
 
+
+
+@respx.mock
+async def test_a_spent_provider_is_refused_with_its_reset_time(caller, service):
+    mock_jev()
+    quota = service.router.quota
+    resets = quota.clock() + 3600
+    quota.exhausted = lambda: {
+        service.config.provider_of("small"): QuotaWindow(
+            name="weekly", used_percent=100.0, resets_at=resets
+        )
+    }
+    response = await caller.resolve()
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_UNAVAILABLE"
+    assert (error["window"], error["resets_at"]) == ("weekly", resets)
+    assert 3500 < error["retry_after_seconds"] <= 3600
+    assert service.sessions.get(caller.session_id) is None
 
 @respx.mock
 async def test_an_unknown_candidate_model_is_a_schema_error(caller):
@@ -757,7 +777,7 @@ def test_the_request_history_is_bounded_but_keeps_unresolved_outcomes(tmp_path):
 
 
 def test_every_error_code_of_the_vocabulary_is_defined():
-    assert len(ERROR_STATUS) == 13
+    assert len(ERROR_STATUS) == 14
     assert ERROR_STATUS["SESSION_CLOSED"] == 410
     assert ERROR_STATUS["TURN_NOT_SETTLED"] == 409
     assert ERROR_STATUS["EFFORT_HISTORY_MISMATCH"] == 409

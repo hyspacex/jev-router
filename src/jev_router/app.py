@@ -210,6 +210,39 @@ class Router:
             log.exception("could not read quota pressure, routing without it")
             return {}
 
+    def refuse_if_exhausted(self, model: str) -> None:
+        """Refuse a strict binding to a provider a fresh reading says is spent.
+
+        A binding never moves, so binding one to a spent provider promises a
+        session that can only fail. Pressure has already had its say: if the
+        lane held a qualified pair elsewhere, admission would have taken it.
+        What is left is the caller's decision, so it gets the reset time.
+        """
+        provider = self.config.provider_of(model)
+        try:
+            window = self.quota.exhausted().get(provider)
+        except Exception:  # noqa: BLE001 - quota may never fail a request
+            log.exception("could not read quota exhaustion, admitting without it")
+            return
+        if window is None:
+            return
+        detail: dict[str, Any] = {
+            "provider": provider,
+            "model": model,
+            "window": window.name or None,
+            "resets_at": window.resets_at,
+        }
+        if window.resets_at is not None:
+            detail["retry_after_seconds"] = max(
+                0, int(window.resets_at - self.quota.clock())
+            )
+        raise SessionError(
+            S.PROVIDER_UNAVAILABLE,
+            f"{provider} quota is spent ({window.name or 'usage'} at "
+            f"{window.percent:.0f}%), and {model} is what this work qualified for",
+            detail=detail,
+        )
+
     def quota_status(self) -> dict[str, str]:
         """One word per provider. Unknown is reported, never read as zero."""
         status = {name: "unknown" for name in self.config.provider_names()}
@@ -900,6 +933,7 @@ class Router:
                 )
             except RoutingError as exc:
                 raise SessionError(S.NO_SAFE_ADMISSION, str(exc)) from None
+        self.refuse_if_exhausted(model)
 
         mcfg = config.models[model]
         if mcfg.protocol not in set(req.client_contract.protocols):
