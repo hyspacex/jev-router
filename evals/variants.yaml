@@ -664,7 +664,9 @@ variants:
                 task: {not_in: [code-edit]}
                 difficulty: {gte: 1.4}
                 harm_if_wrong: {gte: 0.45}
-              use: {route: frontier_low}
+              # Was `route: frontier_low`, which router.yaml no longer has.
+              # Named directly so this arm still routes as it was measured.
+              use: {model: gpt-6-astra, effort: low}
             - name: moderate
               when: {difficulty: {gte: 1.4}}
               use: {route: mid}

@@ -379,6 +379,12 @@ class ModelCfg(Base):
     effort_style: Literal["suffix", "param", "none"] = "none"
     tags: list[str] = Field(default_factory=list)
     description: str = ""
+    # What one reply from this model spends of its provider's allowance,
+    # against the provider's most expensive model at 1. Quota pressure on the
+    # provider is scaled by it, so a cheaper model on a busy subscription is
+    # less pressured than the expensive one beside it. It can only ever lower
+    # a model's pressure, never raise it.
+    quota_cost: float = Field(default=1.0, gt=0, le=1)
     # --- execution profile, used by strict sessions ---------------------
     # The wire protocol this deployment actually speaks. Configure what the
     # endpoint does, not what the model family supports elsewhere.

@@ -24,6 +24,7 @@ per step, so these show clear differences and nothing finer.
 | glm-5.3 `(none)` | Takes the mid lane | 9.70 against the frontier model's 9.31 on 12 moderate code and analysis cases, at a third of the latency |
 | gemma4-31b | Takes easy requests that carry an image. Not the general fast lane | Read all four test images. Scored 0.62 below the current fast model on plain easy work, mostly by over-answering |
 | gpt-5.6-luna `(low)` | Fallback for the fast, image and mid lanes | Good answers (9.72) but slower than the frontier model on the same provider, so it buys nothing as a primary |
+| gpt-6-luna `(low)`, gpt-6-sol `(low)` and `(xhigh)` | Equivalents in both directions (2026-09-24). gpt-5.6-luna left the pool | See "GPT-6 Sol and Luna (2026-09-24)" below |
 | grok-4.6 `(low)` | Fallback for the frontier lanes, never promoted by quota | 0.72 below the frontier model on nine hard cases |
 | kimi-k3 `(none)` | Not admitted | Lost 11 of 12 blind pairwise comparisons on creative prose and ignored hard constraints in the prompt. Tested with thinking off only |
 
@@ -156,6 +157,84 @@ hard ones. None of this qualifies grok for a lane, and those rules still record
 
 glm-5.3 `(high)` was a fourth route. It returned empty replies on two of the
 first nine cases, which stops a run, and was dropped.
+
+## GPT-6 Sol and Luna (2026-09-24)
+
+GPT-6 Sol and Luna came out, and the owner asked for two things: use astra
+more, at medium, and replace `auto-conserve`, which only ever saved astra, with
+balancing that works whichever subscription is busy. Four admission steps in
+`evals/ADMISSION.md` asked which pairs on different subscriptions, or at
+different prices on the same one, are equally good for the same rule. 232 live
+calls (about 170 OpenAI, 50 Ollama, 22 xAI), two samples per case, every score
+from programmatic checks except five judge-graded hard cases. Fourteen checks
+were found marking correct answers wrong while reading the replies (LaTeX
+notation, "not just a formality" read as "just a formality"); they were fixed
+and every route was regraded from the cache, as listed at the end of
+`evals/ADMISSION.md`.
+
+Intervals are 95% paired bootstrap intervals on the difference.
+
+| step | cases | reference | candidate | difference | latency |
+|---|---|---|---|---|---|
+| `mid6` | 12 moderate | glm-5.3 `(none)` 9.79 | gpt-6-sol `(low)` | -0.24 [-0.61, +0.09] | 9 s vs 5 s |
+| | | | gpt-6-luna `(low)` | -0.35 [-0.67, -0.10] | 6 s |
+| | | | astra `(medium)` | -0.51 [-1.09, -0.06] | 16 s |
+| | | | astra `(low)` | -0.26 [-0.53, -0.04] | 16 s |
+| `faithful6` | 5 faithfulness | astra `(medium)` 9.60 | glm-5.3 `(none)` | -0.10 [-0.30, 0.00] | 2 s vs 23 s |
+| | | | gpt-6-sol `(low)` | -0.40 [-0.75, -0.07] | 8 s |
+| | | | gpt-6-luna `(low)` | -0.47 [-1.18, 0.00] | 7 s |
+| `fast6` | 10 easy text | glm-5.3-flash 9.86 | gpt-6-luna `(low)` | -0.12 [-0.80, +0.43] | 3 s vs 2 s |
+| | 4 easy images | gemma4-31b 9.00 | gpt-6-luna `(low)` | -1.67 [-6.00, +1.00] | misread the digits twice |
+| `hard6` | 11 hard | astra `(high)` 9.45 | gpt-6-sol `(xhigh)` | -0.03 [-0.27, +0.17] | 31 s vs 35 s |
+| | | | gpt-6-sol `(high)` | -0.30 [-0.49, -0.06] | 23 s |
+| | | | grok-4.6 `(high)` | -0.40 [-1.15, +0.18] | 55 s |
+| | | | astra `(low)` | +0.10 [-0.07, +0.27] | 28 s |
+
+Prices, from OpenAI's API pricing page on 2026-09-24, per million input and
+output tokens: astra $10 and $50, sol $2 and $10, luna $0.10 and $0.50. The
+owner confirmed Codex meters its subscription the same way, so sol costs a
+fifth of astra's allowance and luna a hundredth. That is the models'
+`quota_cost` in `router.yaml`, and it is what lets sol take over from astra when
+OpenAI is busy although they share a subscription.
+
+Verdicts:
+
+- **glm-5.3 keeps moderate work.** It was the best route there. Astra medium
+  scored below it and is no better than astra low on this work, so moving
+  moderate work to astra medium is not supported.
+- **Careful moderate work moves from astra low to astra medium**, the best
+  route on the faithfulness cases. glm-5.3 joins that lane as the equivalent
+  for when OpenAI is busy. It sat 0.10 below. The routing eval's earlier finding
+  that all such work on the mid model under-routes nine cases still stands, so
+  glm-5.3 takes it only under pressure.
+- **gpt-6-sol `(low)` is the equivalent for glm-5.3** on moderate work when
+  Ollama is busy, with and without tools. Tool use rests on the owner's
+  decision that GPT-6 is fit for tool-driven coding; no tool task was run.
+- **gpt-6-luna `(low)` is the equivalent for glm-5.3-flash** on easy text work.
+  It is not admitted for images; gemma4-31b keeps them.
+- **gpt-6-sol `(xhigh)` is the equivalent for astra `(high)`** on hard work,
+  and takes it when OpenAI is busy. Sol `(high)` is measurably worse and is
+  not used.
+- **grok-4.6 `(high)` stays out of every lane.** Its mean is within 0.5 of
+  astra high, but its interval reaches 1.15 below and it is the slowest route.
+- **gpt-5.6-luna leaves the pool.** GPT-6 Luna replaces it as the cheap
+  OpenAI fallback. After regrading, it no longer passes the original `mid`
+  step against astra: it shares astra's subscription and is not faster.
+- **`auto-conserve` is retired.** `auto` now balances in both directions
+  between measured pairs, so no decision it makes is `evidence: weak`. The
+  alias stays, routing as `auto`, because one deployed session is bound under
+  it.
+
+Two limits. The hard cases sit near the ceiling: astra low scored as well as
+astra high, so they show sol xhigh is not worse than astra high without
+showing what extra effort buys at the top. Five of the hard cases are graded by
+a gpt-5.6-sol judge. Its own family did not come out ahead there: sol high lost
+all five to astra high.
+
+Ollama's usage numbers come from its settings page, not its API, so the
+`ollama` quota source reads them through codexbar with the browser's
+ollama.com session. Without a signed-in browser on the router's machine it
+reads as unknown, which is pressure 0.
 
 ## Evidence so far
 

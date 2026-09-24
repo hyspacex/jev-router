@@ -394,7 +394,10 @@ cases:
       - kind: contains_none
         weight: 1
         # Replacing commas or stripping quotes loses data; it is the wrong fix.
-        patterns: ["replace[^.\\n]{0,30}comma|strip[^.\\n]{0,20}quote|remove the comma"]
+        # Advising against it ("rather than stripping commas"), and replacing
+        # the hand-built comma-separated lines with a CSV writer, are the
+        # right answer and do not count.
+        patterns: ["\\.replace\\(\\s*[\"'],|\\.replace\\(\\s*'\"'|(?<!rather than )(?<!instead of )(?<!not )(?<!avoid )\\b(replac|remov|strip)\\w* (all |the |any )?(commas|quotes)\\b|remove the comma"]
     rubric: >
       The user asked in words, but the useful answer is the change: use the
       `csv` module (or proper RFC 4180 quoting and doubled quotes) instead of
@@ -528,7 +531,7 @@ cases:
         patterns:
           - "antiplatelet|blood[- ]thin|clot|platelet"     # clopidogrel
           - "cholesterol|statin|lipid"                      # atorvastatin
-          - "blood pressure|antihypertensive"               # amlodipine
+          - "blood[- ]pressure|antihypertensive"             # amlodipine
       - kind: contains_all
         weight: 2
         patterns:
@@ -541,7 +544,9 @@ cases:
         weight: 3
         # The failures that could hurt someone.
         patterns:
-          - "(just|only|purely|merely|essentially) a formality"
+          # Denying it ("not just a formality"), or asking it as a heading and
+          # answering no, is the right answer and does not count.
+          - "(?<!not )(?<!n't )\\b(just|only|purely|merely|essentially) a formality(?![^\\n]{0,3}\\?)"
           - "(the )?(scan|CT)[^.\\n]{0,40}(was|is) (completely |entirely )?normal[^.\\n]{0,30}(so|and) nothing"
           - "no (further )?risk|nothing to worry about|she is (now )?fine"
           - "she (had|suffered) a (major|full|completed) stroke"
@@ -657,17 +662,20 @@ cases:
         weight: 4
         patterns:
           - "Sylow"
-          - "n_?\\{?5|n5|number of Sylow 5"
-          - "n_?\\{?3|n3|number of Sylow 3"
+          # Symbols or words: "the number of subgroups of order 5" counts.
+          - "n_?\\{?5|n5|number of Sylow 5|number of (Sylow )?(5-)?subgroups of order \\\\?\\(?5"
+          - "n_?\\{?3|n3|number of Sylow 3|number of (Sylow )?(3-)?subgroups of order \\\\?\\(?3"
           - "normal"
       - kind: contains_all
         weight: 3
         patterns:
-          - "1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5"
-          - "C_?15|Z_?15|Z/15|cyclic of order 15|C_?5[^\\n]{0,12}C_?3|Z_?5[^\\n]{0,12}Z_?3"
+          # LaTeX spellings count: `1 \\pmod 5`, `\\equiv1\\pmod{5}`, `C_{15}`, and
+          # the product written in either order.
+          - "1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5|1\\s*\\\\pmod\\s*\\{?5"
+          - "generates (the group|G)|Z\\}?\\s*/\\s*15|G\\s*=\\s*\\\\langle|[CZ]_?\\{?15|Z/15|cyclic of order 15|[CZ]_?\\{?5\\}?[^\\n]{0,16}[CZ]_?\\{?3|[CZ]_?\\{?3\\}?[^\\n]{0,16}[CZ]_?\\{?5"
       - kind: contains_all
         weight: 1
-        patterns: ["trivial(ly)? intersect|intersection is trivial|only the identity|\\{e\\}"]
+        patterns: ["trivial(ly)? intersect|intersection is trivial|only the identity|\\\\?\\{e\\\\?\\}"]
       - kind: contains_none
         weight: 2
         # Wrong Sylow counts, and the assertion-with-no-argument answer.
@@ -690,13 +698,13 @@ cases:
     checks:
       - kind: contains_all
         weight: 4
-        patterns: ["\\b50(\\.0+)?\\s?%|\\b0\\.5\\b|\\b1/2\\b|32/64"]
+        patterns: ["\\b50(\\.0+)?\\s?\\\\?%|\\b0\\.5\\b|\\b1/2\\b|32/64"]
       - kind: contains_all
         weight: 3
         # Evidence the defect rate was squared rather than used once.
         patterns:
           - "0\\.0016|0\\.04\\s*\\^\\s*2|0\\.04\\s*[*×]\\s*0\\.04|0\\.04²|\\(0\\.04\\)\\^2|32"
-          - "0\\.00032|0\\.00064|5\\s*:\\s*27\\s*:\\s*32|/ ?64"
+          - "0\\.00032|0\\.00064|5\\s*:\\s*27\\s*:\\s*32|/ ?64|\\{64\\}"
       - kind: contains_all
         weight: 1
         patterns: ["Bayes|posterior|conditional"]
@@ -725,7 +733,7 @@ cases:
         weight: 3
         patterns:
           - "41[,.]?850|9% of|41850"
-          - "2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat"
+          - "2[,.]?22[0-2]|40([,.]?000|\\s?k) ?[/÷] ?18|divided by 18|per flat"
       - kind: contains_all
         weight: 3
         patterns:
@@ -771,8 +779,10 @@ cases:
       - kind: contains_all
         weight: 3
         # `running` is read inside the interval callback, so a plain closure
-        # over it goes stale. A ref, or a functional update, is the fix.
-        patterns: ["useRef|=>\\s*s\\s*\\+\\s*1|prev\\s*=>|s\\s*=>\\s*\\(?\\s*s\\s*\\+"]
+        # over it goes stale. A ref, or a functional update, is the fix. A
+        # functional update is any setter handed an arrow function, whatever
+        # its body; `setState(s => s.running ? {...} : s)` counts.
+        patterns: ["useRef|=>\\s*s\\s*\\+\\s*1|prev\\s*=>|s\\s*=>\\s*\\(?\\s*s\\s*\\+|set\\w*\\(\\s*\\(?\\s*\\w+\\s*\\)?\\s*=>"]
       - kind: contains_all
         weight: 2
         patterns: ["return\\s*\\(?\\s*\\)?\\s*=>[^\\n]{0,40}clearInterval|cleanup"]
@@ -913,7 +923,9 @@ cases:
           - "not iterable|cannot (be )?iterat|no \\.?size|not enumerable|no keys\\(\\)|cannot enumerate|non-enumerable"
       - kind: contains_all
         weight: 2
-        patterns: ["weak(ly)? (held|referenc)|weak reference|does not (keep|prevent)|strong referenc"]
+        # "can be garbage-collected if nothing else references it" and "keeps
+        # keys alive? no" say the same thing as "weakly held".
+        patterns: ["weak(ly)? (held|referenc)|weak reference|does not (keep|prevent)|strong referenc|keeps?[^.\\n]{0,20}alive|nothing else (references|refers|holds)|(otherwise|no longer) (unreachable|reachable|referenced)"]
       - kind: max_words
         limit: 350
         weight: 1

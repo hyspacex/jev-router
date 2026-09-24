@@ -233,6 +233,17 @@ quality that a person has to make deliberately. Without the flag a fallback is
 still reachable, but only by failure. Saving quota is never a reason to answer
 with a weaker model than the rules asked for.
 
+Pressure belongs to a provider, so two models on the same subscription used to
+be equally pressured and could never relieve each other. Each model now has a
+`quota_cost`, its share of the provider's allowance against the most expensive
+model there, and an entry's pressure is the provider's times that share. On a
+busy OpenAI subscription astra is over the threshold while sol, at a fifth of
+the price, is not, so an `equivalent` sol entry can take astra's place. The
+share can only lower a model's pressure, and it comes from published prices,
+never from what would make a route win. The shipped `auto` uses both kinds of
+move: cheaper OpenAI models when Ollama is busy, glm-5.3 and sol when OpenAI
+is, each only where the admission test found the pair equally good.
+
 ### Pins are untouched
 
 Quota affects new decisions only. A conversation that is already pinned keeps

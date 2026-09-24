@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
     ? configuredOutput as number : DEFAULT_MAX_OUTPUT_TOKENS;
   // The limits the picker shows before admission.
   const placeholder = {input: ["text", "image"] as ("text" | "image")[], contextWindow: 32768, maxTokens: placeholderOutput};
-  const NAMES: Record<string, string> = {"auto": "auto · strict session", "auto-conserve": "auto-conserve · saves astra"};
+  const NAMES: Record<string, string> = {"auto": "auto · strict session"};
   // One picker entry per strict alias; the entry chosen is the alias admitted.
   const models = ALIASES.map(id => ({
     id, name: NAMES[id] ?? id, reasoning: false, cost: COST, ...placeholder,

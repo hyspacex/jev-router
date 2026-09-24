@@ -209,7 +209,10 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - Quota pressure may only make a provider harder to reach. Shifts are bounded
   by `max_shift`, monotone in pressure, and one-directional. A `protected`
   rule ignores them. Only an `equivalent: true` entry may be promoted ahead of
-  a route's primary. Strict admission ignores shifts altogether.
+  a route's primary. Strict admission ignores shifts altogether. A model's
+  `quota_cost` (at most 1) scales its provider's pressure down, which is how a
+  cheaper equivalent on the same subscription takes over; it is set from
+  price, never tuned to make a route win.
 - A spent provider is an availability fact, not pressure. A fresh window at
   `exhausted_at` refuses a new strict binding to it with
   `PROVIDER_UNAVAILABLE` and the reset time. A stale, errored or unknown

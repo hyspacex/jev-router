@@ -86,6 +86,12 @@ cases were written, not sampled.
 | `grok-4.6-medium` | `grok-4.6(medium)` | xai | unknown |
 | `grok-4.6-high` | `grok-4.6(high)` | xai | unknown |
 | `glm-5.3-high` | `ollama/glm-5.3(high)` | local | False |
+| `luna6` | `gpt-6-luna(low)` | openai | True |
+| `sol6` | `gpt-6-sol(low)` | openai | True |
+| `sol6-high` | `gpt-6-sol(high)` | openai | True |
+| `sol6-xhigh` | `gpt-6-sol(xhigh)` | openai | True |
+| `astra-medium` | `gpt-6-astra(medium)` | openai | True |
+| `astra-high` | `gpt-6-astra(high)` | openai | True |
 
 `glm-5.3` and `kimi-k3` are never sent without an effort suffix. At their default effort both think until the token budget is gone and can return empty content. `gemma4-31b` has no reasoning mode and takes no suffix. `grok-4.6` without `(low)` takes about 11 seconds to first token.
 
@@ -112,22 +118,22 @@ Worth reading:
 
 ## mid — Can glm-5.3 or luna hold the mid band?
 
-- run: 2026-09-19T16:27:09+00:00
+- run: 2026-09-24T17:10:28+00:00
 - cases: 12 of 12 planned, 2 samples per case per route
 - incumbent: `astra`
 
 | route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `glm-5.3` | 9.70 | [9.37, 10.03] | 0.30 | 8.1 | 12/12 | 10/12 | 5.0 | 527 | 0.0 | 0 |
-| `luna` | 9.72 | [9.45, 9.98] | 0.11 | 8.5 | 12/12 | 9/12 | 19.9 | 705 | 0.0 | 0 |
-| `astra` | 9.31 | [8.87, 9.75] | 0.28 | 7.8 | 12/12 | 6/12 | 15.8 | 449 | 0.0 | 0 |
+| `glm-5.3` | 9.79 | [9.59, 10.00] | 0.21 | 9.1 | 12/12 | 11/12 | 5.0 | 527 | 0.0 | 0 |
+| `luna` | 9.77 | [9.50, 10.03] | 0.06 | 8.5 | 12/12 | 10/12 | 19.9 | 705 | 0.0 | 0 |
+| `astra` | 9.53 | [9.11, 9.96] | 0.15 | 7.8 | 12/12 | 8/12 | 15.8 | 449 | 0.0 | 0 |
 
 Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
 
 | candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
 |---|---|---|---|---|---|---|---|---|---|
-| `glm-5.3` | PASS | 12 | 9.7 | 9.31 | -0.39 | yes | 3.15x | yes | - |
-| `luna` | fail | 12 | 9.72 | 9.31 | -0.41 | no | 0.79x | no | neither 30% faster nor on another provider |
+| `glm-5.3` | PASS | 12 | 9.79 | 9.53 | -0.26 | yes | 3.15x | yes | - |
+| `luna` | fail | 12 | 9.77 | 9.53 | -0.24 | no | 0.79x | no | neither 30% faster nor on another provider |
 
 Per case, mean of the samples:
 
@@ -135,8 +141,8 @@ Per case, mean of the samples:
 |---|---|---|---|
 | code-regex-extract-04 | 10.0 | 10.0 | 10.0 |
 | code-sql-window-query-05 | 10.0 | 9.6 | 10.0 |
-| code-prose-shaped-really-code-09 | 10.0 | 9.4 | 8.9 |
-| code-chinese-hooks-08 | 10.0 | 10.0 | 8.5 |
+| code-prose-shaped-really-code-09 | 10.0 | 10.0 | 10.0 |
+| code-chinese-hooks-08 | 10.0 | 10.0 | 10.0 |
 | debug-css-overflow-17 | 10.0 | 10.0 | 10.0 |
 | quick-borrow-checker-misleading-75 | 10.0 | 10.0 | 10.0 |
 | multilingual-pt-coorte-retencao-161 | 10.0 | 10.0 | 10.0 |
@@ -144,7 +150,7 @@ Per case, mean of the samples:
 | adv-five-second-cron-tz-96 | 9.1 | 10.0 | 8.6 |
 | design-index-strategy-26 | 10.0 | 10.0 | 10.0 |
 | adv-static-markup-rounding-99 | 9.2 | 8.5 | 8.5 |
-| quick-weakmap-vs-map-72 | 8.1 | 9.2 | 7.8 |
+| quick-weakmap-vs-map-72 | 9.2 | 9.2 | 7.8 |
 
 Worth reading:
 
@@ -152,7 +158,7 @@ Worth reading:
 
 ## faithfulness — Do the cheap models invent facts on work where a wrong fact matters?
 
-- run: 2026-09-19T16:30:28+00:00
+- run: 2026-09-24T17:10:29+00:00
 - cases: 5 of 5 planned, 2 samples per case per route
 - incumbent: `astra`
 
@@ -161,17 +167,17 @@ Worth reading:
 | `glm-5.3` | 9.50 | [9.04, 9.96] | 0.21 | 8.6 | 5/5 | 3/5 | 1.9 | 266 | 0.0 | 0 |
 | `gemma4-31b` | 9.78 | [9.39, 10.17] | 0.00 | 8.9 | 5/5 | 4/5 | 1.4 | 327 | 0.0 | 0 |
 | `kimi-k3` | 8.81 | [8.16, 9.47] | 0.68 | 7.7 | 5/5 | 1/5 | 4.3 | 363 | 0.0 | 0 |
-| `astra` | 9.34 | [9.11, 9.56] | 0.25 | 9.2 | 2/2 | 0/2 | 14.3 | 383 | 0.0 | 0 |
+| `astra` | 9.08 | [8.64, 9.52] | 0.17 | 8.6 | 3/3 | 0/3 | 18.5 | 486 | 0.0 | 0 |
 
 Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
 
 | candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
 |---|---|---|---|---|---|---|---|---|---|
-| `glm-5.3` | PASS | 2 | 9.75 | 9.34 | -0.41 | yes | 7.91x | yes | - |
-| `gemma4-31b` | PASS | 2 | 10.0 | 9.34 | -0.66 | yes | 11.63x | yes | - |
-| `kimi-k3` | PASS | 2 | 8.84 | 9.34 | +0.50 | yes | 3.66x | yes | - |
+| `glm-5.3` | PASS | 3 | 9.36 | 9.08 | -0.28 | yes | 9.90x | yes | - |
+| `gemma4-31b` | PASS | 3 | 10.0 | 9.08 | -0.92 | yes | 13.51x | yes | - |
+| `kimi-k3` | PASS | 3 | 8.75 | 9.08 | +0.33 | yes | 4.34x | yes | - |
 
-**Read these verdicts with care.** The two routes did not both run every case here, either because the incumbent joined from the cache or because one of them cannot read images, so the paired comparison rests on 2 of 5 cases for `glm-5.3`, 2 of 5 cases for `gemma4-31b`, 2 of 5 cases for `kimi-k3`. At that size the verdict is a direction, not a result. The per-route means over all the cases each route did run, in the table above, are the numbers to read.
+**Read these verdicts with care.** The two routes did not both run every case here, either because the incumbent joined from the cache or because one of them cannot read images, so the paired comparison rests on 3 of 5 cases for `glm-5.3`, 3 of 5 cases for `gemma4-31b`, 3 of 5 cases for `kimi-k3`. At that size the verdict is a direction, not a result. The per-route means over all the cases each route did run, in the table above, are the numbers to read.
 
 Per case, mean of the samples:
 
@@ -180,7 +186,7 @@ Per case, mean of the samples:
 | writing-medical-discharge-38 | 10.0 | 10.0 | 8.9 | - |
 | summarise-trial-abstract-66 | 9.5 | 10.0 | 7.7 | 9.5 |
 | extract-invoice-json-62 | 10.0 | 10.0 | 10.0 | 9.2 |
-| summarise-meeting-notes-dates-61 | 8.6 | 10.0 | 8.6 | - |
+| summarise-meeting-notes-dates-61 | 8.6 | 10.0 | 8.6 | 8.6 |
 | adv-sow-dates-91 | 9.4 | 8.9 | 8.9 | - |
 
 Worth reading:
@@ -271,20 +277,20 @@ Worth reading:
 
 ## frontier — Is grok-4.6 a safe overflow for the frontier lane?
 
-- run: 2026-09-19T16:27:10+00:00
+- run: 2026-09-24T17:10:29+00:00
 - cases: 9 of 9 planned, 2 samples per case per route
 - incumbent: `astra`
 
 | route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `grok-4.6` | 8.38 | [7.38, 9.38] | 0.25 | 6.0 | 7/9 | 4/9 | 19.2 | 970 | 0.0 | 0 |
-| `astra` | 9.10 | [8.37, 9.83] | 0.40 | 6.8 | 8/9 | 8/9 | 27.4 | 855 | 0.0 | 0 |
+| `grok-4.6` | 9.08 | [8.34, 9.82] | 0.18 | 7.0 | 9/9 | 5/9 | 19.2 | 970 | 0.0 | 0 |
+| `astra` | 9.66 | [9.25, 10.08] | 0.11 | 8.0 | 9/9 | 9/9 | 27.4 | 855 | 0.0 | 0 |
 
 Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
 
 | candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
 |---|---|---|---|---|---|---|---|---|---|
-| `grok-4.6` | fail | 9 | 8.38 | 9.1 | +0.72 | no | 1.42x | yes | scores 0.72 below the incumbent, more than 0.5 |
+| `grok-4.6` | fail | 9 | 9.08 | 9.66 | +0.58 | no | 1.42x | yes | scores 0.58 below the incumbent, more than 0.5 |
 
 Per case, mean of the samples:
 
@@ -296,15 +302,13 @@ Per case, mean of the samples:
 | writing-legal-clause-39 | 7.0 | 8.0 |
 | writing-regulator-response-42 | 9.0 | 9.8 |
 | writing-investor-update-numbers-44 | 7.7 | 9.2 |
-| other-simple-question-proof-78 | 6.0 | 6.8 |
-| other-probability-puzzle-79 | 9.3 | 8.2 |
-| other-buy-vs-rent-84 | 6.4 | 10.0 |
+| other-simple-question-proof-78 | 10.0 | 10.0 |
+| other-probability-puzzle-79 | 10.0 | 10.0 |
+| other-buy-vs-rent-84 | 8.1 | 10.0 |
 
 Worth reading:
 
-- `grok-4.6` on `other-simple-question-proof-78`: scored 6.0 — contains_all 0.00: missing ['1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5', 'C_?15|Z_?15|Z/15|cyclic of order 15|C_?5[^\\n]{0,12}C_?3|Z_?5[^\\n]{0,12}Z_?3']; cont
-- `astra` on `other-simple-question-proof-78`: scored 6.8 — contains_all 0.50: missing ['1 ?\\(?mod ?5|\\u2261 ?1 ?\\(mod ?5|congruent to 1 mod(ulo)? 5']; contains_all 0.00: missing ['trivial(ly)? intersect|intersection is trivial|only the 
-- `grok-4.6` on `other-buy-vs-rent-84`: scored 6.4 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']; contains_all 0.00: missing ['64[,.]?9|63[,.]?\\d|65[,.]?\\d|rent over']
+- Nothing. No empty reply, no truncation, and no route scored below 7 on any case in this step.
 
 ## conserve — Which effort should grok-4.6 take the work auto-conserve moves off astra at?
 
@@ -353,6 +357,181 @@ Worth reading:
 - `grok-4.6` on `other-buy-vs-rent-84`: scored 5.0 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']; contains_all 0.67: missing ['1,?8\\d\\d|1,?9\\d\\d|2,?0\\d\\d']; contai
 - `grok-4.6-high` on `other-buy-vs-rent-84`: scored 6.9 — contains_all 0.00: missing ['41[,.]?850|9% of|41850', '2[,.]?222|40[,.]?000 ?/ ?18|divided by 18|per flat']
 
+## mid6 — Can gpt-6-luna or gpt-6-sol stand in for glm-5.3 in the mid band, and does astra medium earn its place there?
+
+- run: 2026-09-24T16:34:52+00:00
+- cases: 12 of 12 planned, 2 samples per case per route
+- incumbent: `glm-5.3`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | 9.44 | [9.08, 9.79] | 0.44 | 8.3 | 12/12 | 7/12 | 6.2 | 266 | 0.0 | 0 |
+| `sol6` | 9.55 | [9.16, 9.94] | 0.18 | 8.3 | 12/12 | 8/12 | 8.9 | 259 | 0.0 | 0 |
+| `astra-medium` | 9.28 | [8.66, 9.90] | 0.24 | 7.0 | 12/12 | 8/12 | 16.1 | 474 | 0.0 | 0 |
+| `glm-5.3` | 9.79 | [9.59, 10.00] | 0.21 | 9.1 | 12/12 | 11/12 | 5.0 | 527 | 0.0 | 0 |
+| `astra` | 9.53 | [9.11, 9.96] | 0.15 | 7.8 | 12/12 | 8/12 | 15.8 | 449 | 0.0 | 0 |
+| `luna` | 9.77 | [9.50, 10.03] | 0.06 | 8.5 | 12/12 | 10/12 | 19.9 | 705 | 0.0 | 0 |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | PASS | 12 | 9.44 | 9.79 | +0.35 | no | 0.81x | yes | - |
+| `sol6` | PASS | 12 | 9.55 | 9.79 | +0.24 | no | 0.57x | yes | - |
+| `astra-medium` | fail | 12 | 9.28 | 9.79 | +0.51 | no | 0.31x | yes | scores 0.51 below the incumbent, more than 0.5 |
+| `astra` | PASS | 12 | 9.53 | 9.79 | +0.26 | no | 0.32x | yes | - |
+| `luna` | PASS | 12 | 9.77 | 9.79 | +0.02 | no | 0.25x | yes | - |
+
+Per case, mean of the samples:
+
+| case | `luna6` | `sol6` | `astra-medium` | `glm-5.3` | `astra` | `luna` |
+|---|---|---|---|---|---|---|
+| code-regex-extract-04 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| code-sql-window-query-05 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 9.6 |
+| code-prose-shaped-really-code-09 | 8.3 | 8.3 | 10.0 | 10.0 | 10.0 | 10.0 |
+| code-chinese-hooks-08 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| debug-css-overflow-17 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| quick-borrow-checker-misleading-75 | 9.4 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| multilingual-pt-coorte-retencao-161 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| multiturn-ratelimiter-continue-138 | 9.2 | 9.5 | 7.0 | 10.0 | 9.5 | 10.0 |
+| adv-five-second-cron-tz-96 | 8.6 | 10.0 | 7.3 | 9.1 | 8.6 | 10.0 |
+| design-index-strategy-26 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| adv-static-markup-rounding-99 | 8.5 | 8.5 | 8.5 | 9.2 | 8.5 | 8.5 |
+| quick-weakmap-vs-map-72 | 9.2 | 8.3 | 8.6 | 9.2 | 7.8 | 9.2 |
+
+Worth reading:
+
+- Nothing. No empty reply, no truncation, and no route scored below 7 on any case in this step.
+
+## faithful6 — On work where a wrong fact matters, do gpt-6-luna and gpt-6-sol hold up against astra?
+
+- run: 2026-09-24T16:34:52+00:00
+- cases: 5 of 5 planned, 2 samples per case per route
+- incumbent: `astra`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | 9.13 | [8.49, 9.78] | 0.07 | 8.2 | 5/5 | 3/5 | 6.7 | 288 | 0.0 | 0 |
+| `sol6` | 9.21 | [8.38, 10.03] | 0.07 | 7.5 | 5/5 | 2/5 | 8.1 | 266 | 0.0 | 0 |
+| `astra-medium` | 9.60 | [9.11, 10.09] | 0.11 | 8.6 | 5/5 | 5/5 | 22.9 | 706 | 0.0 | 0 |
+| `astra` | 9.08 | [8.64, 9.52] | 0.17 | 8.6 | 3/3 | 1/3 | 18.5 | 486 | 0.0 | 0 |
+| `glm-5.3` | 9.50 | [9.04, 9.96] | 0.21 | 8.6 | 5/5 | 4/5 | 1.9 | 266 | 0.0 | 0 |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | PASS | 3 | 9.52 | 9.08 | -0.44 | yes | 2.76x | no | - |
+| `sol6` | PASS | 3 | 9.17 | 9.08 | -0.09 | yes | 2.02x | no | - |
+| `astra-medium` | fail | 3 | 9.52 | 9.08 | -0.44 | no | 0.81x | no | neither 30% faster nor on another provider |
+| `glm-5.3` | PASS | 3 | 9.36 | 9.08 | -0.28 | yes | 9.90x | yes | - |
+
+**Read these verdicts with care.** The two routes did not both run every case here, either because the incumbent joined from the cache or because one of them cannot read images, so the paired comparison rests on 3 of 5 cases for `luna6`, 3 of 5 cases for `sol6`, 3 of 5 cases for `astra-medium`, 3 of 5 cases for `glm-5.3`. At that size the verdict is a direction, not a result. The per-route means over all the cases each route did run, in the table above, are the numbers to read.
+
+Per case, mean of the samples:
+
+| case | `luna6` | `sol6` | `astra-medium` | `astra` | `glm-5.3` |
+|---|---|---|---|---|---|
+| writing-medical-discharge-38 | 8.2 | 9.6 | 10.0 | - | 10.0 |
+| summarise-trial-abstract-66 | 10.0 | 10.0 | 10.0 | 9.5 | 9.5 |
+| extract-invoice-json-62 | 10.0 | 10.0 | 10.0 | 9.2 | 10.0 |
+| summarise-meeting-notes-dates-61 | 8.6 | 7.5 | 8.6 | 8.6 | 8.6 |
+| adv-sow-dates-91 | 8.9 | 8.9 | 9.4 | - | 9.4 |
+
+Worth reading:
+
+- Nothing. No empty reply, no truncation, and no route scored below 7 on any case in this step.
+
+## fast6 — Can gpt-6-luna take the fast and image lanes when Ollama is short?
+
+- run: 2026-09-24T16:34:53+00:00
+- cases: 14 of 14 planned, 2 samples per case per route
+- incumbent: `glm-5.3-flash`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | 9.05 | [7.91, 10.18] | 0.00 | 2.0 | 13/14 | 12/14 | 2.9 | 40 | 0.0 | 0 |
+| `glm-5.3-flash` | 9.86 | [9.59, 10.12] | 0.14 | 8.6 | 10/10 | 9/10 | 2.2 | 150 | 0.0 | 0 |
+| `gemma4-31b` | 9.17 | [8.64, 9.70] | 0.26 | 7.3 | 14/14 | 9/14 | 0.9 | 52 | 0.0 | 0 |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `luna6` | PASS | 10 | 9.73 | 9.86 | +0.13 | no | 0.78x | yes | - |
+| `gemma4-31b` | fail | 10 | 9.24 | 9.86 | +0.62 | yes | 1.99x | no | scores 0.62 below the incumbent, more than 0.5 |
+
+**Read these verdicts with care.** The two routes did not both run every case here, either because the incumbent joined from the cache or because one of them cannot read images, so the paired comparison rests on 10 of 14 cases for `luna6`, 10 of 14 cases for `gemma4-31b`. At that size the verdict is a direction, not a result. The per-route means over all the cases each route did run, in the table above, are the numbers to read.
+
+Per case, mean of the samples:
+
+| case | `luna6` | `glm-5.3-flash` | `gemma4-31b` |
+|---|---|---|---|
+| quick-postgres-port-71 | 10.0 | 10.0 | 10.0 |
+| quick-percentage-74 | 10.0 | 10.0 | 10.0 |
+| quick-timezone-abbrev-77 | 10.0 | 10.0 | 10.0 |
+| quick-bash-for-loop-70 | 10.0 | 10.0 | 8.0 |
+| code-shell-oneliner-06 | 10.0 | 10.0 | 10.0 |
+| debug-nameerror-typo-14 | 10.0 | 10.0 | 7.5 |
+| polish-slack-grammar-54 | 7.3 | 10.0 | 8.3 |
+| summarise-blogpost-tldr-63 | 10.0 | 10.0 | 10.0 |
+| other-chitchat-85 | 10.0 | 8.6 | 8.6 |
+| quick-german-idempotent-76 | 10.0 | 10.0 | 10.0 |
+| img-bar-chart | 10.0 | - | 10.0 |
+| img-invoice-table | 7.3 | - | 7.3 |
+| img-handwritten-digits | 2.0 | - | 10.0 |
+| img-terminal-error | 10.0 | - | 8.7 |
+
+Worth reading:
+
+- `luna6` on `img-handwritten-digits`: scored 2.0 — contains_all 0.00: missing ['4 ?0 ?9 ?2 ?7 ?1 ?8 ?6']
+
+## hard6 — Is gpt-6-sol at high or xhigh as good as astra high on hard work?
+
+- run: 2026-09-24T17:10:28+00:00
+- cases: 11 of 11 planned, 2 samples per case per route
+- incumbent: `astra-high`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `sol6-high` | 9.15 | [8.59, 9.72] | 0.23 | 7.0 | 11/11 | 3/11 | 23.1 | 876 | 0.0 | 0 |
+| `sol6-xhigh` | 9.42 | [8.76, 10.08] | 0.13 | 6.5 | 10/11 | 8/11 | 30.6 | 1204 | 0.0 | 0 |
+| `astra-high` | 9.45 | [8.96, 9.95] | 0.18 | 7.5 | 11/11 | 8/11 | 34.9 | 1108 | 0.0 | 0 |
+| `grok-4.6-high` | 9.05 | [8.10, 10.01] | 0.24 | 4.5 | 10/11 | 8/11 | 55.3 | 2987 | 0.0 | 0 |
+| `astra` | 9.70 | [9.32, 10.08] | 0.10 | 8.0 | 10/10 | 8/10 | 27.7 | 874 | 0.0 | 0 |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `sol6-high` | PASS | 11 | 9.15 | 9.45 | +0.30 | yes | 1.51x | no | - |
+| `sol6-xhigh` | fail | 11 | 9.42 | 9.45 | +0.03 | no | 1.14x | no | neither 30% faster nor on another provider |
+| `grok-4.6-high` | PASS | 11 | 9.05 | 9.45 | +0.40 | no | 0.63x | yes | - |
+| `astra` | fail | 10 | 9.7 | 9.6 | -0.10 | no | 1.21x | no | neither 30% faster nor on another provider |
+
+**Read these verdicts with care.** The two routes did not both run every case here, either because the incumbent joined from the cache or because one of them cannot read images, so the paired comparison rests on 10 of 11 cases for `astra`. At that size the verdict is a direction, not a result. The per-route means over all the cases each route did run, in the table above, are the numbers to read.
+
+Per case, mean of the samples:
+
+| case | `sol6-high` | `sol6-xhigh` | `astra-high` | `grok-4.6-high` | `astra` |
+|---|---|---|---|---|---|
+| debug-go-deadlock-short-40-11 | 10.0 | 10.0 | 9.4 | 10.0 | 10.0 |
+| debug-adversarial-injection-in-log-16 | 9.5 | 10.0 | 10.0 | 10.0 | 10.0 |
+| writing-investor-update-numbers-44 | 9.2 | 9.6 | 9.6 | 8.5 | 9.2 |
+| other-simple-question-proof-78 | 10.0 | 10.0 | 10.0 | 10.0 | 10.0 |
+| other-probability-puzzle-79 | 10.0 | 10.0 | 10.0 | 8.6 | 10.0 |
+| other-buy-vs-rent-84 | 9.4 | 10.0 | 10.0 | 10.0 | 10.0 |
+| debug-spanish-slow-query-18 | 9.5 | 10.0 | 10.0 | 10.0 | 10.0 |
+| design-eventbus-tradeoff-20 | 9.5 | 10.0 | 10.0 | 10.0 | 10.0 |
+| writing-legal-clause-39 | 7.0 | 6.5 | 7.5 | 8.0 | 8.0 |
+| writing-regulator-response-42 | 9.0 | 9.8 | 9.5 | 10.0 | 9.8 |
+| writing-rsu-tax-explainer-40 | 7.5 | 7.8 | 8.0 | 4.5 | - |
+
+Worth reading:
+
+- `sol6-xhigh` on `writing-legal-clause-39`: scored 6.5 — judge: It accurately identifies the uncapped indemnity and damaging language, but does not plainly state that it is not legal advice, fully discuss the other liability carve-outs, 
+- `grok-4.6-high` on `writing-rsu-tax-explainer-40`: scored 4.5 — judge: The answer correctly identifies ordinary income on RSU settlement, basis/FMV, minimal gain on immediate sale, and sell-to-cover considerations, but it overconfidently assume
+
 ## Grading-spec corrections made during the run
 
 Each of these marked a correct answer wrong. They were fixed and everything was regraded from cache, at no upstream cost.
@@ -365,4 +544,11 @@ Each of these marked a correct answer wrong. They were fixed and everything was 
 - `polish-slack-grammar-54`: the check penalised the original typos appearing anywhere, which punished answers that list what they changed.
 - `quick-timezone-abbrev-77`: the pattern could not match across markdown emphasis, so "does **not** observe" read as a wrong answer.
 - `debug-nameerror-typo-14`: pointing at the call site by showing it corrected now counts, and the weight moved from that to brevity.
+- `code-chinese-hooks-08`: the stale-closure check knew only a few spellings of a functional update. `setState(s => s.running ? {...} : s)` is one and now counts.
+- `quick-weakmap-vs-map-72`: the weak-reference check missed "can be garbage-collected if nothing else references it" and "keeps keys alive? No", which say the same thing.
+- `code-prose-shaped-really-code-09`: the lossy-fix penalty fired on "replace the hand-built comma-separated lines with a CSV writer" and on "rather than stripping commas or quotes", which are the right advice. It now fires on stripping commas or quotes, in words or in code.
+- `writing-medical-discharge-38`: the harm check fired on "not just a formality" and on the heading "Is the driving restriction just a formality? No", so every model that answered the question correctly lost three points. It now fires only on the claim itself. The medication check also accepts "blood-pressure" with a hyphen.
+- `other-simple-question-proof-78`: complete Sylow proofs lost up to four points for their notation. `1 \pmod 5`, "the number of subgroups of order \(5\)", `\{e\}`, `C_3 \times C_5` in that order, `C_{15}`, and ending on an element of order 15 that generates the group now count, as does `\mathbb{Z}/15`. A wrong Sylow count and a bare assertion are still penalised.
+- `other-probability-puzzle-79`: `\boxed{50\%}` did not read as 50%, and the working check missed the denominator written as `\frac{64}{...}`.
+- `other-buy-vs-rent-84`: the roof-share check missed "€40,000 ÷ 18", "€40k / 18" and the rounded €2,220.
 

@@ -13,11 +13,17 @@ export class RouterError extends ContractError {
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 /**
- * The strict aliases the picker offers. `auto-conserve` keeps astra for the
- * hardest and high-harm work and sends the rest of astra's work to grok; the
- * router owns what that means, the client only names it.
+ * The strict aliases the picker offers. The router owns what each means, the
+ * client only names it.
  */
-export const ALIASES = ["auto", "auto-conserve"];
+export const ALIASES = ["auto"];
+
+/**
+ * Aliases the router still serves for sessions bound under them, but no
+ * longer offers. `auto-conserve` now routes exactly as `auto` does, so a
+ * session bound under it carries on from the `auto` entry.
+ */
+export const RETIRED_ALIASES = ["auto-conserve"];
 
 /**
  * Router codes that mean the request was definitively refused before the
@@ -139,7 +145,8 @@ export class StrictClient {
     if (this.state.binding) {
       // A binding made before aliases were recorded was made under `auto`.
       const bound = this.state.alias ?? "auto";
-      if (bound !== alias) throw new ContractError(`This session is bound under ${bound}. Use /new to work under ${alias}.`);
+      const retired = RETIRED_ALIASES.includes(bound) && alias === "auto";
+      if (bound !== alias && !retired) throw new ContractError(`This session is bound under ${bound}. Use /new to work under ${alias}.`);
       if (!this.resumed) {
         const value = await this.control("/router/resolve", {schema_version: "1", intent: "resume", session_id: this.state.sessionId, request_id: randomUUID(), client: "pi"}, signal);
         const binding = validateBinding(value, this.state.sessionId);

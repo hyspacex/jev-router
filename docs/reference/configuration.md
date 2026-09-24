@@ -48,8 +48,8 @@ exactly as it did.
 
 An alias opts into the first with `session_mode: strict` and into the last with
 `adaptive_effort: true`; a rule joins a lane with `lane: <name>`. The shipped
-`router.yaml` enables `session_routing` and exposes two strict aliases, `auto`
-and `auto-conserve`.
+`router.yaml` enables `session_routing` and exposes one strict alias, `auto`,
+plus the retired `auto-conserve`, kept only for sessions bound under it.
 It configures quality lanes, keeps `distribution_policy: off`, asks no extra
 shadow questions, and keeps the effort experiment off.
 
@@ -89,6 +89,7 @@ models:
     efforts: [none, low, high]
     default_effort: none      # optional
     effort_style: suffix      # suffix -> "model(high)", param -> reasoning_effort, none
+    quota_cost: 1.0           # optional, share of the provider's allowance
     tags: [fast]
     description: Quick answers.
 ```
@@ -103,6 +104,15 @@ bare. Such a model can spend its whole token budget thinking and return an
 empty reply. Naming a default here means no code path can send the model
 without an effort: it is filled in when clamping produces nothing, and again
 in `apply_effort` as a last guard. It must be one of the model's own `efforts`.
+
+`quota_cost` is what one reply from this model spends of its provider's
+allowance, with the provider's most expensive model at 1. It must be above 0
+and at most 1, and it defaults to 1. Quota pressure on the provider is
+multiplied by it before `demote_above` is compared, so on a busy subscription
+a cheap model stays below the threshold while the expensive one beside it
+goes over. That is what lets an `equivalent` entry on the *same* provider
+take over from its primary. The shipped file sets it from API prices: sol
+0.2 and luna 0.01 against astra.
 
 Then name the model in a rule or a route and add it to the alias's
 `allowed_models`.

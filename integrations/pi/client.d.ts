@@ -13,6 +13,8 @@ export declare const DEFAULT_MAX_OUTPUT_TOKENS: number;
 
 /** The strict aliases the picker offers. */
 export declare const ALIASES: readonly string[];
+/** Aliases still served for sessions bound under them, no longer offered. */
+export declare const RETIRED_ALIASES: readonly string[];
 
 /** Codes that mean the provider never saw the request. */
 export declare const PRE_ACCEPTANCE_CODES: ReadonlySet<string>;
