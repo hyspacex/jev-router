@@ -245,7 +245,7 @@ saying so, not a way around it.
 one, an admission with no classifier answer returns `NO_SAFE_ADMISSION` instead
 of guessing. Whatever it binds is as fixed as any other binding.
 
-The full contract, the headers a client sends and the thirteen error codes are
+The full contract, the headers a client sends and the fourteen error codes are
 in [`SESSION_ROUTING.md`](SESSION_ROUTING.md).
 
 The between-turn effort experiment is a third opt-in on top of this and is off

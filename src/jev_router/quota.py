@@ -596,6 +596,38 @@ def compute_pressure(
     return max(0.0, min(1.0, value)), why
 
 
+def exhausted_window(
+    snapshot: QuotaSnapshot | None,
+    knobs: QuotaPolicyCfg,
+    now: float,
+    stale_after_seconds: float | None = None,
+) -> QuotaWindow | None:
+    """The window that has run out, or None. Pure.
+
+    Only a fresh reading can say a provider is spent; stale, unknown and
+    errored readings say nothing. Pace plays no part: this is whether the
+    provider can serve, not whether it should. With several spent windows the
+    one that resets last is returned, and an unknown reset counts as latest.
+    """
+    if snapshot is None or snapshot_status(snapshot, now, stale_after_seconds) != FRESH:
+        return None
+    windows = snapshot.windows or (
+        QuotaWindow(
+            used_percent=snapshot.used_percent,
+            window_minutes=snapshot.window_minutes,
+            resets_at=snapshot.resets_at,
+        ),
+    )
+    spent = [
+        w for w in windows if w.percent is not None and w.percent >= knobs.exhausted_at
+    ]
+    return max(
+        spent,
+        key=lambda w: w.resets_at if w.resets_at is not None else float("inf"),
+        default=None,
+    )
+
+
 # --- the poller ---------------------------------------------------------
 
 
@@ -651,6 +683,21 @@ class QuotaMonitor:
             name: state.pressure for name, state in self.states.items() if state.enabled
         }
 
+    def exhausted(self) -> dict[str, QuotaWindow]:
+        """The spent window of each provider a fresh reading says is spent."""
+        if not self.knobs.enabled:
+            return {}
+        now = self.clock()
+        out = {}
+        for name, state in self.states.items():
+            cfg = self.config.quota_cfg(name)
+            if not state.enabled or cfg is None:
+                continue
+            window = exhausted_window(state.snapshot, self.knobs, now, cfg.stale_after_seconds)
+            if window is not None:
+                out[name] = window
+        return out
+
     def report(self) -> dict[str, Any]:
         now = self.clock()
         providers = {}
@@ -660,6 +707,11 @@ class QuotaMonitor:
             snap = state.snapshot
             age = None if snap is None else round(now - snap.fetched_at, 1)
             status = snapshot_status(snap, now, stale_after)
+            spent = (
+                exhausted_window(snap, self.knobs, now, stale_after)
+                if state.enabled
+                else None
+            )
             providers[name] = {
                 "enabled": state.enabled,
                 "source": state.source_name,
@@ -673,6 +725,7 @@ class QuotaMonitor:
                 "windows": [w.to_dict() for w in snap.windows] if snap else [],
                 "age_seconds": age,
                 "stale": status == STALE,
+                "exhausted": spent.to_dict() if spent else None,
                 "polls": state.polls,
                 "errors": state.errors,
                 "last_error": state.last_error,

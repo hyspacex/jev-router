@@ -22,6 +22,7 @@ from jev_router.quota import (
     QuotaWindow,
     build_quota_source,
     compute_pressure,
+    exhausted_window,
     raw_pressure,
     snapshot_from_payload,
     snapshot_status,
@@ -263,3 +264,20 @@ def test_c27_compute_pressure_is_still_pure():
     first = compute_pressure(snapshot, KNOBS, NOW)
     second = compute_pressure(snapshot, KNOBS, NOW)
     assert first == second
+
+
+def test_only_a_fresh_spent_window_is_exhausted():
+    def snap(**fields):
+        return QuotaSnapshot(provider="p", fetched_at=NOW, windows=(
+            window("five_hour", used_percent=40.0, resets_at=NOW + HOUR),
+            window("weekly", resets_at=NOW + 24 * HOUR, **fields),
+        ))
+
+    spent = exhausted_window(snap(used_percent=100.0), KNOBS, NOW)
+    assert (spent.name, spent.resets_at) == ("weekly", NOW + 24 * HOUR)
+    assert exhausted_window(snap(used_percent=99.0), KNOBS, NOW) is None
+    reserve = QuotaPolicyCfg(exhausted_at=98.0)
+    assert exhausted_window(snap(used_percent=99.0), reserve, NOW).name == "weekly"
+    # A stale reading says nothing, however spent it looked.
+    later = NOW + 2 * HOUR
+    assert exhausted_window(snap(used_percent=100.0), KNOBS, later, HOUR) is None

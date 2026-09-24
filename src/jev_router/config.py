@@ -159,6 +159,9 @@ class QuotaPolicyCfg(Base):
     # A route entry whose provider is under more pressure than this moves
     # behind the healthy entries of the same route.
     demote_above: float = 0.6
+    # A fresh window used at or above this refuses a new strict binding to its
+    # provider. 100 means spent; lower it to keep a reserve.
+    exhausted_at: float = 100.0
 
 
 class Settings(Base):

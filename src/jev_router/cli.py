@@ -271,6 +271,14 @@ def cmd_quota(args: argparse.Namespace) -> int:
                 f"  limit={window.get('limit') or '-'}"
                 f"  resets_at={'-' if resets is None else f'{resets:.0f}'}"
             )
+        spent = row.get("exhausted")
+        if spent:
+            resets = spent.get("resets_at")
+            print(
+                f"    EXHAUSTED: {spent.get('name') or 'usage'}, new strict "
+                f"sessions refused until "
+                f"{'an unknown time' if resets is None else f'{resets:.0f}'}"
+            )
         age = row["age_seconds"]
         print(
             f"    age:       {'-' if age is None else f'{age:.0f}s'}"
