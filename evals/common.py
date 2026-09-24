@@ -90,6 +90,14 @@ ROUTE_COST = {
     ("ollama/gemma4-31b", "none"): 1.0,
     ("ollama/glm-5.3", "none"): 2.5,
     ("gpt-5.6-luna", "low"): 4.0,
+    # GPT-6 Sol and Luna at their API price against astra at the same effort
+    # (a fifth and a hundredth). Their subscription is astra's, so these order
+    # them against astra; against Ollama's flat plan the units say nothing.
+    ("gpt-6-luna", "low"): 0.1,
+    ("gpt-6-sol", "low"): 2.0,
+    ("gpt-6-sol", "medium"): 2.8,
+    ("gpt-6-sol", "high"): 4.0,
+    ("gpt-6-sol", "xhigh"): 6.0,
     ("grok-4.6", "low"): 10.0,
     ("gpt-6-astra", "low"): 10.0,
     ("gpt-6-astra", "medium"): 14.0,
@@ -121,6 +129,10 @@ MODEL_TIERS = {
     "ollama/gemma4-31b": "fast",
     "ollama/glm-5.3": "mid",
     "gpt-5.6-luna": "mid",
+    # By the lane each mostly serves. sol xhigh also stands in for astra high
+    # on hard work, and a replay at that pressure scores it as mid.
+    "gpt-6-luna": "fast",
+    "gpt-6-sol": "mid",
 }
 
 

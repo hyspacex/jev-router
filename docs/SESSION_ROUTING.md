@@ -3,8 +3,10 @@
 A legacy alias decides per request. It hashes the conversation, pins the model
 for six hours, and may replace that model when the conversation stops fitting
 it. That can suit a chat window, but it is not the shipped default:
-`router.yaml` exposes two strict aliases: `auto`, and `auto-conserve`, which
-saves astra for the hardest work (see [the quota guide](guides/quota.md)).
+`router.yaml` exposes one strict alias, `auto`, which balances quota in either
+direction between models measured as equally good (see
+[the quota guide](guides/quota.md)). The retired `auto-conserve` routes the same
+way and is kept only for sessions bound under it.
 
 A coding session wants the opposite. The harness has already sized its history
 against one model's window, it holds a prompt cache, and a model that changes

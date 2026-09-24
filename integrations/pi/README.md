@@ -1,11 +1,11 @@
 # Pi strict auto integration
 
 Requires Pi / pi-ai 0.87.x and Node 22.19+ (tests use Node 26 TypeScript support).
-Two picker entries, `jev-router/auto` and `jev-router/auto-conserve`, each
-resolve fresh work once under that strict alias and keep the model and base
-effort. `auto-conserve` keeps astra for the hardest and high-harm work and
-sends the rest of astra's work to grok (docs/guides/quota.md). Router policy
-chooses; the extension only names the alias.
+One picker entry, `jev-router/auto`, resolves fresh work once under the strict
+`auto` alias and keeps the model and base effort. Router policy chooses,
+including which subscription takes the work when one is busy
+(docs/guides/quota.md); the extension only names the alias. A session bound
+under the retired `auto-conserve` carries on from the `auto` entry.
 
 ## Install
 
@@ -40,10 +40,9 @@ environment credential always wins over the deployment's file. The token file
 must be private (0600). Never put credentials in the repository. For remote
 connections use HTTPS or a trusted encrypted tunnel.
 
-4. Reload Pi, start `/new`, and select `jev-router/auto` or
-   `jev-router/auto-conserve`. Do not switch an old unbound transcript into
-   either: strict admission requires genuinely fresh work. A session bound
-   under one alias refuses to run under the other; use `/new` to switch.
+4. Reload Pi, start `/new`, and select `jev-router/auto`. Do not switch an
+   old unbound transcript into it: strict admission requires genuinely fresh
+   work.
 
 ## Behavior and limits
 

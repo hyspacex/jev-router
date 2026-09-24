@@ -73,9 +73,24 @@ $ codexbar usage --provider grok --json-only
 ```
 
 One fills in `secondary` and reports a pace; the other fills in `primary` and
-does not. The same config reads both. A third provider may report no usage at
-all, and then it has no quota source: `source: none`, and its pressure comes
-from the circuit breaker alone.
+does not. The same config reads both. A provider that reports no usage at all
+has no quota source: `source: none`, and its pressure comes from the circuit
+breaker alone.
+
+Ollama publishes its usage on the ollama.com settings page, not in its API, so
+the shipped `ollama` source runs `codexbar usage --provider ollama --source web`.
+That reads the page with the browser's ollama.com session cookie. Sign in to
+ollama.com in Chrome on the machine that runs the router, then import the
+cookie once from a terminal on that machine, where macOS can show the Keychain
+prompt:
+
+```sh
+codexbar cookie refresh --provider ollama --allow-keychain-prompt
+```
+
+The CLI will not import a browser cookie in the background without that
+prompt, even when the CodexBar app on the same machine already shows Ollama's
+usage. Until it has a cookie the source reports an error, which is pressure 0.
 
 The config for the second one would be
 
@@ -149,10 +164,12 @@ The effective cutoff is `2.4 + pressure × 0.4`. It is bounded by `max_shift`,
 monotone in pressure, and only ever rises, so pressure can only make the
 pressured provider harder to reach, never easier.
 
-**It reorders a route.** Entries whose provider is under more pressure than
-`demote_above` move behind the healthy entries of the same route, keeping
-their order among themselves. An entry may only move ahead of the primary if
-it is marked `equivalent: true`.
+**It reorders a route.** Entries whose pressure is over `demote_above` move
+behind the healthy entries of the same route, keeping their order among
+themselves. An entry's pressure is its provider's times its model's
+`quota_cost`, so a model that costs a fifth as much is a fifth as pressured.
+An entry may only move ahead of the primary if it is marked
+`equivalent: true`.
 
 **It leaves some rules alone.** A rule with `protected: true` ignores every
 shift. Those are the moves that exist because the request needs them: vision,
@@ -181,25 +198,29 @@ spent provider.
 `exhausted_at: 100` refuses only a fully spent window. Lower it to keep a
 reserve for sessions already running.
 
-### Saving a provider on purpose
+### Balancing in both directions
 
-Pressure never lowers the quality bar for `auto`. When you would rather keep
-working on a weaker model than stop, say so by resolving `auto-conserve`
-instead. It asks Jev the same questions and routes the same way except for
-the work `auto` sends to astra:
+`auto` moves work away from whichever subscription is busy, but only between
+pairs the admission test measured as equally good for that work
+(`evals/ADMISSION.md`, steps `mid6`, `faithful6`, `fast6` and `hard6`):
 
-| work | `auto` | `auto-conserve` |
+| work | primary | when its provider is over `demote_above` |
 |---|---|---|
-| very hard (difficulty 3.0 and up) | astra xhigh | astra xhigh |
-| high harm if wrong | astra medium | astra medium |
-| hard | astra high | grok high |
-| hard image, careful moderate | astra | grok low |
-| Jev unsure, Jev down, no rule matched | astra medium | grok low |
+| easy | glm-5.3-flash | Ollama busy: gpt-6-luna low |
+| moderate, with or without tools | glm-5.3 | Ollama busy: gpt-6-sol low |
+| careful moderate | astra medium | OpenAI busy: glm-5.3 |
+| hard | astra high | OpenAI busy: gpt-6-sol xhigh, a fifth of astra's cost |
+| hardest, high harm, images | astra | stays on astra |
 
-grok is not qualified for that work, so those decisions record
-`evidence: weak`. The choice is yours and is made per session: no quota
-reading switches it on, and an open session keeps what it was bound to. For
-the Codex adapter, restart it with `--alias auto-conserve`.
+The last row has no measured equivalent, so no pressure moves it. Easy image
+work stays on gemma4-31b: gpt-6-luna misread an image in the test. Every
+decision is `evidence: qualified`, because every move lands on a measured
+pair. A session keeps what it was bound to; balancing only affects new
+admissions.
+
+`auto-conserve`, which sent astra's work to grok by hand, was retired on
+2026-09-24. It now routes exactly as `auto` and is kept only so sessions bound
+under it still run.
 
 ### Seeing it
 

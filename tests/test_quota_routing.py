@@ -246,6 +246,39 @@ def test_order_entries_keeps_a_single_entry_route_alone():
     assert reordered is False
 
 
+def cost_config(cost: float, equivalent: bool = True):
+    """`big` and a cheaper `paramy` on the same busy subscription."""
+    return make_config(
+        **{**PROVIDERS, "models": {**PROVIDERS["models"],
+                                   "paramy": {"provider": "cloud", "quota_cost": cost}}},
+        routes={"lane": {"primary": {"model": "big"},
+                         "fallbacks": [{"model": "paramy", "equivalent": equivalent}]}},
+        policy={"low_confidence": None, "rules": [], "default": use("lane")},
+        aliases={"auto": {"allowed_models": ["small", "big", "paramy"]}},
+    )
+
+
+def test_a_cheaper_equivalent_on_the_same_provider_takes_over_under_pressure():
+    cfg = cost_config(0.2)
+    assert route(cfg, pressures={"cloud": 0.9}).model == "paramy"
+    # At 0.9 the primary is over 0.6 and the cheap one is at 0.18.
+    assert route(cfg, pressures={"cloud": 0.6}).model == "big"
+    assert route(cfg).model == "big"
+
+
+def test_quota_cost_never_promotes_a_weaker_fallback_or_one_that_costs_the_same():
+    assert route(cost_config(0.2, equivalent=False), pressures={"cloud": 1.0}).model == "big"
+    # Both are equally pressured, so neither is healthier than the other.
+    assert route(cost_config(1.0), pressures={"cloud": 1.0}).model == "big"
+
+
+def test_quota_cost_is_a_share_of_the_allowance():
+    with pytest.raises(ValueError):
+        make_config(models={"big": {"quota_cost": 1.5}})
+    with pytest.raises(ValueError):
+        make_config(models={"big": {"quota_cost": 0}})
+
+
 def test_the_shipped_shape_at_full_pressure_keeps_the_top_band_and_the_protected_rules():
     """Requirement (d): at pressure 1.0 on a healthy provider the frontier
     route still serves protected rules and the hardest work, and everything

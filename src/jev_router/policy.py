@@ -769,6 +769,15 @@ def resolve_use(
     return [RouteEntry(model=route.model or "", effort=route.effort)], None
 
 
+def model_pressure(
+    config: RouterConfig, model: str, pressures: dict[str, float]
+) -> float:
+    """The provider's pressure times the model's share of its allowance."""
+    mcfg = config.models.get(model)
+    cost = mcfg.quota_cost if mcfg is not None else 1.0
+    return pressures.get(config.provider_of(model), 0.0) * cost
+
+
 def order_entries(
     config: RouterConfig, entries: list[RouteEntry], pressures: dict[str, float]
 ) -> tuple[list[RouteEntry], bool]:
@@ -778,13 +787,17 @@ def order_entries(
     `equivalent: true`, so a weaker fallback is never promoted to save quota.
     And entries keep their order among themselves, so the list only ever
     splits into "not pressured" then "pressured".
+
+    An entry's pressure is its provider's, scaled by the model's
+    `quota_cost`. So a cheaper equivalent on the same subscription can take
+    over from an expensive primary when that subscription is busy.
     """
     if len(entries) < 2:
         return entries, False
     limit = config.quota_policy.demote_above
 
     def hot(entry: RouteEntry) -> bool:
-        return pressures.get(config.provider_of(entry.model), 0.0) > limit
+        return model_pressure(config, entry.model, pressures) > limit
 
     order = [e for e in entries if not hot(e)] + [e for e in entries if hot(e)]
     primary = entries[0]

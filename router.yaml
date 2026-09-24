@@ -72,10 +72,33 @@ providers:
             resets_at: "0.usage.secondary.resetsAt"
 
   ollama:
-    description: Open-weight models on a cloud subscription. It reports no usage numbers, so pressure comes from the circuit breaker alone.
+    description: Open-weight models on a cloud subscription.
     quota:
-      source: none
+      source: command
       enabled: false
+      poll_seconds: 300
+      stale_after_seconds: 1800
+      config:
+        # The usage numbers are on the ollama.com settings page, not in the
+        # API, so this reads them with the browser's ollama.com session:
+        # sign in there in Chrome on the machine that runs the router. With an
+        # API key alone codexbar returns no windows, and that reads as unknown,
+        # which is pressure 0. The current plan reports one monthly window as
+        # `primary`; older plans report session and weekly windows as
+        # `primary` and `secondary`. A window that is absent stays unknown.
+        argv: [codexbar, usage, --provider, ollama, --source, web, --json-only]
+        timeout_ms: 8000
+        windows:
+          - name: primary
+            used_percent: "0.usage.primary.usedPercent"
+            expected_used_percent: "0.pace.primary.expectedUsedPercent"
+            window_minutes: "0.usage.primary.windowMinutes"
+            resets_at: "0.usage.primary.resetsAt"
+          - name: secondary
+            used_percent: "0.usage.secondary.usedPercent"
+            expected_used_percent: "0.pace.secondary.expectedUsedPercent"
+            window_minutes: "0.usage.secondary.windowMinutes"
+            resets_at: "0.usage.secondary.resetsAt"
   xai:
     description: Second frontier subscription. Overflow for the frontier lanes.
     quota:
@@ -107,6 +130,11 @@ models:
     effort_style: suffix
     tags: [frontier, cloud]
     description: Strong general and coding model. Slower, higher quality.
+    # quota_cost is the model's API price against astra's, which is how the
+    # Codex subscription meters them too: $10/$50 per million tokens for
+    # astra, $2/$10 for sol, $0.10/$0.50 for luna (OpenAI pricing page,
+    # 2026-09-24). A busy OpenAI subscription is a fifth as busy for sol.
+    quota_cost: 1.0
 
   ollama/glm-5.3-flash:
     upstream_id: ollama/glm-5.3-flash
@@ -143,17 +171,30 @@ models:
     effort_style: none
     tags: [fast, vision, cloud]
     description: Fast model that reads images. Takes easy requests that carry an image.
-  gpt-5.6-luna:
-    upstream_id: gpt-5.6-luna
+  gpt-6-sol:
+    upstream_id: gpt-6-sol
     provider: openai
-    context_window: 1000000
+    context_window: 400000
     supports_tools: true
     supports_vision: true
-    efforts: [none, low, medium, high]
+    efforts: [none, low, medium, high, xhigh, max]
     default_effort: low
     effort_style: suffix
-    tags: [mid, cloud]
-    description: Fallback for the fast and mid lanes on a different provider. Good answers, no faster than the frontier model.
+    quota_cost: 0.2
+    tags: [frontier, cloud]
+    description: Stands in for glm-5.3 when Ollama is busy, and for astra high on hard work when OpenAI is. A fifth of astra's price.
+  gpt-6-luna:
+    upstream_id: gpt-6-luna
+    provider: openai
+    context_window: 400000
+    supports_tools: true
+    supports_vision: true
+    efforts: [none, low, medium, high, xhigh, max]
+    default_effort: low
+    effort_style: suffix
+    quota_cost: 0.01
+    tags: [fast, cloud]
+    description: Stands in for glm-5.3-flash on easy text when Ollama is busy. Misread handwritten digits, so not an image model.
   grok-4.6:
     upstream_id: grok-4.6
     provider: xai
@@ -166,41 +207,45 @@ models:
     tags: [frontier, cloud]
     description: Overflow for the frontier lanes. Scored 0.7 points below the frontier model on hard cases, so quota never promotes it ahead.
 
-# Named lanes. A rule may say `use: {route: fast}` instead of naming a model,
+# Named lanes. A rule may say `use: {route: name}` instead of naming a model,
 # and then a 429, a 5xx, a refused connection or a timeout before the first
 # byte moves the request down the lane's `fallbacks` list.
 #
-# There is one model per provider today, so every lane is a primary and
-# nothing else. The shape is here so that adding a second subscription is a
-# config edit. `equivalent: true` on a fallback says it is as good as the
-# primary for this lane's work, which is the only thing that lets quota
-# pressure promote it ahead of the primary.
+# `equivalent: true` on a fallback says the admission test found it as good
+# as the primary for this lane's work, and it is the only thing that lets
+# quota pressure promote it ahead of the primary. The equivalents here face
+# both ways: a busy Ollama sends easy and moderate work to OpenAI's cheap
+# models, and a busy OpenAI sends careful work to glm-5.3 and hard work from
+# astra to sol, which costs a fifth as much of the same subscription.
+# Evidence: evals/ADMISSION.md, steps mid6, faithful6, fast6 and hard6.
 routes:
   fast:
     description: Short, easy work.
     primary: {model: ollama/glm-5.3-flash, effort: none}
     fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
+      - {model: gpt-6-luna, effort: low, equivalent: true}
   fast_vision:
     description: Easy requests that carry an image.
     primary: {model: ollama/gemma4-31b}
     fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
+      - {model: gpt-6-astra, effort: medium}
   mid:
     description: Moderate work without tools.
     primary: {model: ollama/glm-5.3, effort: none}
     fallbacks:
-      - {model: gpt-5.6-luna, effort: low}
-      - {model: gpt-6-astra, effort: low}
+      - {model: gpt-6-sol, effort: low, equivalent: true}
 
   mid_tools:
     description: Moderate tool-enabled work; explicitly bounded reasoning.
     primary: {model: ollama/glm-5.3, effort: high}
-
-  frontier_low:
-    description: Work that needs the strong model but not much thinking.
-    primary: {model: gpt-6-astra, effort: low}
     fallbacks:
+      - {model: gpt-6-sol, effort: low, equivalent: true}
+
+  careful:
+    description: Moderate work, other than code edits, where a mistake would matter.
+    primary: {model: gpt-6-astra, effort: medium}
+    fallbacks:
+      - {model: ollama/glm-5.3, effort: none, equivalent: true}
       - {model: grok-4.6, effort: low}
 
   frontier_medium:
@@ -213,6 +258,7 @@ routes:
     description: Hard work.
     primary: {model: gpt-6-astra, effort: high}
     fallbacks:
+      - {model: gpt-6-sol, effort: xhigh, equivalent: true}
       - {model: grok-4.6, effort: low}
 
   frontier_xhigh:
@@ -220,14 +266,6 @@ routes:
     primary: {model: gpt-6-astra, effort: xhigh}
     fallbacks:
       - {model: grok-4.6, effort: low}
-
-  frontier_grok:
-    description: Frontier-class work while astra is being saved. Only auto-conserve routes here.
-    primary: {model: grok-4.6, effort: low}
-
-  frontier_grok_high:
-    description: Hard work while astra is being saved. Only auto-conserve routes here.
-    primary: {model: grok-4.6, effort: high}
 
 # Quality lanes: which model and effort pairs somebody has measured for which
 # kind of work, and where the evidence is.
@@ -250,10 +288,10 @@ quality_lanes:
       - model: ollama/glm-5.3-flash
         effort: none
         qualification_ref: "POOL.md: in the pool since the first release; evals/outcomes.md shows raising its effort made answers slightly worse"
-      - model: gpt-5.6-luna
+      - model: gpt-6-luna
         effort: low
-        qualification_ref: "POOL.md: fallback for the fast, image and mid lanes, scored 9.72"
-    conservative_default: {model: gpt-5.6-luna, effort: low}
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step fast6, 0.12 below glm-5.3-flash on ten text cases"
+    conservative_default: {model: gpt-6-luna, effort: low}
 
   simple-vision:
     description: Easy requests that carry an image.
@@ -261,10 +299,10 @@ quality_lanes:
     qualified:
       - model: ollama/gemma4-31b
         qualification_ref: "POOL.md: read all four test images; admitted for easy image work only"
-      - model: gpt-5.6-luna
-        effort: low
-        qualification_ref: "POOL.md: fallback for the fast, image and mid lanes"
-    conservative_default: {model: gpt-5.6-luna, effort: low}
+      - model: gpt-6-astra
+        effort: medium
+        qualification_ref: "POOL.md: Per-rule lanes (2026-09-23); the vision-work pair, which covers harder images than these"
+    conservative_default: {model: gpt-6-astra, effort: medium}
 
   moderate-work:
     description: Moderate work without tools, where a slip would be spotted.
@@ -273,9 +311,9 @@ quality_lanes:
       - model: ollama/glm-5.3
         effort: none
         qualification_ref: "evals/ADMISSION.md: 9.70 against the frontier model's 9.31 on 12 moderate cases"
-      - model: gpt-5.6-luna
+      - model: gpt-6-sol
         effort: low
-        qualification_ref: "POOL.md: good answers (9.72), no faster than the frontier model"
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step mid6, 0.24 below glm-5.3 on 12 moderate cases"
       - model: gpt-6-astra
         effort: low
         qualification_ref: "POOL.md: the model this band was measured against"
@@ -288,20 +326,24 @@ quality_lanes:
       - model: ollama/glm-5.3
         effort: high
         qualification_ref: "evals/reports/2026-09-20-glm-effort/summary.md"
+      - model: gpt-6-sol
+        effort: low
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); step mid6 for the work, the owner's decision for tool use"
       - model: gpt-6-astra
         effort: medium
         qualification_ref: "POOL.md: GLM tool-driven coding pilot (2026-09-20 UTC)"
     conservative_default: {model: gpt-6-astra, effort: medium}
 
-  # One lane per frontier rule, holding only the pair that rule uses. A lane
-  # shared by several rules lets any of them be handed any of its pairs, and
-  # nobody measured astra low on very hard work. A pair joins one of these
-  # when it passes on the whole population that rule routes, never a slice
-  # of it.
+  # One lane per frontier rule, holding only the pairs measured for that
+  # rule's work. A lane shared by several rules lets any of them be handed any
+  # of its pairs, and nobody measured astra low on very hard work. A pair
+  # joins one of these when it passes on cases drawn from the population that
+  # rule routes, never a slice of it.
   #
   # grok-4.6 is deliberately absent. It is a failure fallback for the
-  # frontier routes and POOL.md records it 0.72 below the frontier model on
-  # nine hard cases, so no amount of quota pressure may promote it here.
+  # frontier routes. At high effort it sat 0.40 below astra high on eleven
+  # hard cases, with an interval reaching 1.15 below (POOL.md, 2026-09-24),
+  # so no amount of quota pressure may promote it here.
   hardest-work:
     description: The hardest band.
     qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
@@ -317,6 +359,9 @@ quality_lanes:
       - model: gpt-6-astra
         effort: high
         qualification_ref: "POOL.md: in the pool since the first release"
+      - model: gpt-6-sol
+        effort: xhigh
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step hard6, 0.03 below astra high on 11 hard cases"
 
   high-consequence:
     description: Work where a small mistake costs more than quota.
@@ -336,11 +381,14 @@ quality_lanes:
 
   careful-moderate:
     description: Moderate work, other than code edits, where a mistake would matter.
-    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
+    qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24)"
     qualified:
       - model: gpt-6-astra
-        effort: low
-        qualification_ref: "POOL.md: in the pool since the first release"
+        effort: medium
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step faithful6, the best of the routes on five faithfulness cases"
+      - model: ollama/glm-5.3
+        effort: none
+        qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step faithful6, 0.10 below astra medium"
 
 # What quota pressure is allowed to do. Pressure is a number per provider in
 # [0, 1], measured from pace rather than raw percent: a provider 20 points
@@ -697,9 +745,12 @@ policy:
         harm_if_wrong: {gte: 0.8}
       use: {route: frontier_medium}
 
-    # Moderate work where a mistake would matter stays on the frontier model.
-    # Sending it to the mid model under-routed nine faithfulness-sensitive cases
-    # in the routing eval. Code edits are exempt: they are what the mid model
+    # Moderate work where a mistake would matter stays on the frontier model,
+    # at medium: astra medium was the best route on the faithfulness cases
+    # (POOL.md, 2026-09-24). Sending all of it to the mid model under-routed
+    # nine faithfulness-sensitive cases in the routing eval, so glm-5.3 takes
+    # it only as the equivalent when OpenAI is busy, where it scored 0.10
+    # below astra medium. Code edits are exempt: they are what the mid model
     # was admitted on, and exempting them cost nothing in that eval.
     - name: moderate_careful
       lane: careful-moderate
@@ -707,7 +758,7 @@ policy:
         task: {not_in: [code-edit]}
         difficulty: {gte: 1.4}
         harm_if_wrong: {gte: 0.45}
-      use: {route: frontier_low}
+      use: {route: careful}
 
     # Tools being available does not by itself require frontier. Keep this
     # after moderate_careful so faithfulness-sensitive work can reach Astra low.
@@ -748,70 +799,37 @@ policy:
 # used, were dropped in experiment 27. Legacy aliases still load and behave as
 # they always did; write your own if you want one:
 # docs/guides/legacy-routing.md.
-rulesets:
-  # The owner's trade, chosen per session by resolving `auto-conserve`: astra
-  # is kept for the hardest work and for work where a mistake costs more than
-  # quota, and the rest of what `auto` sends to astra goes to grok, the other
-  # frontier-class model: high for hard work, low for the rest. grok is not qualified for that work (POOL.md: 0.72
-  # below astra on nine hard cases), so those rules name no lane and every
-  # decision they make records `evidence: weak`. Quota readings never switch
-  # this on; the caller does.
-  #
-  # The shared rules are the same objects as in `policy`. very_hard and
-  # high_harm come before the rules that move, so work that is hard and also
-  # high harm, or very hard and carries an image, stays on astra.
-  conserve:
-    low_confidence:
-      <<: *confidence_gate
-      use: {route: frontier_grok}
-    rules:
-      - *images_easy
-      - *very_hard
-      - *high_harm
-      - name: images_need_vision
-        when:
-          has_images: true
-        use: {route: frontier_grok}
-      # High, not low, on hard work only: POOL.md, "grok effort for
-      # auto-conserve (2026-09-23)". On the six difficulty-3 cases it scored
-      # 0.75 above low and was never worse; on easier work it gained nothing
-      # and took three to five times as long.
-      - name: hard
-        when:
-          difficulty: {gte: 2.4}
-        use: {route: frontier_grok_high}
-      - name: moderate_careful
-        when:
-          task: {not_in: [code-edit]}
-          difficulty: {gte: 1.4}
-          harm_if_wrong: {gte: 0.45}
-        use: {route: frontier_grok}
-      - *moderate_tools
-      - *moderate
-      - *easy
-    default: {route: frontier_grok}
+rulesets: {}
 
 aliases:
+  # Quota moves work in either direction inside `auto`: a busy provider's
+  # primary gives way to an equivalent on another provider, or to a cheaper
+  # one on the same provider, and only where the admission test found the two
+  # equally good. There is no separate mode to choose.
   auto:
     description: Choose once for fresh work; keep the model and effort for the session.
     session_mode: strict
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6-astra, grok-4.6]
     # What admission binds when Jev is down. Without this an admission with no
     # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
     # whatever it binds here is as fixed as any other binding.
     admission_fallback: {route: frontier_medium}
 
+  # Retired on 2026-09-24, when `auto` began balancing in both directions.
+  # Kept so a session bound under it still runs: removing an alias blocks
+  # its bindings. It routes exactly as `auto` does, and clients no longer
+  # offer it. Delete it once no open session names it.
   auto-conserve:
-    description: Like auto, but astra only for very hard and high-harm work; grok takes the rest of its work.
+    description: Retired. Routes as auto; kept only for sessions bound under it.
     session_mode: strict
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
-    rules: conserve
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
-    admission_fallback: {route: frontier_grok}
+    rules: policy
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6-astra, grok-4.6]
+    admission_fallback: {route: frontier_medium}
 
 # Floors per X-Router-Client header value. Never keyed by an API key.
 clients: {}

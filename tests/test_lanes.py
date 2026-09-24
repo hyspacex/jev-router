@@ -387,9 +387,17 @@ def test_strict_quality_requirement_does_not_move_with_quota(pressure):
         "harm_if_wrong": {"type": "noul", "noul": 0.1},
     }
     result = select(cfg, alias, answers, FEATURES, {"openai": pressure})
+    # The requirement never moves: the same rule and the same lane at any
+    # pressure, and no threshold shifts.
     assert result.rule == "hard"
     assert result.lane == "hard-work"
-    assert (result.model, result.effort) == ("gpt-6-astra", "high")
     assert result.counterfactual == ("gpt-6-astra", "high")
     assert result.shifts == []
-    assert not result.pressure_changed_the_outcome
+    # Only the pair inside the lane may. Over the demote threshold astra gives
+    # way to sol xhigh, which the lane qualifies and which costs a fifth as
+    # much of the same subscription.
+    busy = pressure > cfg.quota_policy.demote_above
+    expected = ("gpt-6-sol", "xhigh") if busy else ("gpt-6-astra", "high")
+    assert (result.model, result.effort) == expected
+    assert result.evidence == "qualified"
+    assert result.pressure_changed_the_outcome is busy

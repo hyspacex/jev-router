@@ -25,7 +25,10 @@ move a session to a cheaper model when quota gets tight.
 - **Rules you can inspect.** Providers, models, questions, routes, client floors,
   and effort limits live in YAML. Decisions can be replayed from their logs.
 - **Quota-aware admission.** Optional quota sources can steer new work within
-  configured quality lanes. Missing or stale telemetry contributes no pressure.
+  configured quality lanes, in whichever direction relieves the busy
+  subscription: to a model measured as equally good on another provider, or to
+  a cheaper one on the same provider. Missing or stale telemetry contributes no
+  pressure.
 - **Your existing upstream.** The router forwards to an OpenAI-compatible API or
   proxy and preserves streamed response bytes. It does not host models.
 

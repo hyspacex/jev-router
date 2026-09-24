@@ -975,6 +975,33 @@ SPEC_FIXES = [
     'emphasis, so "does **not** observe" read as a wrong answer.',
     "`debug-nameerror-typo-14`: pointing at the call site by showing it "
     "corrected now counts, and the weight moved from that to brevity.",
+    # Found reading GPT-6 replies on 2026-09-24.
+    "`code-chinese-hooks-08`: the stale-closure check knew only a few spellings "
+    "of a functional update. `setState(s => s.running ? {...} : s)` is one and "
+    "now counts.",
+    "`quick-weakmap-vs-map-72`: the weak-reference check missed \"can be "
+    'garbage-collected if nothing else references it" and "keeps keys alive? '
+    'No", which say the same thing.',
+    "`code-prose-shaped-really-code-09`: the lossy-fix penalty fired on "
+    '"replace the hand-built comma-separated lines with a CSV writer" and on '
+    '"rather than stripping commas or quotes", which are the right advice. It '
+    "now fires on stripping commas or quotes, in words or in code.",
+    "`writing-medical-discharge-38`: the harm check fired on \"not just a "
+    'formality" and on the heading "Is the driving restriction just a '
+    'formality? No", so every model that answered the question correctly lost '
+    "three points. It now fires only on the claim itself. The medication check "
+    'also accepts "blood-pressure" with a hyphen.',
+    "`other-simple-question-proof-78`: complete Sylow proofs lost up to four "
+    "points for their notation. `1 \\pmod 5`, \"the number of subgroups of "
+    'order \\(5\\)", `\\{e\\}`, `C_3 \\times C_5` in that order, `C_{15}`, and '
+    "ending on an element of order 15 that generates the group now count, "
+    "as does `\\mathbb{Z}/15`. A "
+    "wrong Sylow count and a bare assertion are still penalised.",
+    "`other-probability-puzzle-79`: `\\boxed{50\\%}` did not read as 50%, "
+    "and the working check missed the denominator written as `\\frac{64}{...}`.",
+    "`other-buy-vs-rent-84`: the roof-share check missed \"€40,000 ÷ 18\", "
+    "\"€40k / 18\" and "
+    "the rounded €2,220.",
 ]
 
 
