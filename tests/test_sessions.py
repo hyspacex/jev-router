@@ -634,8 +634,8 @@ def test_unknown_keys_are_refused_everywhere_new():
 def test_every_shipped_model_declares_its_protocol_honestly():
     config = load_config(Path(__file__).resolve().parent.parent / "router.yaml")
     assert config.session_routing.enabled is True
-    assert set(config.aliases) == {"auto"}
-    assert config.aliases["auto"].session_mode == "strict"
+    assert set(config.aliases) == {"auto", "auto-conserve"}
+    assert {a.session_mode for a in config.aliases.values()} == {"strict"}
     for name, model in config.models.items():
         assert model.protocol == "openai-chat", name
         assert model.effort_control.between_turn == "fixed", name

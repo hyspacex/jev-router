@@ -221,6 +221,10 @@ routes:
     fallbacks:
       - {model: grok-4.6, effort: low}
 
+  frontier_grok:
+    description: Frontier-class work while astra is being saved. Only auto-conserve routes here.
+    primary: {model: grok-4.6, effort: low}
+
 # Quality lanes: which model and effort pairs somebody has measured for which
 # kind of work, and where the evidence is.
 #
@@ -617,7 +621,7 @@ questions:
 # tuner after any change to the questions or to the state builder; the cutoffs
 # only mean anything against one wording.
 policy:
-  low_confidence:
+  low_confidence: &confidence_gate
     # Lowered from 0.55 by experiment 14 in evals/EXPERIMENTS.md. Jev's
     # difficulty confidence is not overconfident: its expected calibration
     # error is 0.084 and it runs 0.05 *under* its own accuracy, so a gate at
@@ -651,7 +655,8 @@ policy:
   # moves that exist because the request needs them, not because the work
   # looked hard.
   rules:
-    - name: images_easy
+    - &images_easy
+      name: images_easy
       lane: simple-vision
       protected: true            # quota never moves an image request
       when:
@@ -667,7 +672,8 @@ policy:
         has_images: true
       use: {route: frontier_medium}
 
-    - name: very_hard
+    - &very_hard
+      name: very_hard
       lane: hardest-work
       when:
         difficulty: {gte: 3.0}
@@ -679,7 +685,8 @@ policy:
         difficulty: {gte: 2.4}
       use: {route: frontier_high}
 
-    - name: high_harm
+    - &high_harm
+      name: high_harm
       lane: high-consequence
       protected: true            # a small mistake here costs more than quota
       when:
@@ -701,7 +708,8 @@ policy:
     # Tools being available does not by itself require frontier. Keep this
     # after moderate_careful so faithfulness-sensitive work can reach Astra low.
     # High effort passed the bounded tool pilot; no general equivalence claim.
-    - name: moderate_tools
+    - &moderate_tools
+      name: moderate_tools
       lane: moderate-tools
       when:
         has_tools: true
@@ -711,7 +719,8 @@ policy:
     # Moderate work without tools. evals/ADMISSION.md: the mid model scored
     # 9.70 against the frontier model's 9.31 on 12 such cases, at a third of
     # the latency.
-    - name: moderate
+    - &moderate
+      name: moderate
       lane: moderate-work
       when:
         difficulty: {gte: 1.4}
@@ -723,19 +732,56 @@ policy:
     # 10 and low -> high a further -0.36, while latency went up by a third. So
     # there is no ladder here, and evals/cases.yaml labels every fast case
     # `effort: none` for the same reason.
-    - name: easy
+    - &easy
+      name: easy
       lane: simple-work
       when: {}
       use: {route: fast}
 
   default: {route: frontier_medium}
 
-# Production exposes one strict entry. Experiments use separate configurations.
 # `auto-fast`, `auto-code` and `auto-session`, and the `code_only` ruleset they
-# used, were dropped here in experiment 27. Legacy aliases and extra rulesets
-# still load and behave as they always did; they are simply not shipped. Write
-# your own if you want one: docs/guides/legacy-routing.md.
-rulesets: {}
+# used, were dropped in experiment 27. Legacy aliases still load and behave as
+# they always did; write your own if you want one:
+# docs/guides/legacy-routing.md.
+rulesets:
+  # The owner's trade, chosen per session by resolving `auto-conserve`: astra
+  # is kept for the hardest work and for work where a mistake costs more than
+  # quota, and the rest of what `auto` sends to astra goes to grok, the other
+  # frontier-class model. grok is not qualified for that work (POOL.md: 0.72
+  # below astra on nine hard cases), so those rules name no lane and every
+  # decision they make records `evidence: weak`. Quota readings never switch
+  # this on; the caller does.
+  #
+  # The shared rules are the same objects as in `policy`. very_hard and
+  # high_harm come before the rules that move, so work that is hard and also
+  # high harm, or very hard and carries an image, stays on astra.
+  conserve:
+    low_confidence:
+      <<: *confidence_gate
+      use: {route: frontier_grok}
+    rules:
+      - *images_easy
+      - *very_hard
+      - *high_harm
+      - name: images_need_vision
+        when:
+          has_images: true
+        use: {route: frontier_grok}
+      - name: hard
+        when:
+          difficulty: {gte: 2.4}
+        use: {route: frontier_grok}
+      - name: moderate_careful
+        when:
+          task: {not_in: [code-edit]}
+          difficulty: {gte: 1.4}
+          harm_if_wrong: {gte: 0.45}
+        use: {route: frontier_grok}
+      - *moderate_tools
+      - *moderate
+      - *easy
+    default: {route: frontier_grok}
 
 aliases:
   auto:
@@ -749,6 +795,15 @@ aliases:
     # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
     # whatever it binds here is as fixed as any other binding.
     admission_fallback: {route: frontier_medium}
+
+  auto-conserve:
+    description: Like auto, but astra only for very hard and high-harm work; grok takes the rest of its work.
+    session_mode: strict
+    state_builder: continuation_aware_v1
+    questions: [task, difficulty, harm_if_wrong]
+    rules: conserve
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-5.6-luna, gpt-6-astra, grok-4.6]
+    admission_fallback: {route: frontier_grok}
 
 # Floors per X-Router-Client header value. Never keyed by an API key.
 clients: {}
