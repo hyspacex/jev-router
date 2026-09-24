@@ -1,8 +1,11 @@
 # Pi strict auto integration
 
 Requires Pi / pi-ai 0.87.x and Node 22.19+ (tests use Node 26 TypeScript support).
-One picker entry, `jev-router/auto`, resolves fresh work once and keeps the
-model and base effort. Router policy chooses; the extension does not.
+Two picker entries, `jev-router/auto` and `jev-router/auto-conserve`, each
+resolve fresh work once under that strict alias and keep the model and base
+effort. `auto-conserve` keeps astra for the hardest and high-harm work and
+sends the rest of astra's work to grok (docs/guides/quota.md). Router policy
+chooses; the extension only names the alias.
 
 ## Install
 
@@ -10,7 +13,7 @@ model and base effort. Router policy chooses; the extension does not.
    at `index.ts`. Keep package dependencies resolvable in the deployment.
 2. Keep the existing `jev-router` upstream credential in Pi's `models.json` or
    auth store. Remove its old `models` and `modelOverrides` entries; the extension
-   owns the one auto model. Do not override the custom transport with another API.
+   owns the auto models. Do not override the custom transport with another API.
 3. Create `~/.pi/agent/jev-router.json`:
 
 ```json
@@ -37,8 +40,10 @@ environment credential always wins over the deployment's file. The token file
 must be private (0600). Never put credentials in the repository. For remote
 connections use HTTPS or a trusted encrypted tunnel.
 
-4. Reload Pi, start `/new`, and select `jev-router/auto`. Do not switch an old
-   unbound transcript into auto: strict admission requires genuinely fresh work.
+4. Reload Pi, start `/new`, and select `jev-router/auto` or
+   `jev-router/auto-conserve`. Do not switch an old unbound transcript into
+   either: strict admission requires genuinely fresh work. A session bound
+   under one alias refuses to run under the other; use `/new` to switch.
 
 ## Behavior and limits
 
@@ -56,9 +61,12 @@ connections use HTTPS or a trusted encrypted tunnel.
 - A refusal the router names with a code it only raises before forwarding
   (`INVALID_ROUTER_INPUT`, `ROUTER_UNAUTHORIZED`, `SESSION_UNKNOWN`,
   `SESSION_CLOSED`, `PROFILE_CHANGED`, `NO_SAFE_ADMISSION`,
-  `CONTEXT_BUDGET_EXCEEDED`, `UNSUPPORTED_PROFILE`) frees the request id: the
-  provider never ran it, so the next request goes ahead on its own. The code is
-  shown; the router's message text is not.
+  `CONTEXT_BUDGET_EXCEEDED`, `UNSUPPORTED_PROFILE`, `PROVIDER_UNAVAILABLE`)
+  frees the request id: the provider never ran it, so the next request goes
+  ahead on its own. The code is shown; the router's message text is not.
+- `PROVIDER_UNAVAILABLE` at admission means the chosen model's quota is spent.
+  No binding is made, and the message says roughly when the quota resets,
+  from the router's `retry_after_seconds`.
 - Everything else keeps the block. A transport failure, an upstream status the
   router passed through, a stream that broke after acceptance,
   `EXECUTION_OUTCOME_UNKNOWN`, `SESSION_CONFLICT` and

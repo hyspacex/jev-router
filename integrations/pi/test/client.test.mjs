@@ -163,3 +163,24 @@ test('a router refusal never repeats the router message text', async () => {
     return true;
   });
 });
+
+test('the picked alias is admitted, kept, and a spent provider says when it resets', async () => {
+  const conserve = fixture(); await conserve.client.bind(fresh, undefined, 'auto-conserve');
+  assert.equal(conserve.calls[0].body.alias, 'auto-conserve');
+  // A binding is only ever used under the alias it was admitted under.
+  const reload = fixture(conserve.client.state);
+  await assert.rejects(reload.client.bind(fresh, undefined, 'auto'), /bound under auto-conserve.*\/new/);
+  assert.equal(reload.calls.length, 0);
+  // A binding saved before aliases were recorded was made under `auto`.
+  const legacy = fixture({...conserve.client.state, alias: undefined});
+  await assert.rejects(legacy.client.bind(fresh, undefined, 'auto-conserve'), /bound under auto\./);
+  await assert.rejects(fixture().client.bind(fresh, undefined, 'auto-fast'), /Unknown router alias/);
+
+  const spent = fixture(undefined, {respond: () => Response.json(
+    {error: {code: 'PROVIDER_UNAVAILABLE', message: 'secret provider text', retry_after_seconds: 13 * 3600 + 5}}, {status: 503})});
+  const refused = await spent.client.bind(fresh).catch(error => error);
+  assert.equal(refused.code, 'PROVIDER_UNAVAILABLE');
+  assert.match(refused.message, /resets in about 14 h/);
+  assert.equal(refused.message.includes('secret'), false);
+  assert.equal(spent.client.state.binding, null);
+});

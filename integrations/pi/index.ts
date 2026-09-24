@@ -4,7 +4,7 @@ import { stream as streamChat } from "@earendil-works/pi-ai/api/openai-completio
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { StrictClient, ContractError, RouterError, readErrorCode, DEFAULT_MAX_OUTPUT_TOKENS } from "./client.mjs";
+import { StrictClient, ContractError, RouterError, readErrorCode, ALIASES, DEFAULT_MAX_OUTPUT_TOKENS } from "./client.mjs";
 
 const PROVIDER = "jev-router";
 const ENTRY = "jev-router.binding.v1";
@@ -46,18 +46,20 @@ export default function (pi: ExtensionAPI) {
   // typo cannot stop unrelated providers loading.
   const placeholderOutput = Number.isSafeInteger(configuredOutput) && (configuredOutput as number) > 0
     ? configuredOutput as number : DEFAULT_MAX_OUTPUT_TOKENS;
-  const base = {
-    id: "auto", name: "auto · strict session", reasoning: false,
-    input: ["text", "image"] as ("text" | "image")[], cost: COST,
-    contextWindow: 32768, maxTokens: placeholderOutput,
+  // The limits the picker shows before admission.
+  const placeholder = {input: ["text", "image"] as ("text" | "image")[], contextWindow: 32768, maxTokens: placeholderOutput};
+  const NAMES: Record<string, string> = {"auto": "auto · strict session", "auto-conserve": "auto-conserve · saves astra"};
+  // One picker entry per strict alias; the entry chosen is the alias admitted.
+  const models = ALIASES.map(id => ({
+    id, name: NAMES[id] ?? id, reasoning: false, cost: COST, ...placeholder,
     compat: {supportsDeveloperRole: false, supportsReasoningEffort: false, supportsStrictMode: false, maxTokensField: "max_tokens" as const},
-  };
+  }));
   function status() {
     if (!ctx) return;
     const binding = client?.state.binding;
     if (binding && ctx.model?.provider === PROVIDER) applyBinding(ctx.model, binding.execution);
     ctx.ui.setStatus("jev-router", ctx.model?.provider === PROVIDER
-      ? binding ? `Jev · ${binding.execution.model_key} · ${binding.execution.initial_effort || "none"} · ${client?.state.pending ? "outcome unresolved" : "strict"}` : "Jev · awaiting fresh admission"
+      ? binding ? `Jev ${client?.state.alias ?? "auto"} · ${binding.execution.model_key} · ${binding.execution.initial_effort || "none"} · ${client?.state.pending ? "outcome unresolved" : "strict"}` : "Jev · awaiting fresh admission"
       : undefined);
   }
   function initialize(context: ExtensionContext) {
@@ -104,12 +106,12 @@ export default function (pi: ExtensionAPI) {
         if (!context.hasUI || !await context.ui.confirm("Close strict binding?", "Future execution requires a new Pi session.")) return;
         await client!.close();
       } else if (args.trim() === "audit") context.ui.notify(`${origin}/dashboard`, "info");
-      else context.ui.notify(JSON.stringify({session: client!.state.sessionId, binding: client!.state.binding?.execution, pending: client!.state.pending, closed: client!.state.closed}, null, 2), "info");
+      else context.ui.notify(JSON.stringify({session: client!.state.sessionId, alias: client!.state.alias ?? "auto", binding: client!.state.binding?.execution, pending: client!.state.pending, closed: client!.state.closed}, null, 2), "info");
       status();
     },
   });
   pi.registerProvider(PROVIDER, {
-    baseUrl: `${origin}/v1`, api: "openai-completions", models: [base],
+    baseUrl: `${origin}/v1`, api: "openai-completions", models,
     streamSimple(model, transcript, options) {
       const output = createAssistantMessageEventStream();
       const active = client;
@@ -127,17 +129,17 @@ export default function (pi: ExtensionAPI) {
           }
           active.startRequest(); acquired = true;
           // Use Pi's serializer for admission; the probe is forbidden from doing network I/O.
-          // `base` restores the placeholder limits, so admission is serialized
-          // against the unbound profile rather than a previous binding's.
+          // `placeholder` restores the unbound limits, so admission is
+          // serialized against them rather than a previous binding's.
           let request: any;
-          const probe = streamChat({...model, ...base, provider: PROVIDER, api: "openai-completions"}, transcript, {
-            ...options, maxRetries: 0, maxTokens: base.maxTokens,
+          const probe = streamChat({...model, ...placeholder, provider: PROVIDER, api: "openai-completions"}, transcript, {
+            ...options, maxRetries: 0, maxTokens: placeholder.maxTokens,
             fetch: async () => { throw new ContractError("Admission serializer attempted network I/O."); },
             onPayload: (payload) => { request = payload; throw new ContractError("Serialization complete"); },
           });
           await probe.result();
           if (!request) throw new ContractError("Could not serialize admission request.");
-          const binding = await active.bind(request, options?.signal);
+          const binding = await active.bind(request, options?.signal, model.id);
           const e = binding.execution;
           const boundModel = {...model, provider: PROVIDER, api: "openai-completions" as const,
             id: e.wire_model, baseUrl: `${origin}/v1`};
@@ -177,7 +179,7 @@ export default function (pi: ExtensionAPI) {
               completed = true;
               active.finish(true); acquired = false;
               event.message.responseModel = e.wire_model;
-              event.message.model = "auto";
+              event.message.model = model.id;
             }
             if (event.type === "error") {
               active.finish(false); acquired = false;
@@ -192,7 +194,7 @@ export default function (pi: ExtensionAPI) {
         } catch (error) {
           if (acquired) { active?.finish(false); acquired = false; }
           const named = refusal ?? (error instanceof ContractError ? error : undefined);
-          const message = {role: "assistant" as const, content: [], api: model.api, provider: PROVIDER, model: "auto",
+          const message = {role: "assistant" as const, content: [], api: model.api, provider: PROVIDER, model: model.id,
             usage: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: {...COST, total: 0}},
             stopReason: "error" as const, timestamp: Date.now(),
             errorMessage: named ? named.message : "Strict router integration failed; no automatic model replacement. Inspect /jev status."};

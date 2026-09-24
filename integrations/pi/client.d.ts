@@ -11,8 +11,14 @@ export declare class RouterError extends ContractError {
 
 export declare const DEFAULT_MAX_OUTPUT_TOKENS: number;
 
+/** The strict aliases the picker offers. */
+export declare const ALIASES: readonly string[];
+
 /** Codes that mean the provider never saw the request. */
 export declare const PRE_ACCEPTANCE_CODES: ReadonlySet<string>;
+
+/** The machine code of a refused response and the router's retry wait, if any. */
+export declare function readRefusal(response: Response): Promise<{code: string; retryAfterSeconds?: number}>;
 
 /** The machine code of a refused response, and nothing else from its body. */
 export declare function readErrorCode(response: Response): Promise<string>;
@@ -41,6 +47,8 @@ export interface ClientState {
   piSessionId: string;
   origin: string;
   sessionId: string;
+  /** The alias the binding was admitted under; absent means `auto`. */
+  alias?: string;
   binding: Binding | null;
   pending: string | null;
   closed: boolean;
@@ -65,7 +73,7 @@ export declare class StrictClient {
   resumed: boolean;
   persist(): void;
   control(path: string, payload: unknown, signal?: AbortSignal): Promise<any>;
-  bind(request: {messages: {role: string}[]}, signal?: AbortSignal): Promise<Binding>;
+  bind(request: {messages: {role: string}[]}, signal?: AbortSignal, alias?: string): Promise<Binding>;
   startRequest(): void;
   executionHeaders(): Record<string, string>;
   /** True when the pending execution was released. */
