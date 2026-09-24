@@ -209,17 +209,16 @@ work, each with a reference to where the evidence is.
 
 ```yaml
 quality_lanes:
-  frontier-work:
-    description: Hard work, high consequence work, and tool loops.
-    qualification_ref: "POOL.md: Verdicts (2026-09-19)"
+  hard-work:
+    description: Hard work.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
     qualified:
       - {model: gpt-6-astra, effort: high, qualification_ref: "POOL.md: ..."}
-    conservative_default: {route: frontier_medium}
 
 policy:
   rules:
     - name: hard
-      lane: frontier-work
+      lane: hard-work
       when: {difficulty: {gte: 2.4}}
       use: {route: frontier_high}
 ```
@@ -316,7 +315,7 @@ uv run jev-router decisions -n 10
 ```
 09-19 14:02:11  760392c45528  auto-session  gpt-6-astra(high)  rule=hard  ...
     shadow: interacting_constraints=0.90 mechanical_transform=0.10
-    lane=frontier-work  evidence=qualified  action=admitted:hard  without pressure=gpt-6-astra(high)
+    lane=hard-work  evidence=qualified  action=admitted:hard  without pressure=gpt-6-astra(high)
     quota: ollama=unknown, openai=fresh, xai=unknown
     experiment mechanical_cheap: ollama/glm-5.3-flash(none)  CHANGED
     ruled out ollama/glm-5.3-flash: the request carries an image
@@ -340,7 +339,7 @@ decision 760392c45528:
   replayed: gpt-6-astra(high) rule=hard
   config:   stored a41f0c9e2b7d8135, now a41f0c9e2b7d8135
   pressure: openai=0.42
-  lane:     frontier-work (evidence: qualified)
+  lane:     hard-work (evidence: qualified)
   without pressure: gpt-6-astra(high)
   reproduced: same config, same answers, same route
 ```

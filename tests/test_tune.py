@@ -333,6 +333,8 @@ def test_a_pressured_decision_is_not_scored_as_a_classifier_error(db, tmp_path):
     log_under_pressure(db, "p1", {"openai": 1.0})
     db.add_feedback(decision_id="p1", verdict="right")
     config = tune.config_with_overlay()
+    hard = next(r for r in config.policy.rules if r.name == "hard")
+    hard.when["difficulty"] |= {"shift_with": "openai", "max_shift": 0.4}
     alias = config.aliases["auto"]
     case = tune.load_feedback_cases(tmp_path / "router.db", config)[0]
     assert case.acceptable_tiers == ["mid"]

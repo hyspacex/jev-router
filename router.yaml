@@ -285,26 +285,54 @@ quality_lanes:
         qualification_ref: "POOL.md: GLM tool-driven coding pilot (2026-09-20 UTC)"
     conservative_default: {model: gpt-6-astra, effort: medium}
 
-  frontier-work:
-    description: Hard work and high consequence work.
-    # grok-4.6 is deliberately absent. It is a failure fallback for the
-    # frontier routes and POOL.md records it 0.72 below the frontier model on
-    # nine hard cases, so no amount of quota pressure may promote it here.
-    qualification_ref: "POOL.md: Verdicts (2026-09-19)"
+  # One lane per frontier rule, holding only the pair that rule uses. A lane
+  # shared by several rules lets any of them be handed any of its pairs, and
+  # nobody measured astra low on very hard work. A pair joins one of these
+  # when it passes on the whole population that rule routes, never a slice
+  # of it.
+  #
+  # grok-4.6 is deliberately absent. It is a failure fallback for the
+  # frontier routes and POOL.md records it 0.72 below the frontier model on
+  # nine hard cases, so no amount of quota pressure may promote it here.
+  hardest-work:
+    description: The hardest band.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
+    qualified:
+      - model: gpt-6-astra
+        effort: xhigh
+        qualification_ref: "POOL.md: in the pool since the first release"
+
+  hard-work:
+    description: Hard work.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
+    qualified:
+      - model: gpt-6-astra
+        effort: high
+        qualification_ref: "POOL.md: in the pool since the first release"
+
+  high-consequence:
+    description: Work where a small mistake costs more than quota.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
+    qualified:
+      - model: gpt-6-astra
+        effort: medium
+        qualification_ref: "POOL.md: in the pool since the first release"
+
+  vision-work:
+    description: Requests that carry an image and are not easy.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
+    qualified:
+      - model: gpt-6-astra
+        effort: medium
+        qualification_ref: "POOL.md: in the pool since the first release"
+
+  careful-moderate:
+    description: Moderate work, other than code edits, where a mistake would matter.
+    qualification_ref: "POOL.md: Per-rule lanes (2026-09-23)"
     qualified:
       - model: gpt-6-astra
         effort: low
         qualification_ref: "POOL.md: in the pool since the first release"
-      - model: gpt-6-astra
-        effort: medium
-        qualification_ref: "POOL.md: in the pool since the first release"
-      - model: gpt-6-astra
-        effort: high
-        qualification_ref: "POOL.md: in the pool since the first release"
-      - model: gpt-6-astra
-        effort: xhigh
-        qualification_ref: "POOL.md: in the pool since the first release"
-    conservative_default: {route: frontier_medium}
 
 # What quota pressure is allowed to do. Pressure is a number per provider in
 # [0, 1], measured from pace rather than raw percent: a provider 20 points
@@ -610,14 +638,14 @@ policy:
   # A rule may name a model and an effort, as every rule here did before
   # routes existed, or name a route. Both forms work.
   #
-  # `shift_with` and `max_shift` inside a condition make that cutoff
-  # pressure-sensitive: the effective cutoff is the number plus pressure times
-  # max_shift. It only ever rises, so pressure only ever makes the frontier
-  # provider harder to reach, never easier. With every quota source disabled
-  # all pressures are 0 and every cutoff below is exactly the tuned number.
+  # Strict admission matches these cutoffs at zero pressure, so none of them
+  # carries `shift_with`: quota may only choose between the pairs a rule's
+  # lane qualifies. A legacy alias can still shift a cutoff
+  # (docs/guides/legacy-routing.md).
   #
-  # `protected: true` opts a rule out of shifts. Those are the moves that
-  # exist because the request needs them, not because the work looked hard.
+  # `protected: true` keeps quota away from a rule altogether. Those are the
+  # moves that exist because the request needs them, not because the work
+  # looked hard.
   rules:
     - name: images_easy
       lane: simple-vision
@@ -629,26 +657,26 @@ policy:
       use: {route: fast_vision}
 
     - name: images_need_vision
-      lane: frontier-work
+      lane: vision-work
       protected: true            # only some models read images
       when:
         has_images: true
       use: {route: frontier_medium}
 
     - name: very_hard
-      lane: frontier-work
+      lane: hardest-work
       when:
         difficulty: {gte: 3.0}
       use: {route: frontier_xhigh}
 
     - name: hard
-      lane: frontier-work
+      lane: hard-work
       when:
-        difficulty: {gte: 2.4, shift_with: openai, max_shift: 0.4}
+        difficulty: {gte: 2.4}
       use: {route: frontier_high}
 
     - name: high_harm
-      lane: frontier-work
+      lane: high-consequence
       protected: true            # a small mistake here costs more than quota
       when:
         harm_if_wrong: {gte: 0.8}
@@ -659,7 +687,7 @@ policy:
     # in the routing eval. Code edits are exempt: they are what the mid model
     # was admitted on, and exempting them cost nothing in that eval.
     - name: moderate_careful
-      lane: frontier-work
+      lane: careful-moderate
       when:
         task: {not_in: [code-edit]}
         difficulty: {gte: 1.4}

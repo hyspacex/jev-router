@@ -310,11 +310,17 @@ DEMO_ALIAS = "auto-legacy-demo"
 
 
 def demo_config() -> RouterConfig:
-    """The shipped config plus one legacy copy of `auto`, for the demo only."""
+    """The shipped config plus one legacy copy of `auto`, for the demo only.
+
+    The shipped `hard` cutoff carries no shift, since strict admission would
+    ignore it. The demo gives it the bounded shift a legacy deployment would.
+    """
     config = config_with_overlay()
     config.aliases[DEMO_ALIAS] = config.aliases["auto"].model_copy(
         update={"session_mode": "legacy", "admission_fallback": None}
     )
+    hard = next(r for r in config.policy.rules if r.name == "hard")
+    hard.when["difficulty"] |= {"shift_with": "openai", "max_shift": 0.4}
     return config
 
 
