@@ -8,7 +8,7 @@ const STAGES = ["Jev", "Constraints", "Rule & quota", "Binding", "Outcome"];
 const REFRESH_MS = 5000;
 const LIST_LIMIT = 200;
 const WINDOWS = ["1h", "24h", "7d", "30d"];
-const FILTER_KEYS = ["q", "client", "model", "rule", "state", "adaptive", "problem", "pinned", "window"];
+const FILTER_KEYS = ["q", "client", "model", "rule", "state", "adaptive", "problem", "feedback", "pinned", "window"];
 const STATES = ["active", "prepared", "blocked", "closed"];
 const MODES = ["off", "shadow", "active"];
 const PROBLEMS = {
@@ -16,12 +16,17 @@ const PROBLEMS = {
   stream_failed: "Stream failed", fallback: "Fallback admission", low_confidence: "Low-confidence gate",
 };
 const PROBLEM_SHORT = {unknown: "unknown", rejected: "rejected", stream_failed: "stream failed", fallback: "fallback", low_confidence: "low conf"};
+// Feedback verdicts as the owner says them. too_weak: the model needed more.
+const VERDICT_WORDS = {too_weak: "↑ more", too_strong: "↓ less", right: "✓ right", too_slow: "slow"};
+const FEEDBACK_OPTIONS = [["too_weak", "↑ Needed more"], ["too_strong", "↓ Needed less"], ["right", "✓ Right"], ["too_slow", "Too slow"], ["unrated", "Unrated"]];
+// Search accepts what the router's `q` filter accepts: up to 80 plain characters.
+const SEARCH_OK = /^[\p{L}\p{N}_ .,:;!?'"()[\]/#@+=&*-]{1,80}$/u;
 
 const S = {
   token: "",
   connected: false,
   paused: false,
-  view: "overview",   // overview | sessions | session
+  view: "overview",   // overview | sessions | session | rules
   win: "24h",
   filters: {},
   overview: null,
@@ -43,6 +48,20 @@ const S = {
   toolbar: null,
   facetsJson: "",
   searchTimer: null,
+  // rules: the running config, and the draft the owner is editing
+  rwin: "7d",
+  rules: null,
+  rulesJson: "",
+  ruleset: "policy",
+  draft: null,        // the edited text, or null while the editor follows the server
+  draftBase: null,    // the config hash the draft was started from
+  report: null,       // the last preview's body, or null
+  edres: null,        // what the last check or apply said, shown under the editor
+  confirming: false,  // the in-page "apply?" question is open
+  busy: null,         // "check" | "preview" | "apply" while one is in flight
+  hl: null,           // the editor line a ladder row pointed at
+  editor: null,       // the editor panel, built once so a refresh never touches it
+  rulesRoot: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -81,6 +100,29 @@ function link(cls, text, hash, label) {
   a.href = hash;
   if (label) a.setAttribute("aria-label", label);
   return a;
+}
+function panel(title, note, cls) {
+  const box = el("section", "panel" + (cls ? " " + cls : ""));
+  const h = el("div", "ph");
+  add(h, el("h2", "pt", title), note ? add(el("span", "note"), note) : null);
+  box.append(h);
+  return box;
+}
+// The window control: one link per window, the current one lit.
+function windowSeg(current, hashOf) {
+  const seg = el("div", "seg");
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "Window");
+  for (const option of WINDOWS) {
+    const a = link("segb" + (option === current ? " on" : ""), option, hashOf(option));
+    if (option === current) a.setAttribute("aria-current", "true");
+    seg.append(a);
+  }
+  return seg;
+}
+function verdictBadge(v) {
+  if (!v || !VERDICT_WORDS[v]) return null;
+  return el("span", "vbadge v-" + v, VERDICT_WORDS[v]);
 }
 
 // --- formatting ----------------------------------------------------------
@@ -144,7 +186,7 @@ function isUnknown(status) { return status === "unknown" || status === "outcome_
 
 // --- routes ----------------------------------------------------------------
 //
-// #overview[?w=7d]  ·  #sessions[?client=pi&problem=any…]  ·  #s=<id>  ·  #<slug>
+// #overview[?w=7d]  ·  #sessions[?client=pi&problem=any…]  ·  #rules[?w=24h]  ·  #s=<id>  ·  #<slug>
 
 function parseHash() {
   const raw = location.hash.replace(/^#/, "");
@@ -162,6 +204,10 @@ function parseHash() {
     for (const key of FILTER_KEYS) { const v = params.get(key); if (v) filters[key] = v; }
     return {view: "sessions", filters};
   }
+  if (name === "rules") {
+    const w = params.get("w");
+    return {view: "rules", win: WINDOWS.includes(w) ? w : "7d"};
+  }
   if (name.startsWith("s=")) return {view: "session", sid: name.slice(2) || null, slug: null};
   return {view: "session", sid: null, slug: name};
 }
@@ -173,6 +219,7 @@ function filterQuery(filters) {
 function listHash(filters) { const q = filterQuery(filters || S.filters); return "#sessions" + (q ? "?" + q : ""); }
 function overviewHash(win) { return "#overview" + ((win || S.win) === "24h" ? "" : "?w=" + (win || S.win)); }
 function sessionHash(id) { return "#s=" + encodeURIComponent(id); }
+function rulesHash(win) { return "#rules" + ((win || S.rwin) === "7d" ? "" : "?w=" + (win || S.rwin)); }
 
 // --- networking ----------------------------------------------------------
 
@@ -184,6 +231,24 @@ async function api(path) {
     return await fetch(path, {
       headers: S.token ? {"X-Router-Admin-Token": S.token} : {},
       cache: "no-store",
+      signal: current.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// A user action that writes or replays. Same credential and timeout as api().
+async function post(path, body) {
+  const current = new AbortController();
+  const timeout = setTimeout(() => current.abort(), 10000);
+  S.controller = current;
+  try {
+    return await fetch(path, {
+      method: "POST",
+      headers: Object.assign({"Content-Type": "application/json"}, S.token ? {"X-Router-Admin-Token": S.token} : {}),
+      cache: "no-store",
+      body: JSON.stringify(body),
       signal: current.signal,
     });
   } finally {
@@ -234,6 +299,19 @@ async function refresh(kind) {
         changed = true;
       }
       S.cfgHash = S.overview.config_hash;
+    } else if (S.view === "rules") {
+      const response = await api("/router/config?window=" + encodeURIComponent(S.rwin));
+      if (gen !== S.gen) return;
+      if (response.status === 401) return unauthorized();
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const text = await response.text();
+      if (gen !== S.gen) return;
+      if (text !== S.rulesJson) {
+        S.rulesJson = text;
+        S.rules = JSON.parse(text);
+        changed = true;
+      }
+      S.cfgHash = S.rules.config_hash;
     } else {
       const key = filterQuery(S.filters);
       const response = await api("/router/audit/sessions?limit=" + LIST_LIMIT + (key ? "&" + key : ""));
@@ -336,14 +414,15 @@ function chrome() {
     dot.title = S.paused ? "paused" : "live · every 5 s";
     add(cfgNode, dot, show(hash8(S.cfgHash)));
   }
-  const over = $("v-overview");
-  const list = $("v-sessions");
-  over.href = overviewHash();
-  list.href = listHash();
-  over.toggleAttribute("aria-current", S.view === "overview");
-  list.toggleAttribute("aria-current", S.view !== "overview");
-  if (S.view === "overview") over.setAttribute("aria-current", "page");
-  else list.setAttribute("aria-current", "page");
+  const tabs = {overview: $("v-overview"), sessions: $("v-sessions"), rules: $("v-rules")};
+  tabs.overview.href = overviewHash();
+  tabs.sessions.href = listHash();
+  tabs.rules.href = rulesHash();
+  const on = S.view === "session" ? "sessions" : S.view;
+  for (const [name, a] of Object.entries(tabs)) {
+    if (name === on) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
 }
 
 function go(hash) {
@@ -363,6 +442,12 @@ function onHash() {
     }
   } else if (route.view === "sessions") {
     S.filters = route.filters;
+  } else if (route.view === "rules") {
+    if (route.win !== S.rwin) {
+      S.rwin = route.win;
+      S.rules = null;
+      S.rulesJson = "";
+    }
   } else if (route.sid !== S.sid || route.slug !== S.slug) {
     S.slug = route.slug;
     if (route.sid !== null || S.slug === null) S.sid = route.sid;
@@ -390,6 +475,8 @@ function render(kind) {
   if (!S.connected) { main.replaceChildren(); return; }
   if (S.view === "sessions") {
     renderSessions(kind);
+  } else if (S.view === "rules") {
+    renderRules(kind);
   } else {
     main.replaceChildren();
     if (S.view === "overview") {
@@ -407,289 +494,6 @@ function render(kind) {
     const again = document.querySelector('[data-fk="' + CSS.escape(focused) + '"]');
     if (again && again !== document.activeElement) again.focus({preventScroll: true});
   }
-}
-
-// --- overview ----------------------------------------------------------------
-
-function overviewView(kind) {
-  const ov = S.overview;
-  const root = el("section", "ov" + (kind === "data" ? " still" : ""));
-  const w = ov.window || S.win;
-  const within = (extra) => listHash(Object.assign({window: w}, extra || {}));
-
-  const head = el("div", "ovh");
-  const seg = el("div", "seg");
-  seg.setAttribute("role", "group");
-  seg.setAttribute("aria-label", "Window");
-  for (const option of WINDOWS) {
-    const a = link("segb" + (option === w ? " on" : ""), option, overviewHash(option));
-    if (option === w) a.setAttribute("aria-current", "true");
-    seg.append(a);
-  }
-  const since = el("span", "note");
-  if (!absent(ov.since)) since.textContent = "since " + day(ov.since) + " " + clock(ov.since).slice(0, 5) + " " + zone(ov.since);
-  add(head, el("h1", "ovt", "Overview"), seg, since);
-  root.append(head);
-
-  // Volume: every count links to the sessions behind it.
-  const ex = ov.executions || {};
-  const st = ex.by_status || {};
-  const kpis = el("div", "kpis");
-  const kpi = (label, value, sub, hash, warn) => {
-    const box = hash ? link("kpi" + (warn ? " warn" : ""), null, hash) : el("div", "kpi");
-    add(box, el("span", "kl", label), add(el("span", "kpv"), value), sub ? add(el("span", "ks"), sub) : null);
-    kpis.append(box);
-  };
-  const ss = ov.sessions || {};
-  kpi("Sessions admitted", int(ss.admitted || 0), modeLine(ss), within());
-  kpi("Executions", int(ex.total || 0), absent(ex.completion_rate) ? null : pct(ex.completion_rate) + " completed", null);
-  kpi("Outcome unknown", int(st.unknown || 0), null, st.unknown ? within({problem: "unknown"}) : null, st.unknown > 0);
-  kpi("Rejected", int(st.rejected || 0), null, st.rejected ? within({problem: "rejected"}) : null, st.rejected > 0);
-  kpi("Stream failed", int(st.stream_failed || 0), null, st.stream_failed ? within({problem: "stream_failed"}) : null, st.stream_failed > 0);
-  const lat = ov.latency || {};
-  kpi("Jev at admission", pctl(lat.jev_admission_ms), pctlSub(lat.jev_admission_ms), null);
-  root.append(kpis);
-
-  const grid = el("div", "ovgrid");
-  grid.append(seriesPanel(ov), modelsPanel(ov), decisionsPanel(ov, within), quotaPanel(ov), effortPanel(ov, within), legacyPanel(ov));
-  root.append(grid);
-  return root;
-}
-
-function modeLine(ss) {
-  const a = ss.adaptation || {};
-  const bits = [];
-  if (a.shadow) bits.push(a.shadow + " shadow");
-  if (a.active) bits.push(a.active + " adaptive");
-  if (!bits.length && ss.admitted) bits.push("effort fixed");
-  return bits.join(" · ") || null;
-}
-
-// p50 of a percentile record, or a gap that says why there is none.
-function pctl(p) {
-  if (!p || !p.n) return el("span", "none", "–");
-  return document.createTextNode(ms(p.p50));
-}
-function pctlSub(p) { return p && p.n ? "p95 " + ms(p.p95) + " · n " + int(p.n) : null; }
-function pairCell(p, rows) {
-  const cell = el("span", "pp");
-  if (p && p.n) {
-    add(cell, ms(p.p50), el("span", "p95", ms(p.p95)));
-    if (rows && p.n < rows) add(cell, " ", gap(int(p.n) + " of " + int(rows) + " recorded"));
-  } else add(cell, rows ? gap("not recorded") : el("span", "none", "–"));
-  return cell;
-}
-
-function panel(title, note, cls) {
-  const box = el("section", "panel" + (cls ? " " + cls : ""));
-  const h = el("div", "ph");
-  add(h, el("h2", "pt", title), note ? add(el("span", "note"), note) : null);
-  box.append(h);
-  return box;
-}
-
-function bucketLabel(t, step) {
-  if (step >= 86400) return shortDay(t);
-  if (step >= 21600) return DAYS[new Date(t * 1000).getDay()] + " " + clock(t).slice(0, 5);
-  return clock(t).slice(0, 5);
-}
-
-function seriesPanel(ov) {
-  const series = Array.isArray(ov.series) ? ov.series : [];
-  const step = ov.bucket_seconds || 3600;
-  const box = panel("Requests and p50 response", "per " + windowSpan(step / 60), "wide");
-  const maxReq = Math.max(1, ...series.map((b) => b.requests || 0));
-  const maxMs = Math.max(1, ...series.map((b) => b.response_p50_ms || 0));
-  const reqRow = el("div", "sbars");
-  const msRow = el("div", "sbars ms");
-  series.forEach((b, i) => {
-    const when = bucketLabel(b.t, step);
-    const col = el("div", "sb");
-    col.title = when + " · " + b.requests + " requests" + (b.problems ? " · " + b.problems + " problems" : "");
-    const good = el("i");
-    good.style.height = ((b.requests - b.problems) / maxReq * 100) + "%";
-    const bad = el("i", "bad");
-    bad.style.height = (b.problems / maxReq * 100) + "%";
-    good.style.animationDelay = bad.style.animationDelay = Math.min(400, i * 10) + "ms";
-    add(col, good, bad);
-    reqRow.append(col);
-    const m = el("div", "sb");
-    const bar = el("i");
-    if (!absent(b.response_p50_ms)) {
-      bar.style.height = Math.max(2, b.response_p50_ms / maxMs * 100) + "%";
-      m.title = when + " · p50 " + ms(b.response_p50_ms) + " over " + b.timed;
-    } else if (b.requests > 0) {
-      // Requests ran, no time was recorded for them: a gap, not a zero.
-      bar.className = "gapbar";
-      m.title = when + " · response time not recorded";
-    }
-    bar.style.animationDelay = Math.min(400, i * 10) + "ms";
-    m.append(bar);
-    msRow.append(m);
-  });
-  const axis = el("div", "saxis");
-  if (series.length) {
-    add(axis, el("span", null, bucketLabel(series[0].t, step)), el("span", null, bucketLabel(series[Math.floor(series.length / 2)].t, step)), el("span", null, bucketLabel(series[series.length - 1].t, step)));
-  }
-  const legend = el("div", "slegend");
-  add(legend, el("span", null, "max " + maxReq + " requests"), el("span", "badkey", "problems"), el("span", null, "p50 up to " + (maxMs > 1 ? ms(maxMs) : "–")));
-  box.append(reqRow, msRow, axis, legend);
-  return box;
-}
-
-function modelsPanel(ov) {
-  const lat = ov.latency || {};
-  const ex = ov.executions || {};
-  const models = Array.isArray(lat.models) ? lat.models : [];
-  const note = el("span");
-  if (ex.rows && ex.usage_reported < ex.rows) add(note, gap("usage not reported on " + int(ex.rows - ex.usage_reported) + " of " + int(ex.rows)));
-  const box = panel("Response time by model", note, "wide");
-  const table = el("div", "mt");
-  const header = el("div", "mr mh");
-  add(header, el("span", null, "Model"), el("span", "n", "Executions"), el("span", null, "First byte p50 · p95"), el("span", null, "Total p50 · p95"));
-  table.append(header);
-  if (!models.length) table.append(el("p", "empty", "No executions in this window"));
-  for (const m of models) {
-    const row = el("div", "mr");
-    const name = m.model ? link("mono", m.model, listHash({model: m.model, window: ov.window})) : gap("model not recorded");
-    add(row, add(el("span", "mm"), name), el("span", "n mono", int(m.n)), pairCell(m.first_byte_ms, m.n), pairCell(m.response_ms, m.n));
-    table.append(row);
-  }
-  const jev = el("div", "jevline");
-  add(jev, el("span", "kl", "Jev per turn plan"), add(el("span", "mono"), pctl(lat.jev_plan_ms)), lat.jev_plan_ms && lat.jev_plan_ms.n ? el("span", "note", pctlSub(lat.jev_plan_ms)) : el("span", "note", "no plans in this window"));
-  box.append(table, jev);
-  return box;
-}
-
-function distribution(rows, label, hashOf) {
-  const list = el("div", "dist");
-  const total = rows.reduce((a, r) => a + (r.n || 0), 0) || 1;
-  if (!rows.length) list.append(el("p", "empty", "None in this window"));
-  for (const r of rows) {
-    const name = label(r);
-    const hash = hashOf(r);
-    const row = hash ? link("dr", null, hash) : el("div", "dr");
-    const fill = el("i");
-    fill.style.width = Math.max(1, r.n / total * 100) + "%";
-    add(row, add(el("span", "dn"), name), add(el("span", "dt2"), fill), el("span", "dc", int(r.n)), el("span", "dp", pct(r.n / total)));
-    list.append(row);
-  }
-  return list;
-}
-
-function decisionsPanel(ov, within) {
-  const d = ov.decisions || {};
-  const box = panel("Admission decisions", d.admissions ? int(d.admissions) + " admissions" : null, "wide");
-  const cols = el("div", "dcols");
-  const rules = add(el("div"), el("div", "qn", "Rule"), distribution(d.rules || [], (r) => r.rule || gap(), (r) => r.rule ? within({rule: r.rule}) : null));
-  const choices = add(el("div"), el("div", "qn", "Model · effort"), distribution(d.choices || [], (r) => add(el("span"), r.model ? r.model : gap(), r.effort ? " · " + r.effort : " · no effort"), (r) => r.model ? within({model: r.model}) : null));
-  add(cols, rules, choices);
-  box.append(cols);
-  const facts = el("div", "dfacts");
-  const fact = (label, n, of, hash, warn) => {
-    const node = hash && n ? link("df" + (warn && n ? " warn" : ""), null, hash) : el("div", "df");
-    add(node, el("span", "kl", label), el("span", "dv", int(n || 0) + (of ? " of " + int(of) : "")), of ? el("span", "note", pct((n || 0) / of)) : null);
-    facts.append(node);
-  };
-  fact("Low-confidence gate", d.low_confidence, d.admissions, within({problem: "low_confidence"}), false);
-  fact("Fallback (Jev failed)", d.fallback, d.admissions, within({problem: "fallback"}), true);
-  const qc = el("div", "df");
-  add(qc, el("span", "kl", "Quota changed the choice"), el("span", "dv", int(d.quota_changed || 0) + " of " + int(d.quota_recorded || 0)));
-  if ((d.quota_recorded || 0) < (ov.sessions && ov.sessions.admitted || 0)) qc.append(gap("not recorded on " + ((ov.sessions.admitted || 0) - (d.quota_recorded || 0))));
-  facts.append(qc);
-  box.append(facts);
-  return box;
-}
-
-function quotaPanel(ov) {
-  const q = ov.quota;
-  const note = q && !absent(q.ts) ? "as of " + stamp(q.ts) : null;
-  const box = panel("Quota", note);
-  if (!q || !q.providers || !Object.keys(q.providers).length) {
-    box.append(el("p", "gaprow", "no quota reading on any decision"));
-    return box;
-  }
-  const list = el("div", "qlist");
-  for (const [provider, p] of Object.entries(q.providers)) {
-    const row = el("div", "qp");
-    const head = el("div", "qph");
-    const status = p && p.status;
-    add(head, el("span", "mono", provider));
-    if (status === "fresh") add(head, el("span", "qs ok", "fresh"), add(el("span", "qpr"), "pressure ", show(p.pressure, pressureText)));
-    else add(head, el("span", "qs gap", (status || "unknown") + " · counted as 0"));
-    row.append(head);
-    // Each window is its own record: its usage beside its own reset.
-    for (const w of Array.isArray(p && p.windows) ? p.windows : []) {
-      const line = el("div", "qw");
-      const name = [w.name, absent(w.window_minutes) ? null : windowSpan(w.window_minutes)].filter(Boolean).join(" · ") || "window";
-      const track = el("span", "qt");
-      if (!absent(w.used_percent)) {
-        const fill = el("i");
-        fill.style.width = Math.max(0.5, Math.min(100, w.used_percent)) + "%";
-        track.append(fill);
-      }
-      add(line, el("span", "qn2", name), track,
-        absent(w.used_percent) ? gap("usage not reported") : el("span", "mono", num1(w.used_percent) + "%"),
-        el("span", "note", absent(w.resets_at) ? "" : "resets " + stamp(w.resets_at)));
-      row.append(line);
-    }
-    list.append(row);
-  }
-  box.append(list);
-  return box;
-}
-
-function effortPanel(ov, within) {
-  const e = ov.effort || {};
-  const ss = (ov.sessions && ov.sessions.adaptation) || {};
-  const box = panel("Adaptive effort", null);
-  if (!(e.shadow && (e.shadow.plans || ss.shadow)) && !(e.active && (e.active.plans || ss.active))) {
-    box.append(el("p", "empty", "No adaptive-effort session or plan in this window"));
-    return box;
-  }
-  const cols = el("div", "ecols");
-  for (const mode of ["shadow", "active"]) {
-    const m = e[mode] || {};
-    if (!m.plans && !ss[mode]) continue;
-    const col = el("div", "ec");
-    const h = el("div", "ech");
-    const title = mode === "shadow" ? "Shadow" : "Active";
-    add(h, ss[mode] ? link("ect", title, within({adaptive: mode})) : el("span", "ect", title), el("span", "note", int(ss[mode] || 0) + (ss[mode] === 1 ? " session · " : " sessions · ") + int(m.plans || 0) + (m.plans === 1 ? " plan" : " plans")));
-    col.append(h);
-    const funnel = el("div", "funnel");
-    const step = (label, n, extra) => funnel.append(add(el("div", "fs"), el("span", "fv2", int(n || 0)), el("span", "kl", label), extra || null));
-    step("recommended a change", m.recommended);
-    step("applied", m.applied, mode === "shadow" ? el("span", "note", "never, by design") : null);
-    step("confirmed", m.confirmed);
-    col.append(funnel);
-    const statuses = m.by_status || {};
-    const odd = Object.entries(statuses).filter(([s, n]) => n && s !== "confirmed");
-    if (odd.length) {
-      const line = el("div", "estat");
-      for (const [s, n] of odd) add(line, el("span", s === "outcome_unknown" || s === "rejected" ? "gap" : null, int(n) + " " + human(s)));
-      col.append(line);
-    }
-    cols.append(col);
-  }
-  box.append(cols);
-  return box;
-}
-
-function legacyPanel(ov) {
-  const l = ov.legacy || {};
-  const box = panel("Legacy alias traffic", "no session · kept out of every number above", "wide legacy");
-  if (!l.decisions) { box.append(el("p", "empty", "None in this window")); return box; }
-  const row = el("div", "lrow");
-  const cell = (label, value) => row.append(add(el("div", "lc"), el("span", "kl", label), add(el("span", "lval"), value)));
-  cell("Decisions", int(l.decisions));
-  cell("Pinned", int(l.pinned || 0));
-  cell("Fallback", int(l.fallback || 0));
-  cell("Upstream errors", int(l.upstream_errors || 0));
-  cell("Jev p50 · p95", pairCell(l.jev_ms, 0));
-  cell("First byte p50 · p95", pairCell(l.first_byte_ms, l.decisions));
-  cell("Total p50 · p95", pairCell(l.response_ms, l.decisions));
-  box.append(row);
-  return box;
 }
 
 // --- sessions ----------------------------------------------------------------
@@ -733,21 +537,23 @@ function buildToolbar() {
   const search = el("input", "fsearch");
   search.id = "q";
   search.type = "search";
-  search.placeholder = "Session id";
+  search.placeholder = "Search";
   search.autocomplete = "off";
   search.spellcheck = false;
-  search.setAttribute("aria-label", "Search by session id");
+  search.maxLength = 80;
+  search.setAttribute("aria-label", "Search titles and prompts");
   search.addEventListener("input", () => {
     clearTimeout(S.searchTimer);
     S.searchTimer = setTimeout(() => {
       const v = search.value.trim();
-      if (!v || /^[A-Za-z0-9_.:-]{1,64}$/.test(v)) setFilter("q", v, true);
+      // Text the router would refuse is never sent; the list stays as it is.
+      if (!v || SEARCH_OK.test(v)) setFilter("q", v, true);
     }, 250);
   });
   search.addEventListener("keydown", (event) => {
     if (event.key === "Escape") { search.blur(); event.stopPropagation(); }
     if (event.key === "Enter" || event.key === "ArrowDown") {
-      const first = document.querySelector(".srow");
+      const first = document.querySelector(".srow[href]");
       if (first) { first.focus(); event.preventDefault(); }
     }
   });
@@ -762,6 +568,7 @@ function buildToolbar() {
     select("f-client", "Client", (v) => setFilter("client", v)),
     select("f-model", "Model", (v) => setFilter("model", v)),
     select("f-rule", "Rule", (v) => setFilter("rule", v)),
+    select("f-feedback", "Feedback", (v) => setFilter("feedback", v)),
     select("f-state", "State", (v) => setFilter("state", v)),
     select("f-adaptive", "Adaptive effort", (v) => setFilter("adaptive", v)),
     select("f-problem", "Problems", (v) => setFilter("problem", v)),
@@ -773,6 +580,8 @@ function buildToolbar() {
 // A toolbar control, attached to the page or not yet.
 function tb(id) { return S.toolbar.querySelector("#" + id); }
 
+const SELECTS = ["f-client", "f-model", "f-rule", "f-feedback", "f-state", "f-adaptive", "f-problem", "f-window"];
+
 function syncToolbar() {
   const f = S.filters;
   const facets = (S.list && S.list.facets) || {};
@@ -783,14 +592,16 @@ function syncToolbar() {
     fillSelect(tb("f-client"), opts("client", "All clients"), f.client);
     fillSelect(tb("f-model"), opts("model", "All models"), f.model);
     fillSelect(tb("f-rule"), opts("rule", "All rules"), f.rule);
+    // The verdicts the facet saw, in a fixed order, then any the link names.
+    const seen = new Set((facets.feedback || []).map((x) => x.value));
+    const verdicts = FEEDBACK_OPTIONS.filter(([v]) => seen.has(v) || !facets.feedback);
+    fillSelect(tb("f-feedback"), [["", "Any feedback"]].concat(verdicts), f.feedback);
     fillSelect(tb("f-state"), [["", "Any state"]].concat(STATES.map((s) => [s, cap(s)])), f.state);
     fillSelect(tb("f-adaptive"), [["", "Any effort mode"]].concat(MODES.map((m) => [m, m === "off" ? "Adaptive off" : "Adaptive " + m])), f.adaptive);
     fillSelect(tb("f-problem"), [["", "Any outcome"]].concat(Object.entries(PROBLEMS)), f.problem);
     fillSelect(tb("f-window"), [["", "Any time"]].concat(WINDOWS.map((w) => [w, "Last " + w])), f.window);
   }
-  for (const id of ["f-client", "f-model", "f-rule", "f-state", "f-adaptive", "f-problem", "f-window"]) {
-    tb(id).classList.toggle("set", !!tb(id).value);
-  }
+  for (const id of SELECTS) tb(id).classList.toggle("set", !!tb(id).value);
   const search = tb("q");
   if (document.activeElement !== search && search.value !== (f.q || "")) search.value = f.q || "";
   const pinned = tb("pinned");
@@ -803,7 +614,9 @@ function syncToolbar() {
   tb("count").textContent = S.list ? (matched > shown ? shown + " of " + int(matched) : int(shown)) + (matched === 1 ? " session" : " sessions") : "";
 }
 
-const COLUMNS = ["Last seen", "Session", "Model · effort", "Rule", "Adaptive", "Requests", "Problems", "p50"];
+// [label, class]. Numbers right-aligned.
+const COLUMNS = [["Last seen", "c0"], ["Session", "c1"], ["Client", "c2"], ["Workspace", "c3"], ["Turns", "c4 num"],
+  ["Model · effort", "c5"], ["Rule", "c6"], ["Feedback", "c7"], ["Problems", "c8"]];
 
 function sessionTable(kind) {
   const root = el("section", "stable" + (kind === "data" ? " still" : ""));
@@ -815,10 +628,22 @@ function sessionTable(kind) {
   }
   const head = el("div", "srow shead");
   head.setAttribute("aria-hidden", "true");
-  COLUMNS.forEach((c, i) => head.append(el("span", i >= 5 && i !== 6 ? "c" + i + " num" : "c" + i, c)));
+  for (const [label, cls] of COLUMNS) head.append(el("span", cls, label));
   root.append(head);
   rows.forEach((s, i) => root.append(sessionRow(s, i)));
   return root;
+}
+
+// The muted line under a title: what the prompt says beyond it. A title cut
+// short with "…" already shows the prompt's start, so nothing repeats it.
+function previewLine(title, preview) {
+  if (!preview) return null;
+  if (!title) return preview;
+  const cut = title.endsWith("…");
+  const base = cut ? title.slice(0, -1) : title;
+  if (!preview.startsWith(base)) return preview;
+  if (cut) return null;
+  return preview.slice(base.length).trim() || null;
 }
 
 function sessionRow(s, i) {
@@ -828,32 +653,46 @@ function sessionRow(s, i) {
   row.style.animationDelay = Math.min(300, i * 12) + "ms";
   const when = el("span", "c0 mono");
   add(when, absent(s.last_seen) ? (absent(s.created) ? gap() : stamp(s.created)) : stamp(s.last_seen));
+
+  // The session as a person knows it: what they asked, then where.
   const who = el("span", "c1");
-  if (s.pinned) who.append(el("span", "pin", "◆"));
-  add(who, s.client ? el("span", null, s.client) : gap("client"), el("span", "sid mono", short(s.session_id, s.client)));
-  if (s.pinned) who.append(el("span", "plabel", s.pinned.label));
-  if (s.tombstone) who.append(el("span", "faint", "pruned"));
-  else if (s.state && s.state !== "active") who.append(el("span", "faint", s.state));
-  const mdl = el("span", "c2 mono");
-  add(mdl, show(s.model), s.effort ? el("span", "faint", " · " + s.effort) : null);
-  const rl = add(el("span", "c3 mono"), show(s.rule));
-  const mode = el("span", "c4");
-  if (absent(s.adaptation_mode)) mode.append(gap());
-  else if (s.adaptation_mode !== "off") mode.append(el("span", "mode", s.adaptation_mode));
+  const title = el("span", "stitle");
+  if (s.pinned) title.append(el("span", "pin", "◆"));
+  title.append(s.title ? el("span", "stt", s.title) : el("span", "stt sid mono", short(s.session_id, s.client)));
+  if (s.pinned) title.append(el("span", "plabel", s.pinned.label));
+  if (s.tombstone) title.append(el("span", "faint", "pruned"));
+  else if (s.state && s.state !== "active") title.append(el("span", "faint", s.state));
+  who.append(title);
+  const preview = previewLine(s.title, s.prompt_preview);
+  if (preview) who.append(el("span", "sprev", preview));
+
+  const client = add(el("span", "c2"), s.client ? s.client : gap("client"));
+  const ws = el("span", "c3");
+  if (s.workspace_hint) ws.append(el("span", "wchip mono", s.workspace_hint));
+  const turns = el("span", "c4 num mono");
+  add(turns, absent(s.turn_count) ? gap() : int(s.turn_count));
+
+  // Model · effort. An adaptive session that moved says from where to where.
+  const mdl = el("span", "c5 mono");
+  const [prov, name] = splitModel(s.model);
+  add(mdl, prov ? el("span", "faint", prov) : null, show(name));
+  const now = s.effective_effort || s.effort;
+  if (s.effort && now && now !== s.effort) {
+    const up = LADDER.indexOf(now) > LADDER.indexOf(s.effort);
+    add(mdl, el("span", "eff", " · " + s.effort + " → "), el("span", up ? "eff up" : "eff", now));
+  } else if (now) add(mdl, el("span", "eff", " · " + now));
+  const rl = add(el("span", "c6 mono"), show(s.rule));
+  const fb = el("span", "c7");
+  const badge = verdictBadge(s.feedback_verdict);
+  if (badge) fb.append(badge);
+
   const counts = s.requests || {};
-  const total = Object.values(counts).reduce((a, n) => a + (Number(n) || 0), 0);
-  const n = el("span", "c5 num mono", total ? (counts.completed || 0) + " / " + total : "0");
-  const probs = el("span", "c6");
+  const probs = el("span", "c8");
   for (const p of Array.isArray(s.problems) ? s.problems : []) {
     const k = p === "unknown" ? counts.unknown : p === "rejected" ? counts.rejected : p === "stream_failed" ? counts.stream_failed : null;
     probs.append(el("span", "prob", (k ? k + " " : "") + (PROBLEM_SHORT[p] || human(p))));
   }
-  const rt = s.response_ms || {};
-  const p50 = el("span", "c7 num mono");
-  if (!absent(rt.p50)) p50.textContent = secs(rt.p50);
-  else if (counts.completed) p50.append(gap());
-  else p50.append(el("span", "faint", "–"));
-  add(row, when, who, mdl, rl, mode, n, probs, p50);
+  add(row, when, who, client, ws, turns, mdl, rl, fb, probs);
   return row;
 }
 
@@ -891,6 +730,7 @@ function filterSummary() {
   for (const k of ["client", "model", "rule", "state"]) if (f[k]) bits.push(f[k]);
   if (f.adaptive) bits.push("adaptive " + f.adaptive);
   if (f.problem) bits.push(PROBLEMS[f.problem] ? PROBLEMS[f.problem].toLowerCase() : f.problem);
+  if (f.feedback) bits.push(VERDICT_WORDS[f.feedback] || human(f.feedback));
   if (f.pinned) bits.push("pinned");
   if (f.window) bits.push("last " + f.window);
   return bits.join(" · ");
@@ -1931,6 +1771,7 @@ $("auth").addEventListener("submit", (event) => {
   S.listJson = "";
   S.overviewJson = "";
   S.dataJson = "";
+  S.rulesJson = "";
   refresh("view");
 });
 $("disconnect").addEventListener("click", () => {
@@ -1948,6 +1789,16 @@ $("disconnect").addEventListener("click", () => {
   S.dataJson = "";
   S.toolbar = null;
   S.facetsJson = "";
+  S.rules = null;
+  S.rulesJson = "";
+  S.draft = null;
+  S.draftBase = null;
+  S.report = null;
+  S.edres = null;
+  S.confirming = false;
+  S.hl = null;
+  S.editor = null;
+  S.rulesRoot = null;
   $("token").value = "";
   fail("");
   chrome();
@@ -1984,6 +1835,7 @@ document.addEventListener("keydown", (event) => {
   const key = event.key;
   if (key === "o") { go(overviewHash()); event.preventDefault(); return; }
   if (key === "s") { go(listHash()); event.preventDefault(); return; }
+  if (key === "r") { go(rulesHash()); event.preventDefault(); return; }
   if (key === "/") {
     event.preventDefault();
     if (S.view !== "sessions") go(listHash());
