@@ -105,6 +105,11 @@ def test_a_corrective_follow_up_raises():
     # follow-up naming a defect in the earlier result asks for the top rung.
     assert out.action == CHANGE and out.to_effort == "high"
     assert "names a defect" in out.reason
+    # Said once, and in words: never the config's own `top`.
+    assert out.reason == (
+        "low -> high: the follow-up names a defect in the earlier result (0.90), "
+        "which asks for the top rung"
+    )
 
 
 def test_an_environment_failure_is_not_by_itself_a_reason_to_raise():
@@ -163,7 +168,7 @@ def test_a_clearly_hard_turn_goes_straight_to_the_top_rung():
     assert (out.from_effort, out.to_effort) == ("low", "high")
     assert out.direction == "up"
     assert out.target == "high"
-    assert "asks for high" in out.reason
+    assert out.reason == "low -> high: difficulty 2.95 is at or above 2.6, which asks for high"
 
 
 def test_a_moderately_hard_turn_still_asks_for_the_middle_rung():
@@ -195,6 +200,10 @@ def test_protected_work_asks_for_the_top_rung_when_it_asks_for_more():
     )
     assert out.action == CHANGE and out.to_effort == "high"
     assert "protected rule" in out.reason
+    # Two different reasons, each said once.
+    assert out.reason.startswith("low -> high: difficulty 1.90 is at or above")
+    assert out.reason.count("difficulty 1.90") == 1
+    assert "asks for the top rung whenever" in out.reason and not out.reason.endswith(" top")
 
 
 def test_protected_work_that_asks_for_nothing_still_moves_nothing():

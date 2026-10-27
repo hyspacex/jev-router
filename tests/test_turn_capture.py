@@ -198,6 +198,25 @@ async def test_admission_writes_the_title_preview_workspace_and_first_turn(svc):
     assert "alice" not in json.dumps({k: session[k] for k in ("title", "prompt_preview", "workspace_hint")})
 
 
+async def test_the_title_and_preview_leave_the_pasted_material_out(svc):
+    from jev_router.features import extract_features
+    from jev_router.state import split_request_and_material
+
+    features = extract_features(first_request())
+    request, material = split_request_and_material(PROMPT)
+    assert material.startswith("Traceback")
+    # The state builder's split request is what both lines are made from.
+    texts = svc.router.session_texts(first_request(), features, {"latest_user_request": request})
+    assert texts["title"] == "Fix the flaky retry test in the billing client."
+    assert "Traceback" not in texts["prompt_preview"]
+    assert texts["prompt_preview"].startswith("Fix the flaky retry test") and SECRET in texts["prompt_preview"]
+    # With no state (a fallback admission) the paste is split off here instead.
+    bare = svc.router.session_texts(first_request(), features, None)
+    assert bare["title"] == texts["title"] and "Traceback" not in bare["prompt_preview"]
+    # A state that names no request falls back the same way.
+    assert svc.router.session_texts(first_request(), features, {"facts": {}}) == bare
+
+
 @respx.mock
 async def test_with_log_state_off_no_text_is_stored_at_all(tmp_path, env):
     service = Service(tmp_path)  # a Store opened without log_state

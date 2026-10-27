@@ -209,6 +209,30 @@ async def test_credential_and_session_are_checked(svc):
 
 
 @respx.mock
+async def test_a_verdict_is_recorded_under_another_credential_but_a_step_is_not(svc):
+    caller = await bound(svc)
+    before = svc.sessions.get(caller.session_id)
+    # The session was bound under another credential than the one the
+    # dashboard holds: its owner is someone else's.
+    with svc.sessions._lock:
+        svc.sessions._conn.execute("UPDATE sessions SET owner = ? WHERE session_id = ?",
+                                   ("someone-else", caller.session_id))
+    seen = await feedback(svc, caller.session_id, verdict="too_weak", source="dashboard")
+    assert seen.status_code == 200, seen.text
+    assert seen.json()["effort_changed"] is False
+    assert [r["verdict"] for r in svc.sessions.feedback_rows(caller.session_id)] == ["too_weak"]
+    # Only the owner may move the effort, and the refusal says why.
+    step = await feedback(svc, caller.session_id, verdict="too_weak", adjust_effort=True)
+    assert step.status_code == 409 and code(step) == "SESSION_UNKNOWN"
+    assert "another owner" in step.json()["error"]["message"]
+    after = svc.sessions.get(caller.session_id)
+    assert after["base_effort"] == before["base_effort"] == "high"
+    assert len(svc.sessions.feedback_rows(caller.session_id)) == 1
+    missing = await feedback(svc, "session-nobody-0000", verdict="too_weak", adjust_effort=True)
+    assert "unknown" in missing.json()["error"]["message"]
+
+
+@respx.mock
 async def test_the_old_feedback_endpoint_still_works(svc):
     caller = await bound(svc)
     response = await svc.client.post(

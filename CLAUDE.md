@@ -401,7 +401,9 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   and tool names pass by name, nothing else does. Endpoints that write or
   call a provider (session feedback, config preview and apply, the Jev
   sandbox, eval-case export) live outside `/router/audit`, in `workbench.py`
-  and the session routes, behind the same credential.
+  and the session routes, behind the same credential. Session feedback
+  records a verdict on any session that credential reaches; an
+  `adjust_effort` step stays scoped to the session's owner.
   Every query parameter is allowlisted and bounded, and an unknown one is a
   400. The overview returns numbers and router-made labels only; a value no
   row recorded is null and shown as a gap, never as zero.
