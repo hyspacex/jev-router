@@ -55,37 +55,36 @@ sessions; see [`docs/SESSION_ROUTING.md`](../../docs/SESSION_ROUTING.md) and
 
 ### Endpoints
 
-The `/dashboard` and `/router/audit` entries describe the separate dashboard
-implementation; they may not be available on a revision containing only this
-documentation update. Use `decisions` and `decisions replay` from the CLI there.
-
-| Path | Method | Behaviour |
-| --- | --- | --- |
-| `/v1/chat/completions` | POST | aliases are routed; a strict session executes here; everything else is forwarded unchanged |
-| `/v1/responses` | POST | a strict session whose profile speaks the Responses protocol executes here; everything else is forwarded unchanged |
-| `/v1/responses/compact` | POST | a standalone compaction, forwarded as maintenance for the bound session |
-| `/v1/models` | GET | the upstream list plus one entry per alias |
-| `/router/health` | GET | mode, upstream, aliases, models, providers, routes, unhealthy providers, decider, whether a Jev key is set, uptime |
-| `/router/providers` | GET | circuit breaker state and the pressure per provider |
-| `/router/quota` | GET | quota snapshots, pressures, staleness and the last error per provider |
-| `/dashboard` | GET | interactive read-only audit UI; data requires router authentication |
-| `/router/audit?limit=N` | GET | prompt-free audit snapshot, 1–500 recent events (default 300) |
-| `/router/decisions?limit=N` | GET | recent decisions as JSON |
-| `/router/feedback` | POST | record what you thought of a decision |
-| `/router/feedback?limit=N` | GET | recent feedback, joined to its decision |
-| `/router/resolve` | POST | resolve or resume a strict session binding |
-| `/router/sessions?limit=N` | GET | strict session bindings, newest first |
-| `/router/sessions/{id}` | GET | one binding: identity, limits, efforts and state |
-| `/router/sessions/{id}/close` | POST | end a session deliberately |
-| `/router/turn-plan` | POST | an effort-only decision for a new user turn (experimental) |
-| `/router/turn-plan/{id}/reconcile` | POST | say what happened to an ambiguous effort update |
-| `/router/audit/overview?window=1h\|24h\|7d\|30d` | GET | router health from the tables: counts, rates, percentiles and buckets; see below |
-| `/router/config?window=` | GET | the running config: its text, rules with their lines and hits, routes, lanes, models, thresholds |
-| `/router/config/preview` | POST | validate a draft and replay recent admissions under it; no Jev call, no write |
-| `/router/config/apply` | POST | validate a draft, back up router.yaml, write the draft, swap it in |
-| `/router/sandbox/jev` | POST | ask Jev once about a stored decision with an edited state or wording; writes nothing |
-| `/router/eval-cases` | POST | append one admission to `golden_cases.jsonl` beside the database |
-| anything else | any | streamed through to the upstream, method and path unchanged |
+| Path | Method | Behaviour | Writes |
+| --- | --- | --- | --- |
+| `/v1/chat/completions` | POST | aliases are routed; a strict session executes here; everything else is forwarded unchanged | a decision row per alias or session request, a pin after a legacy 2xx, the session's request ledger |
+| `/v1/responses` | POST | a strict session whose profile speaks the Responses protocol executes here; everything else is forwarded unchanged | as above, for a session |
+| `/v1/responses/compact` | POST | a standalone compaction, forwarded as maintenance for the bound session | as above, and the session's compaction epoch |
+| `/v1/models` | GET | the upstream list plus one entry per alias | nothing |
+| `/router/health` | GET | mode, upstream, aliases, models, providers, routes, unhealthy providers, decider, whether a Jev key is set, uptime | nothing |
+| `/router/providers` | GET | circuit breaker state and the pressure per provider | nothing |
+| `/router/quota` | GET | quota snapshots, pressures, staleness and the last error per provider, and `subscriptions`; see below | nothing |
+| `/dashboard` | GET | the audit UI, a data-free shell; its data needs router authentication | nothing |
+| `/router/audit?limit=N` | GET | prompt-free audit snapshot, 1–500 recent events (default 300) | nothing |
+| `/router/audit/overview?window=1h\|24h\|7d\|30d` | GET | router health from the tables, and live quota; see below | nothing |
+| `/router/audit/sessions` | GET | strict sessions, filtered, with facets and bookmarks; see below | nothing |
+| `/router/audit/sessions/{id}` | GET | one session: binding, user turns, admission, requests, plans, trace; see below | nothing |
+| `/router/decisions?limit=N` | GET | recent decisions as JSON | nothing |
+| `/router/feedback` | POST | record what you thought of a decision | one feedback row |
+| `/router/feedback?limit=N` | GET | recent feedback, joined to its decision | nothing |
+| `/router/resolve` | POST | resolve or resume a strict session binding | the session and its admission row |
+| `/router/sessions?limit=N` | GET | strict session bindings, newest first | nothing |
+| `/router/sessions/{id}` | GET | one binding: identity, limits, efforts and state | nothing |
+| `/router/sessions/{id}/close` | POST | end a session deliberately | the session row |
+| `/router/sessions/{id}/feedback` | POST | a verdict on a session, and optionally a same-model effort step; see below | one feedback row, the session's verdict, and its effort when it steps |
+| `/router/turn-plan` | POST | an effort-only decision for a new user turn (experimental) | a plan and its decision row |
+| `/router/turn-plan/{id}/reconcile` | POST | say what happened to an ambiguous effort update | the plan |
+| `/router/config?window=` | GET | the running config: its text, rules with their lines and hits, routes, lanes, models, thresholds, rated admissions | nothing |
+| `/router/config/preview` | POST | validate a draft and replay recent admissions under it; no Jev call | nothing |
+| `/router/config/apply` | POST | validate a draft, back up router.yaml, write the draft, swap it in | a backup, router.yaml, a config snapshot |
+| `/router/sandbox/jev` | POST | ask Jev once about a stored decision with an edited state or wording | nothing (one Jev call) |
+| `/router/eval-cases` | POST | append one decision to `golden_cases.jsonl` beside the database | one line in that file |
+| anything else | any | streamed through to the upstream, method and path unchanged | nothing |
 
 An alias name on any other POST endpoint returns 400 with a message saying so.
 
@@ -93,11 +92,14 @@ Every `/router/*` path needs `X-Router-Admin-Token` once the environment
 variable named by `settings.admin_token_env` is set; without one, only direct
 loopback callers are accepted. The strict-session paths need that credential
 always, loopback included, and there is no setting that turns it off:
-`resolve`, `turn-plan`, `sessions`, and any managed execution on `/v1/*`.
+`resolve`, `turn-plan`, `sessions` (session feedback included), and any
+managed execution on `/v1/*`. The `/router/audit` and config workbench paths
+need only the ingress credential.
 
 ### The overview
 
-`GET /router/audit/overview` writes nothing and calls nothing. Every rate is
+`GET /router/audit/overview?window=` (default `24h`; any other parameter is a
+400) writes nothing and calls nothing. Every rate is
 `{numerator, denominator, rate}`, every latency is `{n, p50, p95}`, and a value
 no row recorded is `null`, never zero. Beside the keys the page has always
 read (`sessions`, `executions`, `latency`, `series`, `decisions`, `quota`,
@@ -119,6 +121,134 @@ read (`sessions`, `executions`, `latency`, `series`, `decisions`, `quota`,
 | `reliability` | `fallback` and `low_confidence` admission rates, and `breakers` per provider: `state`, `healthy` and the breaker's counters, never its error text |
 
 Each `series` bucket also has `first_byte_p50_ms` beside `response_p50_ms`.
+The body also carries the running `config_hash`, and `subscriptions`: the one
+live source, described next.
+
+### Live quota: `subscriptions`
+
+`GET /router/audit/overview` and `GET /router/quota` both return
+`subscriptions`, the quota monitor's current readings read from memory. Nothing
+is polled and no program is run to answer. It is `null` when the monitor cannot
+be read.
+
+| Key | What it holds |
+| --- | --- |
+| `as_of`, `quota_routing`, `demote_above`, `exhausted_at` | when it was read, whether `quota_policy` is on, and its two cutoffs |
+| `routed[]` | every provider in the config: `provider`, `enabled`, `source`, `codexbar_provider`, `via` (`snapshot`, `cli` or `null`), `status` (`fresh`, `stale`, `unknown`, `error`), `pressure`, `age_seconds`, `fetched_at`, `used_percent`, `windows[]`, `exhausted` (the spent window or `null`), `steering`, `models[]` (`model`, `quota_cost`, `pressure`), `polls`, `errors` |
+| `tracked[]` | every CodexBar subscription no enabled provider links to: `id`, `via`, `status`, `age_seconds`, `fetched_at`, `windows[]`, `plans[]` (`title`, `used_percent`), `tokens` (CodexBar's session and 30-day token and cost numbers), `currency`, `credits_remaining`, `polls`, `errors` |
+
+Each window is `{name, used_percent, expected_percent, pace_delta, resets_at,
+window_minutes, reset_description}`; `expected_percent` comes from the window's
+own length and reset time, and `pace_delta` is `null` when either side is
+unknown. `steering` is `calm` (pressure 0), `elevated` (above 0, not above
+`demote_above`), `demoting` (above `demote_above`) or `exhausted` (a fresh
+window at `exhausted_at`), and `null` whenever the reading is not fresh, the
+provider is not polled, or quota routing is off. A tracked subscription never
+produces pressure and has no `steering`. Error text is never projected here;
+`GET /router/quota` reports each provider's `last_error` in its own
+`providers` block.
+
+### The session list
+
+`GET /router/audit/sessions` writes nothing and calls nothing. It takes
+`limit` (1–200, default 50) and these filters, all optional; any other
+parameter is a 400.
+
+| Parameter | Matches |
+| --- | --- |
+| `client`, `model`, `rule` | that exact label |
+| `state` | `prepared`, `active`, `blocked` or `closed` |
+| `adaptive` | the session's adaptation mode: `off`, `shadow` or `active` |
+| `problem` | `any`, or one of `unknown`, `rejected`, `stream_failed`, `fallback`, `low_confidence` |
+| `feedback` | the session's newest verdict: `right`, `too_weak`, `too_strong`, `too_slow`, or `unrated` for none |
+| `pinned` | `1` for bookmarked sessions only |
+| `q` | 1–80 letters, digits, spaces or ordinary punctuation, found anywhere in the session id, or in the title or prompt preview ignoring case |
+| `window` | last seen within `1h`, `24h`, `7d` or `30d` |
+
+It returns `config_hash`, `limit`, `matched` (the count beyond the limit),
+`bookmarks[]`, `facets` (`client`, `model`, `rule` and `feedback`, each a list
+of `{value, n}`; `feedback` counts unrated sessions as `unrated`) and
+`sessions[]`. Each session has `session_id`, `alias`, `client`, `state`,
+`created`, `last_seen`, `closed_at`, `model`, `effort` (the base effort),
+`effective_effort`, `rule`, `quality_lane`, `config_hash`, `config_matches`,
+`adaptation_mode`, `tombstone`, `title`, `prompt_preview`, `workspace_hint`,
+`turn_count`, `feedback_verdict`, `requests` (a count per request status),
+`problems[]`, `response_ms` (`{n, p50}`) and `pinned` (`{slug, label}` or
+`null`). The text fields are what was stored, scrubbed; they are `null` for a
+session that predates them or ran with `log_state: false`.
+
+### One session
+
+`GET /router/audit/sessions/{id}` writes nothing and calls nothing. An unknown
+id is a 404. It returns:
+
+- `session`: the binding's fields by name (identity, limits, the four efforts,
+  adaptation, decision rule and source, lane, compaction, the last reply's
+  token counts), the text fields `title`, `prompt_preview` and
+  `workspace_hint`, the counters `turn_count`, `escalation_count` and
+  `corrective_count`, `feedback_verdict`, and three computed ones:
+  `request_count`, `cache_hit_ratio` (cached over input tokens from the calls
+  that reported both, `null` when none did) and `feedback` (the newest row:
+  `{verdict, note, source, ts, turn_index}`, or `null`).
+- `turns[]`: one entry per user turn, oldest first, each with `turn_index`,
+  `kind` (`admission`, `plan` or `user_turn`), `ts`, `decision_row`,
+  `user_prompt`, `state` (the stored state's known text fields and its facts,
+  or `null`), `state_shape`, `jev` (`latency_ms`, `tokens`, `answers`,
+  `shadow_answers`, the packet versions; `null` for a `user_turn`, where Jev was
+  not called), `decision` (`model`, `effort`, `rule`, `route`, `quality_lane`,
+  `fallback`), `plan` (the turn plan, for a `plan` turn), `execution_rollup`,
+  `requests` (the `seq` of each request in the turn) and `feedback[]` (the
+  rows given during it).
+- `turn_join`: `by_index` when every execution row names its turn, or
+  `by_order` when some were written before that column and were matched to the
+  newest turn logged before them.
+- `admission` (the admission row, projected), `requests[]` (one per execution
+  attempt, with its status, timings, token counts, `turn_index` and facts,
+  tool names and languages included), `plans[]` (the effort ledger with the
+  Jev answers of each plan), and `trace` (the admission's rule-by-rule replay
+  under the config it was taken under, or `available: false` with the reason).
+
+`execution_rollup` is `http_requests`, `usage_reported`, `input_tokens`,
+`output_tokens`, `cached_input_tokens` (sums, `null` when no call reported the
+number), `first_byte_ms_p50`, `tps_p50`, `tool_calls[]` (`{name, count}`),
+`assistant_summary` and `files_touched[]`. The last three come from the
+client's next request, never from the reply stream.
+
+### Session feedback
+
+`POST /router/sessions/{id}/feedback` needs the control credential, like every
+strict-session request, and the session must belong to its owner. The body:
+
+| Field | |
+| --- | --- |
+| `verdict` | required: `right`, `too_weak`, `too_strong` or `too_slow` |
+| `adjust_effort` | `true` to step the effort; default `false` |
+| `request_id` | the request the person was looking at; its turn is recorded, else the session's current turn |
+| `note` | scrubbed and cut to 2,000 characters |
+| `source` | 1–32 of `a-z`, `0-9`, `_`, `-`; default `api` |
+
+Any other field, or a bad value, is `INVALID_ROUTER_INPUT` (400); an unknown
+session, or one owned by another credential, is `SESSION_UNKNOWN` (409).
+
+It writes one `feedback` row (under the session's admission decision id, with
+`session_id`, `request_id` and `turn_index`) and sets the session's
+`feedback_verdict`. With `adjust_effort: true`, `too_weak` steps one rung up
+and `too_strong` one rung down along the bound model's configured efforts,
+inside the alias cap and the client floor. The model never changes. The step
+moves the base, effective, expected and confirmed effort and the wire model
+together, as one conditional write on the session's version; the binding
+revision does not change, because the binding digest does not cover effort.
+The next execution is sent at the new effort.
+
+The reply is `{ok, feedback_id, session_id, decision_id, verdict, turn_index,
+model_key, previous_effort, current_effort, wire_model, effort_changed,
+reason_code, reason}`. When a step was asked for and did not happen,
+`reason_code` says why: `verdict_keeps_effort`, `session_closed`,
+`session_blocked`, `adaptive_effort_active` (the experiment owns the effort),
+`base_effort_checked` (a Responses session under adaptive effort, whose
+history is checked against its base effort), `not_on_ladder`, `at_highest`,
+`at_lowest` or `conflict` (the session changed during the write). The verdict
+is recorded either way.
 
 ### The config workbench
 
@@ -136,16 +266,22 @@ is there), `yaml_source` (`loaded`, `file` or `null`), `window`, `since`,
 `routes`, `quality_lanes`, `models` (`provider`, `quota_cost` or `null` when not
 written down, `efforts`, `default_effort`, capabilities, `line`),
 `quota_policy`, `adaptive_effort` (mode, ladder, thresholds, targets,
-`downgrade_confirmations`, ...), `questions` (type, choices or levels, `line`),
-`thresholds` (every numeric `gte`/`lte` cutoff per question, sorted) and
-`effort_order`. An unknown parameter is a 400.
+`downgrade_confirmations`, ...), `questions` (type, choices or levels and
+`max`, `instructions` as the running config words them or `null`, `line`),
+`thresholds` (every numeric `gte`/`lte` cutoff per question, sorted),
+`effort_order`, and `rated[]`: the admissions in the window with a numeric
+answer, newest first, at most 500, each `{session_id, alias, rule, verdict,
+scores}`, where `verdict` is the newest one or `null` and `scores` holds the
+score and noul answers as numbers. An unknown parameter is a 400.
 
 `POST /router/config/preview` takes `{yaml, window?, limit?}` (limit 1-500,
-default 200). A draft that does not load returns 422 with
-`{valid: false, errors: [{message, path, line}]}`; the registry and lane
+default 200); any other field is a 400. A draft that does not load returns 422
+with `{valid: false, errors: [{message, path, line}]}`; the registry and lane
 qualification checks run as at startup. Otherwise it replays the newest
 admissions in the window under the running config and the draft, at their
-recorded pressure, and returns `evaluated`, `changed`, `unreplayable`,
+recorded pressure, and returns `valid`, `errors`, `config_hash_running`,
+`config_hash_draft`, `window`, `since`, `limit`, `evaluated`, `changed`,
+`unreplayable`,
 `running_reproduces`, `tier_share_before`/`_after` (share by model),
 `quota_saved_before`/`_after`, `feedback` (`rated`, `resolved_too_weak`,
 `resolved_too_strong`, `conflicts`, `right_changed`, `unranked`) and `diffs[]`
@@ -155,31 +291,48 @@ recorded pressure, and returns `evaluated`, `changed`, `unreplayable`,
 model, and two models only by `quota_cost` on the same provider; anything
 else is `unranked`.
 
-`POST /router/config/apply` takes `{yaml, base_hash?, force?}`. It refuses with
-409 when the running config came from no file, when `base_hash` is not the
-running hash, or when the file on disk changed since it was loaded (unless
-`force: true`). It validates as preview does (422), copies the file to
-`config-backups/router.<UTC timestamp>.yaml` beside the database (mode 0700),
-writes the draft atomically, swaps it in, snapshots it, and returns
-`{applied, config_hash, previous_hash, backup_path, restart_required}`.
-`restart_required` lists the settings this process read only at startup.
-`JEV_ROUTER_UPSTREAM` still overrides the upstream on load.
+`POST /router/config/apply` takes `{yaml, base_hash?, force?}`, one apply at a
+time. It refuses with 409 when the running config came from no file, when
+`base_hash` is not the running hash, or when the file on disk changed since it
+was loaded (unless `force: true`; the 409 then carries `on_disk_hash`). It
+validates as preview does (422), copies the file to
+`config-backups/router.<UTC timestamp>.yaml` beside the database (folder 0700,
+file 0600), writes the draft to a temporary file beside router.yaml and
+renames it over (`os.replace`, keeping the file's mode), swaps it into the
+running process, snapshots it, and returns `{applied, config_hash,
+previous_hash, backup_path, restart_required}`. A request already under way
+keeps the config it started with. `restart_required` lists the settings this
+process reads only at startup: `settings.host`, `port`, `sqlite_path`,
+`admin_token_env`, `max_body_bytes`, `max_concurrent_requests`,
+`upstream_connect_timeout_s`, `upstream_read_timeout_s`, and
+`session_routing.enabled`. A draft identical to the running file returns
+`{applied: false, unchanged: true, ...}` and writes nothing; a failed write is
+a 500. `JEV_ROUTER_UPSTREAM` still overrides the upstream on load.
 
 `POST /router/sandbox/jev` takes `{decision_row | decision_id, state?,
-questions?}`. `questions` maps a question id to a new `instructions` and/or
-`criteria` for this call only. It runs one Jev call on the supplied state
-(scrubbed) or the stored one, and returns `jev_ms`, `original_answers`,
-`sandbox_answers`, and `original_route`/`sandbox_route` traced under the
-running config at the row's facts and pressure (`null` for a turn plan). A
-decision with no stored state and none supplied is a 422 with
-`reason: no_stored_state`.
+questions?}`. A `decision_id` names its deciding row. `questions` maps a
+question id to a new `instructions` and/or `criteria` for this call only. It
+runs one Jev call, with no draft step, on the supplied state (scrubbed) or the
+stored one, asking the questions the running config asks for that kind of
+decision (an admission's, or a turn plan's), and returns `row`,
+`decision_id`, `event_type`, `config_matches`, `questions`, `overridden`,
+`jev_ms`, `original_answers`, `sandbox_answers`, and
+`original_route`/`sandbox_route` traced under the running config at the row's
+facts and pressure (`null` for a turn plan). It writes nothing. An unknown
+decision is a 404, an alias no longer in the config a 422, a decision with no
+stored state and none supplied a 422 with `reason: no_stored_state`, and a
+failed Jev call a 502 with its `jev_ms`.
 
 `POST /router/eval-cases` takes `{session_id | decision_row, verdict,
-min_quality_lane?, max_quality_lane?, note?}` and appends one JSON line to
-`golden_cases.jsonl` beside the database: the stored state if any, the
-allowlisted facts, the answers, the chosen route, the config hash and the
-expectation. The note is scrubbed and cut to 500 characters. It returns
-`{saved, path, total_cases}`.
+min_quality_lane?, max_quality_lane?, note?}`. A `session_id` names its
+admission; a `decision_row` may be any decision row. A lane must name a
+quality lane in the config. It appends one JSON line to `golden_cases.jsonl`
+beside the database (created 0600): `exported_at`, the row's ids, alias, event
+type, config hash, state builder and packet version, the stored state if any,
+the allowlisted facts, the answers, `chosen` (`rule`, `route`, `model`,
+`effort`, `lane`), the pressures, and `expected` (`verdict` and the two lanes).
+The note is scrubbed and cut to 500 characters. It returns `{saved, path,
+total_cases}`. Nothing else is written.
 
 ### Response headers
 

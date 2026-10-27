@@ -22,7 +22,9 @@ decider or a new quota source needs Python.
 | `sqlite_path` | the pins, decisions and feedback database |
 | `default_route` | the model and effort used when nothing else applies |
 | `effort_order` | every effort name, weakest to strongest |
-| `log_state` | when true, also store the state sent to Jev |
+| `log_state` | default true: store message text (the state sent to Jev, turn prompts, turn summaries, session titles), scrubbed and capped; false stores none |
+| `scrub_secrets` | must be true; false is a config error |
+| `turn_text_max_chars` | the cap on each stored text, 256 to 65,536; default 2,048 |
 | `decider`, `fallback_decider` | which decider runs, and which one covers a Jev failure |
 | `upstream_connect_timeout_s`, `upstream_read_timeout_s` | forwarding timeouts |
 | `capture_usage_max_bytes` | maximum buffered and decoded non-streamed usage copy |
@@ -35,23 +37,25 @@ Every key in every block is checked. An unknown one anywhere is a config error,
 not a silently ignored line.
 
 Beside `settings`, `providers`, `models`, `routes`, `questions`, `policy`,
-`rulesets`, `aliases` and `clients`, four top-level blocks configure the newer
-parts. All four default to off, and a `router.yaml` written before them behaves
+`rulesets`, `aliases` and `clients`, five top-level blocks configure the newer
+parts. All five default to off, and a `router.yaml` written before them routes
 exactly as it did.
 
 | Block | What it is | Default |
 | --- | --- | --- |
+| `codexbar` | where CodexBar's snapshot is, the CLI fallback, and tracked subscriptions; see [quota](../guides/quota.md#the-codexbar-source) | `enabled: false` |
 | `session_routing` | the strict session service | `enabled: false` |
 | `semantic_policy` | which questions decide and which only ride along | no shadow questions, `distribution_policy: off` |
 | `quality_lanes` | the model and effort pairs somebody measured per kind of work, each with its evidence | none configured |
 | `experiments.adaptive_effort` | between-turn effort changes | `mode: "off"`, `qualified_profiles: []` |
 
-An alias opts into the first with `session_mode: strict` and into the last with
-`adaptive_effort: true`; a rule joins a lane with `lane: <name>`. The shipped
-`router.yaml` enables `session_routing` and exposes one strict alias, `auto`,
-plus the retired `auto-conserve`, kept only for sessions bound under it.
-It configures quality lanes, keeps `distribution_policy: off`, asks no extra
-shadow questions, and keeps the effort experiment off.
+An alias opts into `session_routing` with `session_mode: strict` and into the
+effort experiment with `adaptive_effort: true`; a rule joins a lane with
+`lane: <name>`. The shipped `router.yaml` enables `session_routing` and exposes
+one strict alias, `auto`, plus the retired `auto-conserve`, kept only for
+sessions bound under it. It configures quality lanes, keeps
+`distribution_policy: off`, asks no extra shadow questions, keeps the effort
+experiment off, and keeps `codexbar` off.
 
 ### A provider
 
