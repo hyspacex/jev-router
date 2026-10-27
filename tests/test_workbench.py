@@ -107,6 +107,8 @@ async def test_config_lists_rated_admissions_as_numbers_and_labels(svc):
     try:
         weak = await admit(svc, "session-cccc0001", task="code", difficulty=2.0)
         await admit(svc, "session-cccc0002", task="quick_question", difficulty=0.1)
+        # 1.55 sits within 0.10 of `hard`'s 1.5: a knife-edge admission.
+        await admit(svc, "session-cccc0003", task="code", difficulty=1.55)
         store = svc.router.store
         store.add_feedback(decision_id=admission(svc, weak.session_id)["decision_id"], verdict="too_weak")
         before = store.conn.total_changes
@@ -115,12 +117,23 @@ async def test_config_lists_rated_admissions_as_numbers_and_labels(svc):
     finally:
         await svc.close()
     rated = {r["session_id"]: r for r in body["rated"]}
-    assert set(rated) == {"session-cccc0001", "session-cccc0002"}
+    assert set(rated) == {"session-cccc0001", "session-cccc0002", "session-cccc0003"}
+    title = rated["session-cccc0001"].pop("title")
+    assert title is None or isinstance(title, str)
     assert rated["session-cccc0001"] == {
         "session_id": "session-cccc0001", "alias": "auto-session", "rule": "hard",
         "verdict": "too_weak", "scores": {"difficulty": 2.0, "harm_if_wrong": 0.1},
+        "knife_edge": False,
     }
     assert rated["session-cccc0002"]["verdict"] is None
+    assert rated["session-cccc0003"]["knife_edge"] is True
+    # The overview's knife-edge rate, over the same admissions.
+    assert body["knife_edge"] == {
+        "margin": 0.1, "numerator": 1, "denominator": 3, "rate": 1 / 3,
+        "unassessed": 0, "unassessed_by_reason": {},
+    }
+    # No quota source is on in this config.
+    assert body["quota_sources"] == []
     # Choices and text never ride along: scores are numbers.
     for item in body["rated"]:
         assert all(isinstance(v, float) for v in item["scores"].values())
@@ -135,9 +148,22 @@ def test_rated_admissions_skip_rows_without_scores():
          "answers": {"task": {"type": "choice", "choice": "code"},
                      "difficulty": {"type": "score", "score": 0.4}}},
     ]
-    out = rated_admissions(rows, [{"decision_id": "d2", "verdict": "right"}], {})
-    assert out == [{"session_id": "s-2", "alias": "auto", "rule": "easy", "verdict": "right",
-                    "scores": {"difficulty": 0.4}}]
+    out = rated_admissions(rows, [{"decision_id": "d2", "verdict": "right"}], {"s-2": {"title": "Fix it"}})
+    # Without a config nothing can be held against a cutoff: knife_edge is a gap.
+    assert out == [{"session_id": "s-2", "title": "Fix it", "alias": "auto", "rule": "easy",
+                    "verdict": "right", "scores": {"difficulty": 0.4}, "knife_edge": None}]
+
+
+def test_quota_sources_names_the_providers_that_poll():
+    from jev_router.workbench import quota_sources
+
+    config = make_config(providers={
+        "openai": {"quota": {"source": "static", "enabled": True, "config": {"pressure": 0.1}}},
+        "ollama": {"quota": {"source": "static", "enabled": False, "config": {"pressure": 0.1}}},
+        "xai": {"quota": {"source": "none", "enabled": True}},
+    }, models={m: {"provider": "openai"} for m in ("small", "big", "paramy")})
+    assert quota_sources(config) == ["openai"]
+    assert quota_sources(make_config()) == []
 
 
 async def test_config_never_serves_a_snapshot(monkeypatch):
@@ -214,7 +240,17 @@ async def test_preview_replays_without_jev_and_scores_feedback(svc):
     assert (body["evaluated"], body["changed"], body["running_reproduces"]) == (3, 2, 3)
     assert body["tier_share_before"] == pytest.approx({"big": 2 / 3, "small": 1 / 3})
     assert body["tier_share_after"] == body["tier_share_before"]
-    assert body["quota_saved_before"]["unpriced"] == 3
+    # Nothing in this config has a quota_cost: no baseline, every call unknown.
+    assert body["quota_saved_before"]["unknown"] == 3
+    assert body["quota_saved_before"]["saved_rate"] is None
+    # The draft's own cutoffs and ladders, so the page can draw them beside
+    # the running ones.
+    assert body["draft_thresholds"] == {"difficulty": [0.5, 2.5], "harm_if_wrong": [0.6]}
+    ladder = {r["name"]: r for r in body["draft_rules"]["policy"]}
+    assert ladder["hard"]["when"] == {"difficulty": {"gte": 2.5}}
+    assert ladder["hard"]["index"] == list(ladder).index("hard") + 1
+    assert "name: hard" in draft.splitlines()[ladder["hard"]["line"] - 1]
+    assert set(body["draft_rules"]["policy"][0]) == {"index", "name", "when", "line"}
     assert body["feedback"] == {
         "rated": 2, "resolved_too_weak": 0, "resolved_too_strong": 1,
         "conflicts": 1, "right_changed": 0, "unranked": 0,

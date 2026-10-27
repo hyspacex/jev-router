@@ -43,16 +43,22 @@ function renderRules(kind) {
   requestAnimationFrame(stackLabels);
 }
 
-// Threshold labels drop a row where they would touch, by their drawn width.
+// Threshold labels stay inside the ruler (the first and last shift inward)
+// and drop a row where they would touch, by their drawn width.
 function stackLabels() {
   for (const box of document.querySelectorAll(".rul .ticksx")) {
+    const edge = (box.parentElement || box).getBoundingClientRect();
     const ends = [];
     for (const t of [...box.children]) {
       t.style.top = "0.4rem";
+      t.style.marginLeft = "0px";
       const r = t.getBoundingClientRect();
-      let row = ends.findIndex((e) => r.left >= e + 8);
+      const shift = r.left < edge.left ? edge.left - r.left : r.right > edge.right ? Math.max(edge.left - r.left, edge.right - r.right) : 0;
+      if (shift) t.style.marginLeft = shift + "px";
+      const left = r.left + shift;
+      let row = ends.findIndex((e) => left >= e + 8);
       if (row < 0) row = ends.length;
-      ends[row] = r.right;
+      ends[row] = r.right + shift;
       t.style.top = (0.4 + row * 1.2) + "rem";
     }
     box.style.height = (0.5 + Math.max(1, ends.length) * 1.2) + "rem";
@@ -94,10 +100,34 @@ function whenParts(when) {
   return parts;
 }
 
+// Where a rule sends a request: `mid_tools → glm-5.3 · high`, the route's
+// primary model and effort after the route; a direct model as it stands.
 function useText(use) {
   if (!use) return null;
-  if (use.route) return use.route;
-  return [use.model, use.effort].filter(Boolean).join(" · ") || null;
+  const pair = (model, effort) => [model ? splitModel(model)[1] : null, effort].filter(Boolean).join(" · ");
+  if (use.route) {
+    const route = ((S.rules && S.rules.routes) || {})[use.route];
+    const primary = route && route.primary ? pair(route.primary.model, route.primary.effort) : "";
+    return use.route + (primary ? " → " + primary : "");
+  }
+  return pair(use.model, use.effort) || null;
+}
+
+// What the previewed draft does to the selected ladder, rule by rule:
+// {name: "differs" | "removed"} and the rules the draft adds.
+function draftDelta(rules) {
+  const draft = S.report && S.report.draft_rules ? S.report.draft_rules[S.ruleset] : null;
+  if (!Array.isArray(draft)) return null;
+  const now = new Map(rules.map((r) => [r.name, r]));
+  const then = new Map(draft.map((r) => [r.name, r]));
+  const changed = new Map();
+  for (const r of rules) {
+    const d = then.get(r.name);
+    if (!d) changed.set(r.name, null);
+    else if (JSON.stringify(d.when || {}) !== JSON.stringify(r.when || {})) changed.set(r.name, d);
+  }
+  const added = draft.filter((d) => !now.has(d.name));
+  return changed.size || added.length ? {changed, added, rules: draft} : null;
 }
 
 // The line of the nearest `key:` before (step -1) or after (step 1) a line.
@@ -115,8 +145,14 @@ function keyLine(key, from, step) {
 function ladderPanel() {
   const set = rulesetNow();
   const rules = Array.isArray(set.rules) ? set.rules : [];
-  const box = panel("Ladder", set.admissions ? int(set.admissions) + " admissions" : null, "ladderp");
+  // With more than one ladder, the count says it is this ladder's share.
+  const several = Object.keys(S.rules.rulesets || {}).length > 1;
+  const count = !set.admissions ? null
+    : several && S.rules.admissions ? int(set.admissions) + " of " + plural(S.rules.admissions, "admission") : plural(set.admissions, "admission");
+  const box = panel("Ladder", count, "ladderp");
   const list = el("div", "lad");
+  const delta = draftDelta(rules);
+  const draftLine = (text) => list.append(add(el("div", "ldraft"), el("span", "mono", text)));
   const within = (rule) => listHash({rule, window: S.rwin});
   const row = (index, name, cond, use, lane, hits, share, line, cls) => {
     const r = el("div", "lr" + (cls ? " " + cls : "") + (line ? " go" : "") + (line && S.hl === line ? " on" : ""));
@@ -148,7 +184,14 @@ function ladderPanel() {
     const qs = Array.isArray(gate.questions) ? gate.questions.map(human).join(", ") : "";
     row("", "confidence gate", [qs + " confidence < " + cfg(gate.min_confidence)], useText(gate.use), null, gate.hits, gate.share, keyLine("low_confidence", first, -1), "gate");
   }
-  for (const r of rules) row(String(r.index), r.name, whenParts(r.when), useText(r.use), r.lane, r.hits, r.share, r.line, null);
+  for (const r of rules) {
+    row(String(r.index), r.name, whenParts(r.when), useText(r.use), r.lane, r.hits, r.share, r.line, null);
+    if (delta && delta.changed.has(r.name)) {
+      const d = delta.changed.get(r.name);
+      draftLine(d ? "draft differs: " + (whenParts(d.when).join(" · ") || "always") : "draft removes " + r.name);
+    }
+  }
+  if (delta) for (const d of delta.added) draftLine("draft adds: " + d.name + " · " + (whenParts(d.when).join(" · ") || "always"));
   if (set.default) row("", "default", [], useText(set.default.use), null, set.default.hits, set.default.share, keyLine("default", last, 1), "dflt");
   if (set.fallback && set.fallback.hits) row("", "fallback", ["Jev failed"], null, null, set.fallback.hits, set.fallback.share, null, "dflt");
   box.append(list);
@@ -182,14 +225,32 @@ function rulersPanel() {
   }
   const aliases = new Set(Array.isArray(set.aliases) ? set.aliases : []);
   const rated = (Array.isArray(S.rules.rated) ? S.rules.rated : []).filter((r) => !aliases.size || aliases.has(r.alias));
-  for (const [key, ticks] of keys) box.append(ruler(key, ticks, rated));
+  // The previewed draft's cutoffs, drawn beside the running ones while they differ.
+  const delta = draftDelta(Array.isArray(set.rules) ? set.rules : []);
+  const draft = delta ? rulerKeys({rules: delta.rules}) : new Map();
+  for (const key of draft.keys()) if (!keys.has(key)) keys.set(key, []);
+  for (const [key, ticks] of keys) {
+    const mine = new Set(ticks.map((t) => t.value + "|" + t.rule));
+    const extra = (draft.get(key) || []).filter((t) => !mine.has(t.value + "|" + t.rule));
+    box.append(ruler(key, ticks, rated, extra));
+  }
   const legend = el("div", "rleg");
   for (const v of ["right", "too_weak", "too_strong"]) add(legend, add(el("span"), el("i", "rdot v-" + v), VERDICT_WORDS[v]));
+  add(legend, add(el("span"), el("i", "rdot v-none"), "unrated"));
   box.append(legend);
+  const k = S.rules.knife_edge;
+  if (k && typeof k === "object") {
+    const line = el("div", "rknife");
+    if (k.denominator) {
+      add(line, el("i", "rdot edge"), el("span", "mono", int(k.numerator) + " of " + plural(k.denominator, "admission")),
+        " within " + num2(k.margin) + " of a threshold");
+    } else line.append(gap("no admission assessed"));
+    box.append(line);
+  }
   return box;
 }
 
-function ruler(key, ticks, rated) {
+function ruler(key, ticks, rated, draftTicks) {
   const q = (S.rules.questions || {})[key] || {};
   const top = !absent(q.max) && q.max > 0 ? q.max : Math.max(1, ...ticks.map((t) => Math.ceil(t.value)));
   const x = (v) => Math.max(0, Math.min(100, v / top * 100));
@@ -207,8 +268,10 @@ function ruler(key, ticks, rated) {
     level = Math.min(level, 7);
     placed.push({at, level});
     const verdict = r.verdict && VERDICT_WORDS[r.verdict] ? r.verdict : "none";
-    const label = cap(key) + " " + num2(r.scores[key]) + (r.verdict ? " · " + (VERDICT_WORDS[r.verdict] || r.verdict) : "");
-    const dot = r.session_id ? link("rdot v-" + verdict, null, sessionHash(r.session_id), label) : el("span", "rdot v-" + verdict);
+    const who = r.title || (r.session_id ? short(r.session_id) : null);
+    const label = cap(key) + " " + num2(r.scores[key]) + (who ? " · " + who : "");
+    const cls = "rdot v-" + verdict + (r.knife_edge === true ? " edge" : "");
+    const dot = r.session_id ? link(cls, null, sessionHash(r.session_id), label) : el("span", cls);
     dot.title = label;
     dot.style.left = at + "%";
     dot.style.bottom = (3 + level * 9) + "px";
@@ -217,19 +280,22 @@ function ruler(key, ticks, rated) {
   const levels = placed.length ? Math.max(...placed.map((p) => p.level)) + 1 : 0;
   field.style.height = Math.max(18, 8 + levels * 9) + "px";
   const scale = el("div", "rscale");
-  const merged = new Map();
-  for (const t of ticks) merged.set(t.value, merged.has(t.value) ? merged.get(t.value) + ", " + t.rule : t.rule);
-  const points = [...merged.entries()].sort((a, b) => a[0] - b[0]);
+  const merge = (list, draft) => {
+    const merged = new Map();
+    for (const t of list) merged.set(t.value, merged.has(t.value) ? merged.get(t.value) + ", " + t.rule : t.rule);
+    return [...merged.entries()].map(([v, rule]) => ({v, rule, draft}));
+  };
+  const points = [...merge(ticks, false), ...merge(draftTicks || [], true)].sort((a, b) => a.v - b.v);
   const labels = el("div", "ticksx");
   const lastX = [];
-  for (const [v, rule] of points) {
-    const mk = el("div", "mk thr");
+  for (const {v, rule, draft} of points) {
+    const mk = el("div", "mk thr" + (draft ? " draft" : ""));
     mk.style.left = x(v) + "%";
     scale.append(mk);
     let rowAt = lastX.findIndex((p) => x(v) - p >= 22);
     if (rowAt < 0) rowAt = lastX.length;
     lastX[rowAt] = x(v);
-    const t = el("span", x(v) >= 85 ? "hi" : x(v) <= 12 ? "lo" : null, cfg(v) + " " + rule);
+    const t = el("span", (x(v) >= 85 ? "hi" : x(v) <= 12 ? "lo" : "") + (draft ? " draft" : ""), cfg(v) + " " + rule);
     t.style.left = x(v) + "%";
     t.style.top = (0.4 + rowAt * 1.2) + "rem";
     labels.append(t);
@@ -260,7 +326,8 @@ function settingsPanel() {
     lines.append(r);
   };
   const q = d.quota_policy || {};
-  line("Quota", q.enabled === false ? "off" : "demote above " + cfg(q.demote_above) + " · exhausted at " + cfg(q.exhausted_at) + "%",
+  const none = Array.isArray(d.quota_sources) && !d.quota_sources.length;
+  line("Quota", (none ? "no source enabled · " : "") + (q.enabled === false ? "off" : "demote above " + cfg(q.demote_above) + " · exhausted at " + cfg(q.exhausted_at) + "%"),
     keyLine("quota_policy", 1, 1) || (d.yaml && /^quota_policy:/.test(d.yaml) ? 1 : null));
   const a = d.adaptive_effort || {};
   if (a.mode === "off" || !a.mode) line("Adaptive effort", "off", a.line);
@@ -377,7 +444,8 @@ function syncEditor(force) {
   if (text === null) note.append(gap("text not available"));
   else add(note, el("span", "mono", hash8(S.draftBase)), dirty ? el("span", "edit", " · edited") : null);
   E.revert.hidden = !dirty;
-  E.apply.disabled = !dirty || !!S.busy;
+  // Apply waits for a Check or Preview that passed on exactly this text.
+  E.apply.disabled = !dirty || !!S.busy || S.passed !== draftText();
   E.check.disabled = E.preview.disabled = text === null || !!S.busy;
   E.check.textContent = S.busy === "check" ? "Checking…" : "Check";
   E.preview.textContent = S.busy === "preview" ? "Replaying…" : "Preview";
@@ -433,11 +501,15 @@ async function runCheck() {
   if (S.busy) return;
   S.busy = "check";
   syncEditor();
+  const text = draftText();
   try {
-    const response = await post("/router/config/preview", {yaml: draftText(), window: S.rwin, limit: 1});
+    const response = await post("/router/config/preview", {yaml: text, window: S.rwin, limit: 1});
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) return unauthorized();
-    if (response.ok && body.valid) S.edres = {kind: "valid", hash: body.config_hash_draft};
+    if (response.ok && body.valid) {
+      S.edres = {kind: "valid", hash: body.config_hash_draft};
+      S.passed = text;
+    }
     else if (Array.isArray(body.errors)) S.edres = {kind: "errors", errors: body.errors};
     else S.edres = {kind: "refused", status: response.status, body};
   } catch (error) {
@@ -452,12 +524,14 @@ async function runPreview() {
   if (S.busy) return;
   S.busy = "preview";
   syncEditor();
+  const text = draftText();
   try {
-    const response = await post("/router/config/preview", {yaml: draftText(), window: S.rwin});
+    const response = await post("/router/config/preview", {yaml: text, window: S.rwin});
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) return unauthorized();
     if (response.ok && body.valid) {
       S.report = body;
+      S.passed = text;
       S.edres = null;
     } else if (Array.isArray(body.errors)) {
       S.edres = {kind: "errors", errors: body.errors};
@@ -518,8 +592,15 @@ function previewPanel(r) {
     box.append(el("p", "empty", "No admission in this window"));
     return box;
   }
-  add(head, el("span", "pvk mono", int(r.changed) + " of " + int(r.evaluated)), el("span", "pvw", "would change"));
+  // The preview replays every ruleset's admissions; say so when there are several.
+  const several = Object.keys((S.rules && S.rules.rulesets) || {}).length > 1;
+  add(head, el("span", "pvk mono", int(r.changed) + " of " + int(r.evaluated)),
+    el("span", "pvw", (r.evaluated === 1 ? "admission" : "admissions") + (several ? " (all rulesets)" : "") + " would change"));
   if (r.unreplayable) head.append(gap(int(r.unreplayable) + " not replayable"));
+  if (Array.isArray(r.diffs) && r.diffs.length) {
+    add(head, add(el("span", "pvkey"), el("span", "arr up", "▲"), " stronger · ", el("span", "arr down", "▼"), " weaker · ",
+      el("span", "arr", "→"), " no order"));
+  }
   box.append(head);
 
   // Model share before → after, one row per model either side names.
@@ -540,10 +621,11 @@ function previewPanel(r) {
     add(row, el("span", "mono shm", m), bars, el("span", "mono shv", pct(a) + " → " + pct(b)));
     shares.append(row);
   }
+  if (models.length) shares.append(add(el("div", "shrow shof"), el("span"), el("span", "faint", "of " + plural(r.evaluated, "admission")), el("span")));
   const qa = r.quota_saved_before || {};
   const qb = r.quota_saved_after || {};
   const quota = el("div", "shrow" + (qa.saved_rate !== qb.saved_rate ? " moved" : ""));
-  add(quota, el("span", "shm kl", "Quota saved"), el("span"),
+  add(quota, el("span", "shm kl", "Frontier quota saved"), el("span"),
     add(el("span", "mono shv"), absent(qa.saved_rate) ? gap() : pct(qa.saved_rate), " → ", absent(qb.saved_rate) ? gap() : pct(qb.saved_rate)));
   shares.append(quota);
   box.append(shares);

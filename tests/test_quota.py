@@ -669,13 +669,16 @@ async def test_all_snapshots_carries_each_windows_pace(tmp_path):
     }
     assert secondary["expected_percent"] == pytest.approx(28.57)
     assert secondary["pace_delta"] == pytest.approx(5.43)
+    # `small` has no quota_cost in the config: reported as unknown, never as
+    # the schema's 1.0, while its pressure is still its provider's in full.
     assert ollama["models"] == [
-        {"model": "small", "quota_cost": 1.0, "pressure": ollama["pressure"]},
+        {"model": "small", "quota_cost": None, "pressure": ollama["pressure"]},
     ]
     assert (ollama["demote_above"], ollama["exhausted_at"]) == (0.6, 100.0)
     openai = next(r for r in live["routed"] if r["provider"] == "openai")
     assert openai["status"] == "unknown"   # not polled yet: a gap, not zero
     assert [m["model"] for m in openai["models"]] == ["big", "paramy"]
+    assert [m["quota_cost"] for m in openai["models"]] == [1.0, 0.2]
 
 
 async def test_pace_delta_is_none_when_either_side_is_unknown(tmp_path):
