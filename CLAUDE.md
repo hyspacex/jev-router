@@ -388,7 +388,8 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   request facts and the pressure it was taken under, with no prompt. Replay at
   the recorded pressure, and say so when the config hash has moved rather than
   claiming a match.
-- A config snapshot is written once per hash at startup, never on the request
+- A config snapshot is written once per hash at startup and once more when
+  `POST /router/config/apply` swaps a config in, never on a model request's
   path, with every quota `command` scrubbed; `config-snapshots import` takes
   only a file whose hash a decision carries. Snapshots are never pruned and
   never served: an endpoint returns what one explains, never its text.
