@@ -32,6 +32,36 @@ settings:
     max_cooldown_seconds: 1920
     recovery_seconds: 120       # how long health pressure takes to decay
 
+# CodexBar (https://github.com/steipete/CodexBar) watches coding
+# subscriptions and writes every one it watches to a small JSON file about
+# once a minute. A provider below with `quota.source: codexbar` reads its
+# usage windows from that file. When the file is missing or older than
+# cli_fallback_after_seconds, it runs `cli_binary usage --provider <id>
+# --json-only` instead, in the background, at most once per that many
+# seconds. Any failure means pressure 0.
+#
+# With include_external_subscriptions, every subscription CodexBar watches
+# that no provider links to (Claude Code, Antigravity, ...) is read too and
+# shown on the dashboard overview. Those never produce pressure and never
+# touch routing.
+#
+# To enable: install CodexBar.app, set `enabled: true` here, then set
+# `enabled: true` on the provider quota blocks that say `source: codexbar`.
+# An enabled codexbar source with this block off is a config error.
+codexbar:
+  enabled: false
+  # Unset means CodexBar's default group container
+  # (~/Library/Group Containers/Y5PE65HELJ.com.steipete.codexbar/), then any
+  # other CodexBar container that holds widget-snapshot.json.
+  # snapshot_path: ~/Library/Group Containers/Y5PE65HELJ.com.steipete.codexbar/widget-snapshot.json
+  config_path: ~/.codexbar/config.json   # only provider ids and `enabled` are read
+  cli_binary: codexbar                   # "" turns the CLI fallback off
+  cli_timeout_ms: 8000
+  poll_interval_seconds: 60              # tracked subscriptions
+  cli_fallback_after_seconds: 300
+  stale_after_seconds: 1800              # tracked subscriptions
+  include_external_subscriptions: true
+
 # An account or subscription that several models share. Rate limits, outages
 # and quota all belong to the provider, not to the model.
 #
@@ -44,61 +74,29 @@ providers:
   openai:
     description: Frontier subscription. Usage window, no per-token bill.
     quota:
-      source: command
+      # Reads CodexBar's `codex` subscription: a five-hour window as
+      # `primary` and a weekly one as `secondary`, when the plan has them.
+      # Each window stays a record of its own, with its own usage, length
+      # and reset, and pressure is the highest of them. One window's usage
+      # is never read against another window's reset time.
+      source: codexbar
+      codexbar_provider: codex
       enabled: false
-      poll_seconds: 300
-      stale_after_seconds: 1800
-      config:
-        argv: [codexbar, usage, --provider, codex, --json-only]
-        timeout_ms: 5000
-        # This subscription publishes two overlapping limits. Each stays a
-        # record of its own, with its own usage, length and reset, and
-        # pressure is the highest of them. One window's usage is never read
-        # against another window's reset time.
-        #
-        # A source that reports one limit writes `used_percent`,
-        # `expected_used_percent`, `window_minutes` and `resets_at` at this
-        # level instead, and is read exactly as it always was.
-        windows:
-          - name: five_hour
-            used_percent: "0.usage.primary.usedPercent"
-            expected_used_percent: "0.pace.primary.expectedUsedPercent"
-            window_minutes: "0.usage.primary.windowMinutes"
-            resets_at: "0.usage.primary.resetsAt"
-          - name: weekly
-            used_percent: "0.usage.secondary.usedPercent"
-            expected_used_percent: "0.pace.secondary.expectedUsedPercent"
-            window_minutes: "0.usage.secondary.windowMinutes"
-            resets_at: "0.usage.secondary.resetsAt"
+      poll_seconds: 60
+      stale_after_seconds: 900
 
   ollama:
     description: Open-weight models on a cloud subscription.
     quota:
-      source: command
+      # The usage numbers are on the ollama.com settings page, not in the
+      # API. CodexBar.app reads them with its own ollama.com session and
+      # writes them to its snapshot; the CLI fallback has no browser session
+      # and usually finds nothing, which reads as unknown, pressure 0.
+      source: codexbar
+      codexbar_provider: ollama
       enabled: false
-      poll_seconds: 300
-      stale_after_seconds: 1800
-      config:
-        # The usage numbers are on the ollama.com settings page, not in the
-        # API, so this reads them with the browser's ollama.com session:
-        # sign in there in Chrome on the machine that runs the router. With an
-        # API key alone codexbar returns no windows, and that reads as unknown,
-        # which is pressure 0. The current plan reports one monthly window as
-        # `primary`; older plans report session and weekly windows as
-        # `primary` and `secondary`. A window that is absent stays unknown.
-        argv: [codexbar, usage, --provider, ollama, --source, web, --json-only]
-        timeout_ms: 8000
-        windows:
-          - name: primary
-            used_percent: "0.usage.primary.usedPercent"
-            expected_used_percent: "0.pace.primary.expectedUsedPercent"
-            window_minutes: "0.usage.primary.windowMinutes"
-            resets_at: "0.usage.primary.resetsAt"
-          - name: secondary
-            used_percent: "0.usage.secondary.usedPercent"
-            expected_used_percent: "0.pace.secondary.expectedUsedPercent"
-            window_minutes: "0.usage.secondary.windowMinutes"
-            resets_at: "0.usage.secondary.resetsAt"
+      poll_seconds: 60
+      stale_after_seconds: 900
   xai:
     description: Second frontier subscription. Overflow for the frontier lanes.
     quota:

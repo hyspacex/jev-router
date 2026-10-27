@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import time
@@ -13,6 +14,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from .config import RouterConfig
 from .policy import trace
+from .quota import STEERING_LABELS, TOKEN_FIELDS, foreign_label
 from .semantic import ADMISSION_FALLBACK, features_from_facts, replay_decision
 from .sessions import (
     AUDIT_PROBLEMS,
@@ -247,6 +249,132 @@ def project_quota(raw: Any) -> dict[str, Any] | None:
         item["windows"] = windows
         out[provider] = item
     return out
+
+
+# --- the live quota strip ------------------------------------------------
+#
+# The one live source on the overview: the quota monitor's last readings,
+# read out of memory. Nothing here polls, runs a program or writes.
+
+log = logging.getLogger("jev_router.dashboard")
+
+LIVE_VIA = frozenset(["snapshot", "cli"])
+LIVE_WINDOW_NUMBERS = (
+    "used_percent", "expected_percent", "pace_delta", "resets_at", "window_minutes",
+)
+LIVE_ROUTED_NUMBERS = (
+    "pressure", "age_seconds", "fetched_at", "used_percent", "demote_above",
+    "exhausted_at", "polls", "errors",
+)
+LIVE_TRACKED_NUMBERS = ("age_seconds", "fetched_at", "credits_remaining", "polls", "errors")
+_CURRENCY = re.compile(r"[A-Z]{3}")
+
+
+def _num(value: Any) -> Any:
+    return value if _is_number(value) and math.isfinite(value) else None
+
+
+def _live_windows(raw: Any) -> list[dict[str, Any]]:
+    out = []
+    for window in raw if isinstance(raw, list) else []:
+        if not isinstance(window, dict):
+            continue
+        item = {key: _num(window.get(key)) for key in LIVE_WINDOW_NUMBERS}
+        item["name"] = _label(window.get("name"))
+        item["reset_description"] = foreign_label(window.get("reset_description")) or None
+        out.append(item)
+    return out
+
+
+def _live_routed(row: dict[str, Any]) -> dict[str, Any]:
+    item: dict[str, Any] = {key: _num(row.get(key)) for key in LIVE_ROUTED_NUMBERS}
+    status = row.get("status")
+    steering = row.get("steering")
+    spent = row.get("exhausted") if isinstance(row.get("exhausted"), dict) else None
+    item.update({
+        "provider": _label(row.get("provider")),
+        "enabled": row.get("enabled") is True,
+        "source": _label(row.get("source")),
+        "codexbar_provider": _label(row.get("codexbar_provider")),
+        "via": row.get("via") if row.get("via") in LIVE_VIA else None,
+        "status": status if status in QUOTA_STATUSES else None,
+        "steering": steering if steering in STEERING_LABELS else None,
+        "exhausted": None if spent is None else {
+            "name": _label(spent.get("name")),
+            "used_percent": _num(spent.get("used_percent")),
+            "resets_at": _num(spent.get("resets_at")),
+        },
+        "windows": _live_windows(row.get("windows")),
+        "models": [
+            {
+                "model": _label(m.get("model")),
+                "quota_cost": _num(m.get("quota_cost")),
+                "pressure": _num(m.get("pressure")),
+            }
+            for m in row.get("models") or []
+            if isinstance(m, dict) and _label(m.get("model")) is not None
+        ],
+    })
+    return item
+
+
+def _live_tracked(row: dict[str, Any]) -> dict[str, Any]:
+    item: dict[str, Any] = {key: _num(row.get(key)) for key in LIVE_TRACKED_NUMBERS}
+    status = row.get("status")
+    tokens = row.get("tokens") if isinstance(row.get("tokens"), dict) else None
+    currency = row.get("currency")
+    item.update({
+        "id": _label(row.get("id")),
+        "via": row.get("via") if row.get("via") in LIVE_VIA else None,
+        "status": status if status in QUOTA_STATUSES else None,
+        "windows": _live_windows(row.get("windows")),
+        "plans": [
+            {
+                "title": foreign_label(plan.get("title")) or None,
+                "used_percent": _num(plan.get("used_percent")),
+            }
+            for plan in row.get("plans") or []
+            if isinstance(plan, dict)
+        ],
+        "tokens": None if tokens is None else {
+            name: _num(tokens.get(name)) for name, _ in TOKEN_FIELDS
+        },
+        "currency": currency if isinstance(currency, str) and _CURRENCY.fullmatch(currency) else None,
+    })
+    return item
+
+
+def live_quota(monitor: Any, now: float) -> dict[str, Any] | None:
+    """The monitor's current readings, projected field by field.
+
+    `routed` is every provider the router knows, with what quota is doing to
+    its routing. `tracked` is every CodexBar subscription no provider links
+    to: shown, never routed. Returns None when the monitor cannot be read,
+    which the page shows as a gap.
+    """
+    try:
+        raw = monitor.all_snapshots(now)
+    except Exception:  # noqa: BLE001 - a read-only view may never fail on quota
+        log.exception("could not read the live quota snapshots")
+        return None
+    if not isinstance(raw, dict):
+        return None
+    routed = [
+        _live_routed(row) for row in raw.get("routed") or []
+        if isinstance(row, dict) and _label(row.get("provider")) is not None
+    ]
+    tracked = [
+        _live_tracked(row) for row in raw.get("tracked") or []
+        if isinstance(row, dict) and _label(row.get("id")) is not None
+    ]
+    return {
+        "as_of": _num(raw.get("as_of")),
+        "quota_routing": raw.get("quota_routing") is True,
+        "demote_above": _num(raw.get("demote_above")),
+        "exhausted_at": _num(raw.get("exhausted_at")),
+        "routed": routed,
+        "tracked": tracked,
+    }
 
 
 def _project_session(row: dict[str, Any], running: str) -> dict[str, Any]:
@@ -750,6 +878,7 @@ async def audit_overview(request: Request) -> Response:
     since = (math.floor(time.time() / step) + 1) * step - span
     body = build_overview(router.sessions.audit_overview(since), window, since)
     body["config_hash"] = router.config.config_hash
+    body["subscriptions"] = live_quota(router.quota, router.quota.clock())
     return JSONResponse(body, headers=HEADERS)
 
 

@@ -31,7 +31,14 @@ from . import protocols as P
 from . import sessions as S
 from .config import AliasCfg, RouterConfig
 from .dashboard import asset as dashboard_asset
-from .dashboard import audit, audit_overview, audit_session, audit_sessions, dashboard
+from .dashboard import (
+    audit,
+    audit_overview,
+    audit_session,
+    audit_sessions,
+    dashboard,
+    live_quota,
+)
 from .deciders import build_decider
 from .deciders.base import Decision
 from .features import Features, estimate_input, extract_features
@@ -3049,6 +3056,7 @@ async def quota(request: Request) -> Response:
     report["effective_pressure"] = {
         k: round(v, 4) for k, v in router.pressures().items()
     }
+    report["subscriptions"] = live_quota(router.quota, router.quota.clock())
     return JSONResponse(report)
 
 

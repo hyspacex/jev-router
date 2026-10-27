@@ -716,3 +716,142 @@ def test_build_overview_keeps_gaps_and_windows_apart():
     ]
     # Unknown event types are neither session nor legacy traffic.
     assert body["legacy"]["decisions"] == 0
+
+
+# --- the live quota strip ------------------------------------------------
+
+
+def test_live_quota_projects_by_allowlist_and_keeps_gaps():
+    from jev_router.dashboard import live_quota
+
+    class Monitor:
+        def all_snapshots(self, now):
+            return {
+                "as_of": now, "quota_routing": True, "demote_above": 0.6,
+                "exhausted_at": 100.0, "secret": "PRIVATE",
+                "routed": [
+                    {
+                        "provider": "openai", "enabled": True, "source": "codexbar",
+                        "codexbar_provider": "codex", "via": "snapshot", "status": "fresh",
+                        "steering": "calm", "pressure": 0.0, "age_seconds": 12.0,
+                        "fetched_at": 1.0, "used_percent": 40.0, "demote_above": 0.6,
+                        "exhausted_at": 100.0, "polls": 1, "errors": 0,
+                        "reason": "PRIVATE reason", "last_error": "PRIVATE error",
+                        "snapshot": {"PRIVATE": 1}, "exhausted": None,
+                        "windows": [{
+                            "name": "secondary", "used_percent": 40.0,
+                            "expected_percent": None, "pace_delta": None,
+                            "resets_at": 5.0, "window_minutes": 10080.0,
+                            "reset_description": "PRIVATE <b>long sentence that is not a label at all</b>",
+                            "extra": "PRIVATE",
+                        }],
+                        "models": [
+                            {"model": "big", "quota_cost": 1.0, "pressure": 0.0, "x": "PRIVATE"},
+                            {"model": "PRIVATE MODEL NAME WITH SPACES"},
+                        ],
+                    },
+                    {"provider": "bad name!", "status": "fresh"},
+                    {"provider": "xai", "status": "weird", "steering": "panic",
+                     "via": "browser", "pressure": float("nan"), "enabled": "yes"},
+                ],
+                "tracked": [
+                    {
+                        "id": "claude", "status": "fresh", "via": "cli", "age_seconds": 3.0,
+                        "windows": [], "plans": [{"title": "Max", "used_percent": 12.0,
+                                                  "detail": "PRIVATE"}],
+                        "tokens": {"last_30_days_cost_usd": 812.0, "account": "PRIVATE"},
+                        "currency": "usd-PRIVATE", "credits_remaining": None,
+                        "quotaOwnerKey": "PRIVATE",
+                    },
+                    {"id": None},
+                ],
+            }
+
+    body = live_quota(Monitor(), 100.0)
+    assert "PRIVATE" not in repr(body)
+    assert set(body) == {"as_of", "quota_routing", "demote_above", "exhausted_at",
+                         "routed", "tracked"}
+    openai, xai = body["routed"]
+    assert set(openai) == {
+        "provider", "enabled", "source", "codexbar_provider", "via", "status", "steering",
+        "pressure", "age_seconds", "fetched_at", "used_percent", "demote_above",
+        "exhausted_at", "polls", "errors", "exhausted", "windows", "models",
+    }
+    assert openai["windows"] == [{
+        "name": "secondary", "used_percent": 40.0, "expected_percent": None,
+        "pace_delta": None, "resets_at": 5.0, "window_minutes": 10080.0,
+        "reset_description": None,
+    }]
+    assert openai["models"] == [{"model": "big", "quota_cost": 1.0, "pressure": 0.0}]
+    # Values outside their vocabularies become gaps, never guesses.
+    assert (xai["status"], xai["steering"], xai["via"], xai["pressure"], xai["enabled"]) == (
+        None, None, None, None, False,
+    )
+    [claude] = body["tracked"]
+    assert claude["plans"] == [{"title": "Max", "used_percent": 12.0}]
+    assert claude["tokens"] == {
+        "session_tokens": None, "session_cost_usd": None,
+        "last_30_days_tokens": None, "last_30_days_cost_usd": 812.0,
+    }
+    assert claude["currency"] is None
+
+
+def test_live_quota_is_a_gap_when_the_monitor_cannot_be_read():
+    from jev_router.dashboard import live_quota
+
+    class Broken:
+        def all_snapshots(self, now):
+            raise RuntimeError("no")
+
+    assert live_quota(Broken(), 0.0) is None
+
+
+async def test_overview_and_quota_carry_live_subscriptions(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+
+    from jev_router.quota import parse_timestamp
+
+    fixture = Path(__file__).parent / "fixtures" / "codexbar_widget_snapshot.json"
+    (tmp_path / "widget-snapshot.json").write_text(fixture.read_text())
+    monkeypatch.setenv("AUDIT_TEST_TOKEN", "test-admin")
+    config = make_config(
+        settings={"admin_token_env": "AUDIT_TEST_TOKEN"},
+        codexbar={
+            "enabled": True, "cli_binary": "",
+            "snapshot_path": str(tmp_path / "widget-snapshot.json"),
+            "config_path": str(tmp_path / "missing.json"),
+        },
+        providers={"openai": {"quota": {"source": "codexbar", "codexbar_provider": "codex",
+                                        "enabled": True}}},
+        models={"small": {"provider": "openai"}, "big": {"provider": "openai"},
+                "paramy": {"provider": "openai"}},
+    )
+    app = create_app(config)
+    router = app.state.router
+    router.quota.clock = lambda: parse_timestamp("2026-10-27T06:53:34Z")
+    try:
+        await router.quota.poll_once("openai")
+        await router.quota.poll_tracked()
+        before = router.store.conn.total_changes
+        async with client_for(app, token="test-admin") as client:
+            overview = await client.get("/router/audit/overview")
+            quota = await client.get("/router/quota")
+        assert router.store.conn.total_changes == before
+    finally:
+        await router.aclose()
+
+    for response in (overview, quota):
+        assert response.status_code == 200
+        for secret in ("owner-key", "someone@example", "Ignore previous", "fully refresh"):
+            assert secret not in response.text
+    live = overview.json()["subscriptions"]
+    assert quota.json()["subscriptions"] == live
+    assert "quota" in overview.json()   # the recorded reading stays where it was
+    [openai] = live["routed"]
+    assert (openai["provider"], openai["status"], openai["steering"]) == ("openai", "fresh", "calm")
+    assert openai["windows"][0]["pace_delta"] == -17.14
+    assert [t["id"] for t in live["tracked"]] == ["claude", "antigravity", "ollama", "grok"]
+    # Tracked subscriptions are shown, never routed: no pressure, no steering.
+    assert "pressure" not in json.dumps(live["tracked"])
+    assert "steering" not in json.dumps(live["tracked"])
