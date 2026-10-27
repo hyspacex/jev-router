@@ -154,7 +154,10 @@ The answer is one fixed profile:
     "supports_tools": true,
     "supports_vision": false,
     "initial_effort": "none",
-    "effort_mode": "fixed"
+    "effort_mode": "fixed",
+    "quota_steered": false,
+    "intended_model": "ollama/glm-5.3-flash",
+    "intended_effort": "none"
   },
   "decision": {
     "rule": "easy",
@@ -170,6 +173,11 @@ The answer is one fixed profile:
   }
 }
 ```
+
+`quota_steered` is true when quota pressure moved the choice off the rule's
+primary; `intended_model` and `intended_effort` then name the pair the rule
+would have bound without it, so a client can say so in its status line.
+
 
 Configure your model object from `execution`, not from a response header. A
 header on a request you have already built with different metadata is too
