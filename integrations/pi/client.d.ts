@@ -35,6 +35,11 @@ export interface BindingExecution {
   supports_vision: boolean;
   initial_effort: string | null;
   effort_mode: "fixed";
+  /** Quota pressure moved this binding off what the rules chose. */
+  quota_steered?: boolean;
+  /** What the rules chose before quota had a say. */
+  intended_model?: string;
+  intended_effort?: string;
 }
 
 export interface Binding {
@@ -54,7 +59,37 @@ export interface ClientState {
   binding: Binding | null;
   pending: string | null;
   closed: boolean;
+  /** The newest execution request id, kept after it completes, for feedback. */
+  lastRequestId?: string;
+  /** The newest verdict this session sent. */
+  lastFeedback?: Verdict;
 }
+
+export type Verdict = "too_weak" | "too_strong" | "right" | "too_slow";
+
+/** `/jev <word>` to the verdict it records. */
+export declare const FEEDBACK_WORDS: Readonly<Record<string, Verdict>>;
+/** The picker's labels and the verdict each records, in display order. */
+export declare const FEEDBACK_CHOICES: readonly (readonly [string, Verdict])[];
+export declare const NOTE_MAX_CHARS: number;
+
+export declare function parseFeedbackCommand(args: string):
+  | {picker: true}
+  | {verdict: Verdict; note?: string}
+  | null;
+
+export interface FeedbackResult {
+  verdict: Verdict;
+  effortChanged: boolean;
+  modelKey: string;
+  previousEffort: string | null;
+  currentEffort: string | null;
+  /** Why the effort did not move: `at_highest`, `at_lowest`, `session_closed`, ... */
+  reasonCode: string | null;
+}
+
+export declare function feedbackMessage(result: FeedbackResult): string;
+export declare function statusLine(state: ClientState | undefined): string;
 
 export declare function validateBinding(value: unknown, sessionId: string): Binding;
 
@@ -82,5 +117,6 @@ export declare class StrictClient {
   noteExecutionRefusal(code: string): boolean;
   finish(completed: boolean): void;
   acknowledgeNewAttempt(): void;
+  feedback(verdict: Verdict | string, options?: {note?: string; adjustEffort?: boolean; signal?: AbortSignal}): Promise<FeedbackResult>;
   close(signal?: AbortSignal): Promise<void>;
 }

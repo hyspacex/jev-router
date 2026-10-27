@@ -177,7 +177,16 @@ class Settings(Base):
     sqlite_path: str = "~/.jev-router/router.db"
     default_route: Route
     effort_order: list[str] = Field(default_factory=lambda: list(DEFAULT_EFFORT_ORDER))
-    log_state: bool = False
+    # Store the scrubbed text of what Jev was shown, each turn's prompt, the
+    # session title and the per-turn tool summary. False stores no message
+    # text at all: shapes, counts and answers only.
+    log_state: bool = True
+    # Every stored text goes through `scrub.scrub_text` first. Not optional:
+    # false is a config error rather than a way to keep raw secrets.
+    scrub_secrets: bool = True
+    # The hard cap on every stored text column and every string in a stored
+    # state. Head and tail are kept; the middle is cut.
+    turn_text_max_chars: int = Field(default=2048, ge=256, le=65536)
     decider: str = "jev"
     fallback_decider: str | None = "rules"
     upstream_connect_timeout_s: float = 10.0
@@ -193,6 +202,15 @@ class Settings(Base):
     @property
     def db_path(self) -> Path:
         return Path(os.path.expanduser(self.sqlite_path))
+
+    @model_validator(mode="after")
+    def _scrubbing_is_not_optional(self) -> Settings:
+        if not self.scrub_secrets:
+            raise ValueError(
+                "settings.scrub_secrets must be true: stored text is always "
+                "scrubbed; set log_state: false to store no text instead"
+            )
+        return self
 
     @model_validator(mode="after")
     def _upstream_from_env(self) -> Settings:

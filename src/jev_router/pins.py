@@ -1,9 +1,12 @@
 """Pins and the decision log, in one sqlite file.
 
-Nothing recoverable is stored: no message text, no API keys. The conversation
-key is a hash, and the log keeps lengths, Jev answers and the chosen route.
-The state sent to Jev is stored only when settings.log_state is true; its
-shape (field names and character counts, never text) is stored always.
+No API key and no Authorization header is ever stored. The conversation key is
+a hash, and the log keeps lengths, Jev answers and the chosen route. Message
+text is stored only when settings.log_state is true, only in the named text
+columns (`state`, `user_prompt`, `assistant_summary`, `tool_calls_json`), and
+only after `scrub.py` has removed what it recognises as a secret and cut it to
+settings.turn_text_max_chars. The shape of the state (field names and
+character counts, never text) is stored always.
 
 The config each decision was taken under is kept too, once per hash, with its
 quota commands scrubbed, so a decision can be replayed under its own config.
@@ -21,6 +24,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .scrub import DEFAULT_TEXT_MAX_CHARS, clean, scrub_state
 from .state import state_shape
 
 if TYPE_CHECKING:
@@ -128,6 +132,38 @@ ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
 }
 
 
+# What turn text capture adds to a decision row (docs/OBSERVABILITY_V2_DESIGN.md
+# section 3). A map of its own, like every later release's. Nullable and
+# additive: a row written before it reads back NULL, which means "this
+# decision predates turn capture", never "nothing was said".
+#
+# `turn_index` is the user turn a row belongs to, 1 for the admission.
+# `user_prompt`, `assistant_summary` and `tool_calls_json` hold text, written
+# only with log_state on and only after scrubbing and the character cap.
+TURN_TEXT_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "decisions": [
+        ("turn_index", "INTEGER"),
+        ("user_prompt", "TEXT"),
+        ("assistant_summary", "TEXT"),
+        ("tool_calls_json", "TEXT"),
+    ],
+}
+
+# What session-native feedback adds to a feedback row. The admission decision
+# id stays the row's `decision_id`; these say which session, which request
+# and which turn the person was looking at.
+FEEDBACK_SESSION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "feedback": [
+        ("session_id", "TEXT"),
+        ("request_id", "TEXT"),
+        ("turn_index", "INTEGER"),
+    ],
+}
+FEEDBACK_SESSION_INDEX = (
+    "CREATE INDEX IF NOT EXISTS feedback_session_id ON feedback (session_id)"
+)
+
+
 def migrate(
     conn: sqlite3.Connection,
     tables: dict[str, list[tuple[str, str]]] | None = None,
@@ -178,9 +214,15 @@ def conversation_key(
 
 
 class Store:
-    def __init__(self, path: str | Path, log_state: bool = False) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        log_state: bool = False,
+        text_max_chars: int = DEFAULT_TEXT_MAX_CHARS,
+    ) -> None:
         self.path = Path(path)
         self.log_state = log_state
+        self.text_max_chars = text_max_chars
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -192,9 +234,30 @@ class Store:
             self._conn.executescript(SCHEMA)
             self._conn.executescript(CONFIG_SNAPSHOT_SCHEMA)
             self.migrated = migrate(self._conn)
+            self.migrated_turn_text = migrate(self._conn, TURN_TEXT_COLUMNS)
+            self.migrated_feedback = migrate(self._conn, FEEDBACK_SESSION_COLUMNS)
+            self._conn.execute(FEEDBACK_SESSION_INDEX)
             self._conn.commit()
         self._snapshots: dict[str, Any] = {}
         self.refresh_columns()
+
+    def text(self, value: Any, limit: int | None = None) -> str | None:
+        """A text column's value: scrubbed and capped, or None.
+
+        None whenever log_state is off or there is nothing to say. Every
+        message text the router writes goes through here or `stored_state`.
+        """
+        if not self.log_state or value is None:
+            return None
+        cap = min(limit or self.text_max_chars, self.text_max_chars)
+        out = clean(value, cap)
+        return out or None
+
+    def stored_state(self, state: Any) -> str | None:
+        """The state column: every string leaf scrubbed and capped, as JSON."""
+        if not self.log_state or not state:
+            return None
+        return json.dumps(scrub_state(state, self.text_max_chars), default=str)
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -285,6 +348,8 @@ class Store:
         pressures: dict[str, float] | None = None,
         shifted: list[dict[str, Any]] | None = None,
         reordered: bool = False,
+        turn_index: int | None = None,
+        user_prompt: str | None = None,
     ) -> int:
         # The shape of what Jev was shown is kept whatever log_state says:
         # names and counts only, so it cannot carry the text it measures.
@@ -320,7 +385,7 @@ class Store:
             jev_tokens,
             est_tokens,
             message_count,
-            json.dumps(state, default=str) if (self.log_state and state) else None,
+            self.stored_state(state),
             route,
             json.dumps(pressures, default=str) if pressures else None,
             json.dumps(shifted, default=str) if shifted else None,
@@ -329,6 +394,13 @@ class Store:
         if shape is not None:
             columns += ", state_shape"
             values += (json.dumps(shape, default=str),)
+        if turn_index is not None:
+            columns += ", turn_index"
+            values += (int(turn_index),)
+        prompt = self.text(user_prompt)
+        if prompt is not None:
+            columns += ", user_prompt"
+            values += (prompt,)
         marks = ",".join("?" for _ in values)
         with self._lock:
             cur = self._conn.execute(
@@ -612,11 +684,15 @@ class Store:
         better_effort: str | None = None,
         note: str | None = None,
         source: str = "api",
+        session_id: str | None = None,
+        request_id: str | None = None,
+        turn_index: int | None = None,
     ) -> int:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO feedback (decision_id, ts, verdict, better_model, better_effort,"
-                " note, source) VALUES (?,?,?,?,?,?,?)",
+                " note, source, session_id, request_id, turn_index)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     decision_id,
                     time.time(),
@@ -625,6 +701,9 @@ class Store:
                     better_effort,
                     note,
                     source,
+                    session_id,
+                    request_id,
+                    turn_index,
                 ),
             )
             self._conn.commit()
@@ -676,6 +755,8 @@ def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
         "exclusions",
         # Added with the session inspector.
         "state_shape",
+        # Added with turn capture.
+        "tool_calls_json",
     ):
         if item.get(field):
             item[field] = _load_json(item[field])

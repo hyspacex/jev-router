@@ -4,7 +4,8 @@ import { stream as streamChat } from "@earendil-works/pi-ai/api/openai-completio
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { StrictClient, ContractError, RouterError, readErrorCode, ALIASES, DEFAULT_MAX_OUTPUT_TOKENS } from "./client.mjs";
+import { StrictClient, ContractError, RouterError, readErrorCode, ALIASES, DEFAULT_MAX_OUTPUT_TOKENS,
+  FEEDBACK_CHOICES, feedbackMessage, parseFeedbackCommand, statusLine } from "./client.mjs";
 
 const PROVIDER = "jev-router";
 const ENTRY = "jev-router.binding.v1";
@@ -58,9 +59,7 @@ export default function (pi: ExtensionAPI) {
     if (!ctx) return;
     const binding = client?.state.binding;
     if (binding && ctx.model?.provider === PROVIDER) applyBinding(ctx.model, binding.execution);
-    ctx.ui.setStatus("jev-router", ctx.model?.provider === PROVIDER
-      ? binding ? `Jev ${client?.state.alias ?? "auto"} · ${binding.execution.model_key} · ${binding.execution.initial_effort || "none"} · ${client?.state.pending ? "outcome unresolved" : "strict"}` : "Jev · awaiting fresh admission"
-      : undefined);
+    ctx.ui.setStatus("jev-router", ctx.model?.provider === PROVIDER ? statusLine(client?.state) : undefined);
   }
   function initialize(context: ExtensionContext) {
     ctx = context;
@@ -93,11 +92,30 @@ export default function (pi: ExtensionAPI) {
     context.ui.notify("Strict auto does not yet support tree rewinds. Use a new session for independent work.", "warning");
     return {cancel: true};
   });
+  /** Send one verdict and say what the router did with it. */
+  async function sendFeedback(context: ExtensionContext, verdict: string, note?: string) {
+    try {
+      const result = await client!.feedback(verdict, {note});
+      context.ui.notify(feedbackMessage(result), "info");
+    } catch (error) {
+      if (error instanceof ContractError) context.ui.notify(error.message, "warning");
+      else throw error;
+    }
+  }
   pi.registerCommand("jev", {
-    description: "Strict router: status, audit, retry (explicit new attempt), close",
+    description: "Strict router: status, audit, retry, close; feedback: more|+|up, less|-|down, good|ok, feedback|fb",
     handler: async (args, context) => {
       if (!client) initialize(context);
-      if (args.trim() === "retry") {
+      const feedback = parseFeedbackCommand(args);
+      if (feedback?.picker) {
+        if (!context.hasUI) return;
+        const labels = FEEDBACK_CHOICES.map(([label]) => label);
+        const picked = await context.ui.select("How was Jev's routing for this session?", labels);
+        const verdict = FEEDBACK_CHOICES.find(([label]) => label === picked)?.[1];
+        if (verdict) await sendFeedback(context, verdict);
+      } else if (feedback?.verdict) {
+        await sendFeedback(context, feedback.verdict, feedback.note);
+      } else if (args.trim() === "retry") {
         if (!context.isIdle()) throw new ContractError("Wait for the agent to settle.");
         if (!context.hasUI || !await context.ui.confirm("Permit a new execution attempt?", "The previous request may have run. This does not reconcile its outcome and can duplicate work.")) return;
         client!.acknowledgeNewAttempt();

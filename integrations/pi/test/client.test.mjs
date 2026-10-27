@@ -86,8 +86,9 @@ test('a real resolve response is accepted and narrowed to the contract', () => {
   const binding = validateBinding(value, 'pi-session');
   assert.deepEqual(Object.keys(binding).sort(), ['binding_revision', 'execution', 'session_id', 'state']);
   assert.deepEqual(Object.keys(binding.execution).sort(), [
-    'context_window', 'effort_mode', 'initial_effort', 'max_output_tokens',
-    'model_key', 'protocol', 'supports_tools', 'supports_vision', 'wire_model'].sort());
+    'context_window', 'effort_mode', 'initial_effort', 'intended_effort', 'intended_model',
+    'max_output_tokens', 'model_key', 'protocol', 'quota_steered', 'supports_tools',
+    'supports_vision', 'wire_model'].sort());
   assert.equal(binding.execution.wire_model, 'big(high)');
   // Everything else the router discloses stays on the wire, not in Pi's
   // session file: the decision, the estimate and the effort experiment's
