@@ -508,3 +508,211 @@ def test_quota_and_shape_projections_drop_anything_textual():
                      "facts": {"client": "pi", "tool_names": 3, "flag": True}}
     assert project_facts({"has_tools": True, "estimate_method": f"a {MARKER}", "tool_names": ["x"],
                           "session_mode": "strict"}) == {"has_tools": True, "session_mode": "strict"}
+
+
+# --- the session list's filters and the overview ----------------------------
+
+
+async def audit_get(svc, path: str, **kwargs) -> httpx.Response:
+    async with client_for(svc.app, **kwargs) as client:
+        return await client.get(path)
+
+
+async def two_sessions(svc) -> tuple[Client, Client]:
+    """One session with a lost and a refused request, one clean and pinned."""
+    first = await run_session(svc, executions=2)
+    for request_id, status in (("never-sent", "rejected"), ("lost", "unknown")):
+        svc.sessions.start_request(first.session_id, request_id, "f" * 64)
+        svc.sessions.finish_request(first.session_id, request_id, status)
+    second = Client(svc, session_id="session-9c1d0e55", client="other-client")
+    assert (await second.resolve(request=marked_request())).status_code == 200
+    assert (await second.execute(marked_request(second.wire_model()))).status_code == 200
+    svc.sessions.add_bookmark(second.session_id, "Clean one")
+    return first, second
+
+
+@respx.mock
+async def test_session_list_filters_narrow_and_report_aggregates(tmp_path, strict_env):
+    svc = Service(tmp_path, config=file_config(tmp_path))
+    try:
+        first, second = await two_sessions(svc)
+
+        async def ids(query: str = "") -> list[str]:
+            response = await audit_get(svc, "/router/audit/sessions?limit=200" + query, token=ADMIN)
+            assert response.status_code == 200, response.text
+            return [row["session_id"] for row in response.json()["sessions"]]
+
+        assert set(await ids()) == {first.session_id, second.session_id}
+        assert await ids("&problem=unknown") == [first.session_id]
+        assert await ids("&problem=rejected") == [first.session_id]
+        assert await ids("&problem=any") == [first.session_id]
+        assert await ids("&problem=stream_failed") == []
+        assert await ids("&problem=fallback") == []
+        assert await ids("&pinned=1") == [second.session_id]
+        assert await ids("&client=other-client") == [second.session_id]
+        assert await ids("&q=9c1d") == [second.session_id]
+        assert await ids("&state=closed") == []
+        assert set(await ids("&adaptive=off&rule=hard&model=big")) == {first.session_id, second.session_id}
+        assert await ids("&window=1h&problem=unknown") == [first.session_id]
+
+        body = (await audit_get(svc, "/router/audit/sessions?limit=1", token=ADMIN)).json()
+        assert body["matched"] == 2 and len(body["sessions"]) == 1
+        assert {f["value"] for f in body["facets"]["client"]} == {"coding-client", "other-client"}
+        assert body["facets"]["rule"] == [{"value": "hard", "n": 2}]
+        rows = {
+            row["session_id"]: row
+            for row in (await audit_get(svc, "/router/audit/sessions", token=ADMIN)).json()["sessions"]
+        }
+        assert rows[first.session_id]["problems"] == ["unknown", "rejected"]
+        assert rows[first.session_id]["requests"] == {"completed": 2, "rejected": 1, "unknown": 1}
+        assert rows[first.session_id]["pinned"] is None
+        assert rows[second.session_id]["pinned"] == {"slug": "clean-one", "label": "Clean one"}
+        assert rows[second.session_id]["problems"] == []
+        assert rows[second.session_id]["response_ms"]["n"] == 1
+        assert rows[second.session_id]["response_ms"]["p50"] is not None
+    finally:
+        await svc.close()
+
+
+@pytest.mark.parametrize("query", [
+    "state=gone", "adaptive=maybe", "problem=bad", "pinned=yes", "window=2h", "window=",
+    "q=a%25b", "q=" + "a" * 65, "client=" + "c" * 65, "model=a%20b", "rule=%3Cx%3E",
+    "nope=1", "limit=201", "limit=0",
+])
+async def test_session_list_filters_are_bounded(dashboard_app, query):
+    async with client_for(dashboard_app, token="test-admin") as client:
+        response = await client.get("/router/audit/sessions?" + query)
+        assert response.status_code == 400, query
+        assert set(response.json()) == {"error"}
+
+
+@pytest.mark.parametrize("query", ["window=2h", "window=", "window=24H", "window=24h&x=1", "limit=5"])
+async def test_overview_window_is_bounded(dashboard_app, query):
+    async with client_for(dashboard_app, token="test-admin") as client:
+        assert (await client.get("/router/audit/overview?" + query)).status_code == 400
+
+
+async def test_overview_needs_the_admin_credential(dashboard_app):
+    async with client_for(dashboard_app) as client:
+        assert (await client.get("/router/audit/overview")).status_code == 401
+    async with client_for(dashboard_app, local=True) as client:
+        assert (await client.get("/router/audit/overview")).status_code == 401
+    async with client_for(dashboard_app, token="wrong") as client:
+        assert (await client.get("/router/audit/overview")).status_code == 401
+    async with client_for(dashboard_app, token="test-admin") as client:
+        for window, buckets in (("1h", 12), ("24h", 24), ("7d", 28), ("30d", 30)):
+            response = await client.get(f"/router/audit/overview?window={window}")
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "no-store"
+            body = response.json()
+            assert body["window"] == window and len(body["series"]) == buckets
+            # An empty database is no data, not zero latency.
+            assert body["latency"]["jev_admission_ms"] == {"n": 0, "p50": None, "p95": None}
+            assert body["executions"]["completion_rate"] is None
+        assert (await client.get("/router/audit/overview")).json()["window"] == "24h"
+
+
+@respx.mock
+async def test_overview_allowlist_holds_counts_apart_and_writes_nothing(tmp_path, strict_env):
+    svc = Service(tmp_path, config=file_config(tmp_path))
+    try:
+        svc.router.store.log_state = True
+        first, _second = await two_sessions(svc)
+        # Legacy alias traffic: no event type, counted on its own.
+        logged(svc.router.store, conversation_key=MARKER, state={"prompt": MARKER},
+               features={"note": MARKER}, client=MARKER, rule="easy", model="small")
+        conn = svc.router.store.conn
+        dump = "\n".join(conn.iterdump())
+        assert MARKER in dump
+        before = conn.total_changes
+        response = await audit_get(svc, "/router/audit/overview?window=1h", token=ADMIN)
+        listed = await audit_get(svc, "/router/audit/sessions?problem=any&window=24h", token=ADMIN)
+        assert conn.total_changes == before
+        assert "\n".join(conn.iterdump()) == dump
+    finally:
+        await svc.close()
+
+    for item in (response, listed):
+        assert item.status_code == 200
+        assert MARKER not in item.text and TOOL not in item.text
+        for word in ("fingerprint", "owner", "conversation_key", "languages", "answers",
+                     "features", "state_shape", "tool_names"):
+            assert f'"{word}"' not in item.text, word
+    assert first.session_id not in response.text and "never-sent" not in response.text
+    body = response.json()
+    assert body["sessions"]["admitted"] == 2
+    assert body["sessions"]["adaptation"] == {"off": 2, "shadow": 0, "active": 0}
+    executions = body["executions"]
+    assert executions["by_status"]["completed"] == 3
+    assert executions["by_status"]["unknown"] == 1 and executions["by_status"]["rejected"] == 1
+    assert executions["total"] == 5 and executions["completion_rate"] == 3 / 5
+    assert executions["rows"] == 3 and executions["usage_reported"] == 3
+    assert body["decisions"]["admissions"] == 2
+    assert body["decisions"]["rules"] == [{"rule": "hard", "n": 2}]
+    assert body["decisions"]["choices"] == [{"model": "big", "effort": "high", "n": 2}]
+    assert body["decisions"]["fallback"] == 0 and body["decisions"]["quota_recorded"] == 2
+    [model] = body["latency"]["models"]
+    assert model["model"] == "big" and model["n"] == 3 and model["response_ms"]["n"] == 3
+    assert body["latency"]["jev_admission_ms"]["n"] == 2
+    assert sum(b["requests"] for b in body["series"]) == 5
+    assert sum(b["problems"] for b in body["series"]) == 2
+    # The legacy row is in its own block and nowhere else.
+    assert body["legacy"]["decisions"] == 1
+    assert body["legacy"]["jev_ms"]["n"] == 1
+    assert body["effort"]["shadow"]["plans"] == 0 and body["effort"]["active"]["plans"] == 0
+    assert [row["session_id"] for row in listed.json()["sessions"]] == [first.session_id]
+
+
+def test_build_overview_keeps_gaps_and_windows_apart():
+    from jev_router.dashboard import build_overview, percentiles
+
+    assert percentiles([None, "x", True]) == {"n": 0, "p50": None, "p95": None}
+    assert percentiles([3.0, 1.0, 2.0, 4.0]) == {"n": 4, "p50": 2.0, "p95": 4.0}
+    since = 1_000_000.0
+    raw = {
+        "sessions": [{"created": since + 10, "adaptation_mode": None, "quota_changed_choice": None}],
+        "requests": [{"created": since + 10, "status": "completed"},
+                     {"created": since + 400, "status": "stream_failed"}],
+        "decisions": [
+            {"ts": since + 5, "event_type": "admission", "rule": "admission_fallback",
+             "model": "m", "effort": None, "jev_ms": 1500.0, "fallback": 1},
+            {"ts": since + 11, "event_type": "execution", "model": "m", "first_byte_ms": None,
+             "response_ms": 900.0, "usage_reported": 0},
+            {"ts": since + 401, "event_type": "execution", "model": f"bad {MARKER}",
+             "first_byte_ms": None, "response_ms": None, "usage_reported": 0},
+            {"ts": since + 402, "event_type": "something_new", "model": "m"},
+        ],
+        "plans": [{"mode": "shadow", "action": "keep", "status": "confirmed",
+                   "from_effort": "low", "recommendation": "high", "jev_ms": 80.0},
+                  {"mode": "active", "action": "change_effort", "status": "outcome_unknown",
+                   "from_effort": "low", "to_effort": "high", "recommendation": "high"}],
+        "quota": [{"ts": since, "snapshot": {"openai": {"status": "stale", "pressure": 0.9,
+                   "windows": [{"name": "weekly", "used_percent": 80.0, "resets_at": 5.0},
+                               {"name": "hourly", "used_percent": 10.0}]}}}],
+    }
+    body = build_overview(raw, "1h", since)
+    assert MARKER not in str(body)
+    assert body["sessions"]["adaptation_unrecorded"] == 1
+    assert body["decisions"]["fallback"] == 1 and body["decisions"]["quota_recorded"] == 0
+    # A failed call's time is not Jev's answer time.
+    assert body["latency"]["jev_admission_ms"]["n"] == 0
+    assert body["executions"]["first_byte_recorded"] == 0
+    assert body["executions"]["by_status"]["stream_failed"] == 1
+    by_model = {m["model"]: m for m in body["latency"]["models"]}
+    assert by_model[None]["response_ms"]["p50"] is None and by_model["m"]["n"] == 1
+    first, second = body["series"][0], body["series"][1]
+    assert (first["requests"], first["problems"], first["response_p50_ms"]) == (1, 0, 900.0)
+    assert (second["requests"], second["problems"], second["timed"]) == (1, 1, 0)
+    assert second["response_p50_ms"] is None
+    assert body["effort"]["shadow"]["recommended"] == 1 and body["effort"]["shadow"]["applied"] == 0
+    assert body["effort"]["active"]["applied"] == 1 and body["effort"]["active"]["confirmed"] == 0
+    assert body["latency"]["jev_plan_ms"]["n"] == 1
+    # Each window keeps its own usage beside its own reset; stale stays stale.
+    quota = body["quota"]["providers"]["openai"]
+    assert quota["status"] == "stale"
+    assert quota["windows"] == [
+        {"used_percent": 80.0, "resets_at": 5.0, "name": "weekly"},
+        {"used_percent": 10.0, "name": "hourly"},
+    ]
+    # Unknown event types are neither session nor legacy traffic.
+    assert body["legacy"]["decisions"] == 0

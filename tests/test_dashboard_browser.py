@@ -16,6 +16,7 @@ import json
 import os
 import socket
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -233,7 +234,7 @@ def session_b():
     }
     reqs = _requests("b", B_START, B_ROWS, window, "gpt-6-astra", "high", 902)
     unknown = reqs[9]
-    unknown.update(status="outcome_unknown", upstream_status=200, stream_state="interrupted",
+    unknown.update(status="unknown", upstream_status=200, stream_state="interrupted",
                    response_ms=None, response_bytes=None, usage_reported=None)
     reqs.append({
         "seq": 12, "request_id": "b-request-012", "status": "rejected", "created": B_START + 248.0,
@@ -285,33 +286,122 @@ def session_c():
     }
 
 
-def listing(details):
+BOOKMARKS = [
+    {"slug": "debugging", "label": "Debugging", "session_id": A_ID, "created": A_START},
+    {"slug": "design-review", "label": "Design review", "session_id": B_ID, "created": B_START},
+]
+
+
+def listing(details, params=None):
+    """The list contract, filtered the way the router filters it (a fixture, not the SQL)."""
+    params = dict(params or {})
+    params.pop("limit", None)
+    pins = {b["session_id"]: b for b in BOOKMARKS}
     out = []
     for item in details.values():
         s = item["session"]
         counts: dict[str, int] = {}
         for r in item["requests"]:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
+        problems = [k for k in ("unknown", "rejected", "stream_failed") if counts.get(k)]
+        if s["decision_rule"] == "low_confidence":
+            problems.append("low_confidence")
+        times = sorted(r["response_ms"] for r in item["requests"] if r["response_ms"] is not None)
+        pin = pins.get(s["session_id"])
         out.append({
             "session_id": s["session_id"], "alias": s["alias"], "client": s["client"], "state": s["state"],
-            "created": s["created"], "last_seen": s["last_seen"], "model": s["model"],
+            "created": s["created"], "last_seen": s["last_seen"], "closed_at": s["closed_at"],
+            "model": s["model"], "effective_effort": s["effective_effort"],
             "effort": s["base_effort"], "rule": s["decision_rule"], "quality_lane": s["quality_lane"],
             "config_hash": s["config_hash"], "config_matches": s["config_hash"] == RUNNING,
-            "adaptation_mode": s["adaptation_mode"], "requests": counts,
+            "adaptation_mode": s["adaptation_mode"], "tombstone": False, "requests": counts,
+            "problems": problems,
+            "response_ms": {"n": len(times), "p50": times[(len(times) + 1) // 2 - 1] if times else None},
+            "pinned": {"slug": pin["slug"], "label": pin["label"]} if pin else None,
         })
+    out.sort(key=lambda row: -(row["last_seen"] or row["created"] or 0))
+    facets = {
+        name: [{"value": v, "n": sum(1 for r in out if r[key] == v)}
+               for v in sorted({r[key] for r in out if r[key]})]
+        for name, key in (("client", "client"), ("model", "model"), ("rule", "rule"))
+    }
+    keep = []
+    for row in out:
+        if params.get("client") and row["client"] != params["client"]:
+            continue
+        if params.get("model") and row["model"] != params["model"]:
+            continue
+        if params.get("state") and row["state"] != params["state"]:
+            continue
+        if params.get("adaptive") and row["adaptation_mode"] != params["adaptive"]:
+            continue
+        if params.get("pinned") == "1" and not row["pinned"]:
+            continue
+        if params.get("q") and params["q"] not in row["session_id"]:
+            continue
+        problem = params.get("problem")
+        if problem and not (row["problems"] if problem == "any" else problem in row["problems"]):
+            continue
+        keep.append(row)
     return {
-        "config_hash": RUNNING,
-        "bookmarks": [
-            {"slug": "debugging", "label": "Debugging", "session_id": A_ID},
-            {"slug": "design-review", "label": "Design review", "session_id": B_ID},
-        ],
-        "sessions": out,
+        "config_hash": RUNNING, "limit": 200, "matched": len(keep),
+        "bookmarks": BOOKMARKS, "facets": facets, "sessions": keep,
     }
 
 
+def overview(window, now):
+    """The overview contract, computed by the real pure builder from fixture rows."""
+
+    from jev_router.dashboard import WINDOWS, build_overview
+
+    span, step = WINDOWS[window]
+
+    since = (now // step + 1) * step - span
+    raw = {
+        "sessions": [
+            {"created": now - 3000, "adaptation_mode": "off", "quota_changed_choice": 0},
+            {"created": now - 2000, "adaptation_mode": "active", "quota_changed_choice": 1},
+        ],
+        "requests": [{"created": now - 2900 + i * 30, "status": "completed"} for i in range(20)]
+        + [{"created": now - 1000, "status": "unknown"}, {"created": now - 900, "status": "rejected"}],
+        "decisions": [
+            {"ts": now - 3000, "event_type": "admission", "rule": "moderate_tools", "model": "ollama/glm-5.3",
+             "effort": "high", "jev_ms": 183.0, "fallback": 0},
+            {"ts": now - 2000, "event_type": "admission", "rule": "hard", "model": "gpt-6-astra",
+             "effort": "high", "jev_ms": 137.0, "fallback": 0},
+        ] + [
+            {"ts": now - 2900 + i * 30, "event_type": "execution", "model": "gpt-6-astra" if i % 2 else "ollama/glm-5.3",
+             "first_byte_ms": None if i % 5 == 0 else 800.0 + i * 10, "response_ms": 2000.0 + i * 50,
+             "usage_reported": 0}
+            for i in range(20)
+        ] + [{"ts": now - 500, "event_type": None, "rule": "easy", "model": "m", "jev_ms": 120.0,
+              "pinned": 0, "fallback": 0, "first_byte_ms": 700.0, "response_ms": 1500.0}],
+        "plans": [
+            {"created": now - 1900, "mode": "active", "action": "change_effort", "status": "confirmed",
+             "from_effort": "high", "to_effort": "xhigh", "recommendation": "xhigh", "jev_ms": 90.0},
+            {"created": now - 1500, "mode": "active", "action": "keep", "status": "outcome_unknown",
+             "from_effort": "xhigh", "recommendation": "medium", "jev_ms": 85.0},
+        ],
+        "quota": [{"ts": now - 60, "snapshot": {
+            "openai": {"status": "fresh", "pressure": 0.18, "age_seconds": 12.0, "windows": [
+                {"name": "primary", "used_percent": 41.0, "window_minutes": 300.0, "resets_at": now + 3600},
+                {"name": "secondary", "used_percent": 12.5, "window_minutes": 10080.0},
+            ]},
+            "xai": {"status": "stale", "pressure": 0.4, "age_seconds": 5400.0, "windows": []},
+        }}],
+    }
+    body = build_overview(raw, window, since)
+    body["config_hash"] = RUNNING
+    return body
+
+
 def fixture_routes(details):
+    now = time.time()  # one clock, so an unchanged overview stays unchanged
     async def sessions(request: Request):
-        return JSONResponse(listing(details), headers=HEADERS)
+        return JSONResponse(listing(details, request.query_params), headers=HEADERS)
+
+    async def overview_route(request: Request):
+        return JSONResponse(overview(request.query_params.get("window", "24h"), now), headers=HEADERS)
 
     async def one(request: Request):
         item = details.get(request.path_params["session_id"])
@@ -320,6 +410,7 @@ def fixture_routes(details):
         return JSONResponse(item, headers=HEADERS)
 
     return [
+        Route("/router/audit/overview", overview_route, methods=["GET"]),
         Route("/router/audit/sessions", sessions, methods=["GET"]),
         Route("/router/audit/sessions/{session_id}", one, methods=["GET"]),
     ]
@@ -364,20 +455,102 @@ def test_browser_session_inspector(monkeypatch):
                 def stage(name):
                     page.locator(".card").filter(has_text=name).first.click()
 
+                def open_book(slug):
+                    page.evaluate(f"location.hash = '{slug}'")
+                    page.wait_for_function("() => document.querySelector('.card')")
+                    page.wait_for_timeout(250)
+
                 page.goto(f"http://127.0.0.1:{port}/dashboard")
                 page.wait_for_function("() => !document.getElementById('error').hidden")
                 assert "Admin token required" in page.locator("#error").inner_text()
                 page.locator("#token").fill(credential)
                 page.get_by_role("button", name="Connect", exact=True).click()
-                page.wait_for_function("() => document.querySelectorAll('.bigbook').length === 2")
+                # The home is the overview.
+                page.wait_for_function("() => document.querySelectorAll('.kpi').length === 6")
                 assert page.locator("#token").input_value() == ""
-                assert page.locator(".srow").count() == 3
                 page.wait_for_function("() => document.fonts.ready.then(() => document.fonts.check('16px Geist'))")
                 assert page.evaluate("document.fonts.check('16px \"Geist Mono\"')")
-                shot("start")
+                assert page.evaluate("getComputedStyle(document.documentElement).fontSize") == "17px"
+                assert page.locator("#v-overview").get_attribute("aria-current") == "page"
+                text = body_text(page)
+                assert "Legacy alias traffic" in text and "Response time by model" in text
+                assert page.locator(".kpi.warn").count() == 2  # one unknown, one rejected
+                # First byte missing on 4 of 20 executions is a gap, not a faster number.
+                assert "8 of 10 recorded" in text
+                assert "usage not reported on 20 of 20" in text
+                assert "stale · counted as 0" in text and "41%" in text and "13%" in text
+                assert page.locator(".sb .bad").count() == 24
+                assert page.locator(".dr").count() >= 4
+                shot("overview")
+                for window in ("1h", "7d", "30d"):
+                    page.locator(".segb", has_text=window).click()
+                    page.wait_for_function(f"() => location.hash === '#overview?w={window}' && document.querySelector('.segb.on').textContent === '{window}'")
+                    assert page.locator(".kpi").count() == 6
+                page.locator(".segb", has_text="24h").click()
+                page.wait_for_function("() => location.hash === '#overview'")
 
-                # Bookmark 1: the admission-only session.
-                page.keyboard.press("1")
+                # A problem count opens the sessions behind it.
+                page.locator(".kpi.warn").first.click()
+                page.wait_for_function("() => location.hash.startsWith('#sessions?problem=unknown')")
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 1")
+                assert page.locator("#f-problem").input_value() == "unknown"
+                assert page.locator(".srow[href] .prob").all_inner_texts() == ["1 unknown", "1 rejected"]
+                assert "codex" in page.locator(".srow[href]").inner_text()
+
+                # The sessions view: every session, newest first, then narrowed.
+                page.keyboard.press("s")
+                page.locator("#clear").click()
+                page.wait_for_function("() => location.hash === '#sessions' && document.querySelectorAll('.srow[href]').length === 3")
+                assert page.locator("#v-sessions").get_attribute("aria-current") == "page"
+                assert page.locator(".srow[href] .pin").count() == 2
+                assert page.locator(".srow[href]").first.locator(".plabel").inner_text() == "Design review"
+                shot("sessions")
+                page.locator("#f-client").select_option("pi")
+                page.wait_for_function("() => location.hash === '#sessions?client=pi' && document.querySelectorAll('.srow[href]').length === 2")
+                page.locator("#f-state").select_option("closed")
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 1")
+                assert "closed" in page.locator(".srow[href]").inner_text()
+                page.locator("#clear").click()
+                page.locator("#pinned").click()
+                page.wait_for_function("() => location.hash === '#sessions?pinned=1' && document.querySelectorAll('.srow[href]').length === 2")
+                assert page.locator("#pinned").get_attribute("aria-pressed") == "true"
+                page.locator("#clear").click()
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
+                page.keyboard.press("/")
+                page.wait_for_function("() => document.activeElement && document.activeElement.id === 'q'")
+                page.keyboard.type("0f3e")
+                page.wait_for_function("() => location.hash === '#sessions?q=0f3e' && document.querySelectorAll('.srow[href]').length === 1")
+                assert page.locator("#q").input_value() == "0f3e"  # typing is never interrupted
+                page.locator("#clear").click()
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
+                page.locator("body").click(position={"x": 5, "y": 400})
+                # j and k walk the rows; Enter opens one.
+                page.keyboard.press("j")
+                page.keyboard.press("j")
+                assert page.evaluate("document.activeElement.dataset.sid") == A_ID
+                page.keyboard.press("Enter")
+                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
+                assert page.locator(".pager .note").inner_text() == "2 of 3"
+                page.keyboard.press("k")
+                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('gpt-6-astra')")
+                page.keyboard.press("Escape")
+                page.wait_for_function("() => location.hash === '#sessions'")
+
+                # A filtered list is kept on the way in and on the way back.
+                page.evaluate("location.hash = 'sessions?client=pi'")
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 2")
+                page.locator(".srow[href]").first.click()
+                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
+                assert page.locator(".pager .note").inner_text() == "1 of 2"
+                assert page.locator(".back").get_attribute("href") == "#sessions?client=pi"
+                assert page.locator(".fsum").inner_text() == "pi"
+                page.locator(".back").click()
+                page.wait_for_function("() => location.hash === '#sessions?client=pi' && document.querySelectorAll('.srow[href]').length === 2")
+                page.locator("#clear").click()
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
+
+                # A pinned session's deep link: the admission-only session.
+                page.evaluate("location.hash = 'debugging'")
                 page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
                 assert page.url.endswith("#debugging")
                 assert page.locator(".card").count() == 5
@@ -447,7 +620,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert page.locator(".card.inh").count() == 0
 
                 # Bookmark 2: adaptive effort, gaps, unknown and rejected requests.
-                page.keyboard.press("2")
+                open_book("design-review")
                 page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('gpt-6-astra')")
                 assert page.locator(".mkr").count() == 4
                 assert page.locator(".mkr.g-confirmed").count() == 2
@@ -505,7 +678,7 @@ def test_browser_session_inspector(monkeypatch):
                 shot("c-outcome")
 
                 # Unchanged data does not replay the entrance; changed data re-renders still.
-                page.keyboard.press("2")
+                open_book("design-review")
                 page.wait_for_function("() => document.querySelector('.model').textContent.includes('gpt-6-astra')")
                 page.evaluate("document.querySelector('.pane').dataset.mark = 'kept'")
                 page.wait_for_timeout(5600)
@@ -532,7 +705,7 @@ def test_browser_session_inspector(monkeypatch):
                     timeout=8000)
                 # With no state shape, the facts the replayed rules read are shown instead.
                 details[A_ID]["admission"]["state_shape"] = None
-                page.keyboard.press("1")
+                open_book("debugging")
                 page.wait_for_function("() => document.querySelector('.model').textContent.includes('glm-5.3')")
                 stage("Jev")
                 page.wait_for_function("() => document.body.innerText.includes('Read by the rules')", timeout=8000)
@@ -541,8 +714,8 @@ def test_browser_session_inspector(monkeypatch):
 
                 # Phone width: no horizontal scroll on any stage of any session.
                 page.set_viewport_size({"width": 390, "height": 844})
-                for key in ("1", "2"):
-                    page.keyboard.press(key)
+                for key in ("debugging", "design-review"):
+                    open_book(key)
                     page.wait_for_timeout(300)
                     for name in ("Jev", "Constraints", "Rule & quota", "Binding", "Outcome"):
                         stage(name)
@@ -550,24 +723,31 @@ def test_browser_session_inspector(monkeypatch):
                     page.keyboard.press("]")
                     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), key
                     page.keyboard.press("Escape")
-                page.keyboard.press("1")
+                open_book("debugging")
                 stage("Rule & quota")
                 shot("a-rule", 390, 844)
                 stage("Jev")
                 shot("a-jev", 390, 844)
-                page.keyboard.press("2")
+                open_book("design-review")
                 stage("Binding")
                 shot("b-binding", 390, 844)
                 stage("Outcome")
                 shot("b-outcome", 390, 844)
-                page.keyboard.press("h")
-                assert page.locator(".bigbook").count() == 2
+                page.keyboard.press("s")
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-                shot("start", 390, 844)
+                shot("sessions", 390, 844)
+                page.keyboard.press("o")
+                page.wait_for_function("() => document.querySelectorAll('.kpi').length === 6")
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                shot("overview", 390, 844)
+                page.set_viewport_size({"width": 1440, "height": 900})
+                assert page.evaluate("getComputedStyle(document.documentElement).fontSize") == "16px"
+                shot("overview", 1440, 900)
 
                 # Reduced motion turns every animation off.
                 page.emulate_media(reduced_motion="reduce")
-                page.keyboard.press("1")
+                open_book("debugging")
                 page.wait_for_function("() => document.querySelector('.card')")
                 assert page.evaluate("getComputedStyle(document.querySelector('.card')).animationName") == "none"
 
