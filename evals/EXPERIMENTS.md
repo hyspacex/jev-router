@@ -23,6 +23,50 @@ export TYPESAFE_API_KEY=...
 uv run python evals/run_eval.py --variants <name> --repeats 3
 ```
 
+## 2026-10-27: model refresh, no classifier change
+
+The [model refresh](reports/2026-10-27-model-refresh/METHOD.md) tests DeepSeek
+V4.1 Flash 1017 at low/max and GPT-6.1 Sol at low/high/xhigh against existing
+incumbents. Full measurements and stopped runs are retained in that directory.
+The completed moderate-text step admits Sol 6.1 low as a quota equivalent;
+DeepSeek does not replace either GLM route. The coding pilot does not qualify
+any new tool pair; post-run inspection found hidden-test metadata leaking through
+pytest cache, so its raw counts are not clean model-comparison evidence. See
+POOL.md for the decision and confidence intervals.
+
+Questions, state builder, confidence gate, rule order, numeric cutoffs and case
+annotations are unchanged. Only the moderate-text fallback and its quality-lane
+membership change. The new model has an explicit mid tier/cost entry so replay
+cannot silently score it as the default frontier tier. Those ordering units are
+not observed quota savings.
+
+The grading check for `polish-slack-grammar-54` now accepts curly as well as ASCII
+apostrophes. It previously penalised correct contractions. Regression tests
+accept both and reject the original uncorrected text; every model is regraded
+identically from cache. No brevity requirement or label was relaxed. A local
+variable in admission summary aggregation was renamed to resolve a pre-existing
+dict/list type collision, with no runtime behavior change.
+
+All four controls ran before and after the config change, **cache-only**, with
+no provider calls and no unfinished cases. At zero pressure every per-case
+route is identical before/after. Paired tier-correctness bootstrap p = 1.000
+on each split; 95% Wilson intervals:
+
+| Split | Before | After |
+| --- | --- | --- |
+| Tuning, 120 cases | 93.3% [87.4, 96.6] | 93.3% [87.4, 96.6] |
+| Held out, 51 cases | 92.2% [81.5, 96.9] | 92.2% [81.5, 96.9] |
+
+The shuffled-label control is compatible with chance: tier accuracy 57.3%
+[49.8, 64.5], permutation-null expectation 54.1% [47.4, 60.8], p = 0.1983.
+Constant-state accuracy is 46.2% [38.9, 53.7], below the majority baseline
+63.2% [55.7, 70.0]. Constant-policy reaches that baseline and length-only scores
+36.8% [30.0, 44.3], neither matching the real policy's 93.0% [88.1, 95.9].
+Pressure-specific regression tests verify Sol 6.1 is selected for moderate text
+when Ollama is busy, not for tools, images, hard or high-consequence requests.
+This is policy replay and bounded model admission, not new classifier accuracy
+or general model equivalence.
+
 ## 2026-09-20: moderate tool admission, no classifier change
 
 Removed the blanket `tool_loop` intercept; added GLM high for moderate tool

@@ -95,6 +95,7 @@ ROUTE_COST = {
     # them against astra; against Ollama's flat plan the units say nothing.
     ("gpt-6-luna", "low"): 0.1,
     ("gpt-6-sol", "low"): 2.0,
+    ("gpt-6.1-sol", "low"): 2.0,  # same $2/$10 price; no quota-saving claim
     ("gpt-6-sol", "medium"): 2.8,
     ("gpt-6-sol", "high"): 4.0,
     ("gpt-6-sol", "xhigh"): 6.0,
@@ -133,6 +134,7 @@ MODEL_TIERS = {
     # on hard work, and a replay at that pressure scores it as mid.
     "gpt-6-luna": "fast",
     "gpt-6-sol": "mid",
+    "gpt-6.1-sol": "mid",  # admitted at low for moderate text only
 }
 
 

@@ -1,0 +1,349 @@
+{
+  "schema_version": "1",
+  "script": "evals/admission.py; bounded live runs then offline cache reconstruction",
+  "kind": "mixed",
+  "written_at": "2026-10-27T16:53:43+00:00",
+  "repo_sha": "7281ea525fd012dcb57a3170262310a3e4a3641f-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "glm-5.3-flash": {
+      "upstream": "ollama/glm-5.3-flash(none)",
+      "provider": "local",
+      "vision": false
+    },
+    "glm-5.3": {
+      "upstream": "ollama/glm-5.3(none)",
+      "provider": "local",
+      "vision": false
+    },
+    "gemma4-31b": {
+      "upstream": "ollama/gemma4-31b",
+      "provider": "local",
+      "vision": true
+    },
+    "kimi-k3": {
+      "upstream": "ollama/kimi-k3(none)",
+      "provider": "local",
+      "vision": true
+    },
+    "astra": {
+      "upstream": "gpt-6-astra(low)",
+      "provider": "openai",
+      "vision": true
+    },
+    "luna": {
+      "upstream": "gpt-5.6-luna(low)",
+      "provider": "openai",
+      "vision": true
+    },
+    "grok-4.6": {
+      "upstream": "grok-4.6(low)",
+      "provider": "xai",
+      "vision": "unknown"
+    },
+    "grok-4.6-medium": {
+      "upstream": "grok-4.6(medium)",
+      "provider": "xai",
+      "vision": "unknown"
+    },
+    "grok-4.6-high": {
+      "upstream": "grok-4.6(high)",
+      "provider": "xai",
+      "vision": "unknown"
+    },
+    "glm-5.3-high": {
+      "upstream": "ollama/glm-5.3(high)",
+      "provider": "local",
+      "vision": false
+    },
+    "luna6": {
+      "upstream": "gpt-6-luna(low)",
+      "provider": "openai",
+      "vision": true
+    },
+    "sol6": {
+      "upstream": "gpt-6-sol(low)",
+      "provider": "openai",
+      "vision": true
+    },
+    "sol6-high": {
+      "upstream": "gpt-6-sol(high)",
+      "provider": "openai",
+      "vision": true
+    },
+    "sol6-xhigh": {
+      "upstream": "gpt-6-sol(xhigh)",
+      "provider": "openai",
+      "vision": true
+    },
+    "astra-medium": {
+      "upstream": "gpt-6-astra(medium)",
+      "provider": "openai",
+      "vision": true
+    },
+    "astra-high": {
+      "upstream": "gpt-6-astra(high)",
+      "provider": "openai",
+      "vision": true
+    },
+    "deepseek41-low": {
+      "upstream": "ollama/deepseek-v4.1-flash:1017(low)",
+      "provider": "local",
+      "vision": false
+    },
+    "deepseek41-max": {
+      "upstream": "ollama/deepseek-v4.1-flash:1017(max)",
+      "provider": "local",
+      "vision": false
+    },
+    "sol61-low": {
+      "upstream": "gpt-6.1-sol(low)",
+      "provider": "openai",
+      "vision": false
+    },
+    "sol61-high": {
+      "upstream": "gpt-6.1-sol(high)",
+      "provider": "openai",
+      "vision": false
+    },
+    "sol61-xhigh": {
+      "upstream": "gpt-6.1-sol(xhigh)",
+      "provider": "openai",
+      "vision": false
+    }
+  },
+  "cases": {
+    "count": 38,
+    "by_split": {
+      "admission": [
+        "adv-five-second-cron-tz-96",
+        "adv-sow-dates-91",
+        "adv-static-markup-rounding-99",
+        "code-chinese-hooks-08",
+        "code-prose-shaped-really-code-09",
+        "code-regex-extract-04",
+        "code-shell-oneliner-06",
+        "code-sql-window-query-05",
+        "debug-adversarial-injection-in-log-16",
+        "debug-css-overflow-17",
+        "debug-go-deadlock-short-40-11",
+        "debug-nameerror-typo-14",
+        "debug-spanish-slow-query-18",
+        "design-eventbus-tradeoff-20",
+        "design-index-strategy-26",
+        "extract-invoice-json-62",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "other-buy-vs-rent-84",
+        "other-chitchat-85",
+        "other-probability-puzzle-79",
+        "other-simple-question-proof-78",
+        "polish-slack-grammar-54",
+        "quick-bash-for-loop-70",
+        "quick-borrow-checker-misleading-75",
+        "quick-german-idempotent-76",
+        "quick-percentage-74",
+        "quick-postgres-port-71",
+        "quick-timezone-abbrev-77",
+        "quick-weakmap-vs-map-72",
+        "summarise-blogpost-tldr-63",
+        "summarise-meeting-notes-dates-61",
+        "summarise-trial-abstract-66",
+        "writing-investor-update-numbers-44",
+        "writing-legal-clause-39",
+        "writing-medical-discharge-38",
+        "writing-regulator-response-42",
+        "writing-rsu-tax-explainer-40"
+      ]
+    }
+  },
+  "seeds": {},
+  "repeats": 2,
+  "cache": {
+    "finalization_live_calls": 0,
+    "controls": "sample 0 historical; sample 1 dated fresh",
+    "candidates": "two distinct samples"
+  },
+  "caps": {
+    "approved_total_wire_calls": 600,
+    "preflight": 5,
+    "text_wire_attempts": 178,
+    "tool_wire_attempts": 195,
+    "total_wire_attempts": 378,
+    "text_ceiling": 310,
+    "tools_ceiling": 250,
+    "max_tokens": 8000
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "checks": "outcome_specs.yaml; apostrophe correction applied equally",
+    "judge_requested": "gpt-5.6-sol(high)",
+    "judge_effective_override": "medium; judged hard cases not reached"
+  },
+  "exclusions": [
+    {
+      "route": "deepseek41-max",
+      "reason": "empty 8000-token truncated reply; retained in stopped-empty; no qualification"
+    }
+  ],
+  "unfinished": [
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "astra-high",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol6-xhigh",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "astra-high",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol6-xhigh",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "astra-high",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol6-xhigh",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "astra-high",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol6-xhigh",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "astra-high",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol6-xhigh",
+      "samples": 1,
+      "planned": 2
+    }
+  ],
+  "stop_reason": "hard stage terminated after repeated Sol 6.1 xhigh 180-second timeouts; pending attempt outcome unknown",
+  "limitations": [
+    "Hard stage incomplete; no hard-work qualification",
+    "Tool pilot contaminated by pytest metadata; no new tool qualification",
+    "Requested effort is not a verified native budget",
+    "Finalizer reads caches only; stopped runs retained"
+  ]
+}

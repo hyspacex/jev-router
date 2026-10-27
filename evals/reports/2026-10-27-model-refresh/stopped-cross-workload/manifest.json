@@ -1,0 +1,981 @@
+{
+  "schema_version": "1",
+  "script": "evals/admission.py via bounded refresh runner",
+  "kind": "mixed",
+  "written_at": "2026-10-27T16:14:34+00:00",
+  "repo_sha": "86251c9162b96b8f7f4213cf2f00635207f177b7-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "deepseek41-low": {
+      "upstream": "ollama/deepseek-v4.1-flash:1017(low)",
+      "provider": "local",
+      "vision": false
+    },
+    "glm-5.3-flash": {
+      "upstream": "ollama/glm-5.3-flash(none)",
+      "provider": "local",
+      "vision": false
+    },
+    "deepseek41-max": {
+      "upstream": "ollama/deepseek-v4.1-flash:1017(max)",
+      "provider": "local",
+      "vision": false
+    },
+    "sol61-low": {
+      "upstream": "gpt-6.1-sol(low)",
+      "provider": "openai",
+      "vision": false
+    },
+    "glm-5.3": {
+      "upstream": "ollama/glm-5.3(none)",
+      "provider": "local",
+      "vision": false
+    },
+    "astra-medium": {
+      "upstream": "gpt-6-astra(medium)",
+      "provider": "openai",
+      "vision": true
+    },
+    "sol61-high": {
+      "upstream": "gpt-6.1-sol(high)",
+      "provider": "openai",
+      "vision": false
+    },
+    "sol61-xhigh": {
+      "upstream": "gpt-6.1-sol(xhigh)",
+      "provider": "openai",
+      "vision": false
+    },
+    "astra-high": {
+      "upstream": "gpt-6-astra(high)",
+      "provider": "openai",
+      "vision": true
+    },
+    "sol6-xhigh": {
+      "upstream": "gpt-6-sol(xhigh)",
+      "provider": "openai",
+      "vision": true
+    }
+  },
+  "cases": {
+    "count": 38,
+    "by_split": {
+      "admission": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76",
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72",
+        "writing-medical-discharge-38",
+        "summarise-trial-abstract-66",
+        "extract-invoice-json-62",
+        "summarise-meeting-notes-dates-61",
+        "adv-sow-dates-91",
+        "debug-go-deadlock-short-40-11",
+        "debug-adversarial-injection-in-log-16",
+        "writing-investor-update-numbers-44",
+        "other-simple-question-proof-78",
+        "other-probability-puzzle-79",
+        "other-buy-vs-rent-84",
+        "debug-spanish-slow-query-18",
+        "design-eventbus-tradeoff-20",
+        "writing-legal-clause-39",
+        "writing-regulator-response-42",
+        "writing-rsu-tax-explainer-40"
+      ]
+    }
+  },
+  "seeds": {},
+  "repeats": 2,
+  "cache": {
+    "enabled": true,
+    "control_sample_0": "historical cache when available",
+    "control_sample_1": "fresh dated salt",
+    "live_successes": 48
+  },
+  "caps": {
+    "approved_total_wire_calls": 600,
+    "preflight_calls": 5,
+    "text_stage_wire_cap": 310,
+    "actual_text_wire_calls": 48,
+    "candidate_max_tokens": 8000,
+    "concurrency": 2,
+    "timeout_s": 180
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "checks": "unchanged outcome_specs.yaml",
+    "judge_requested": "gpt-5.6-sol(high)",
+    "judge_proxy_override": "medium"
+  },
+  "exclusions": [],
+  "unfinished": [
+    {
+      "step": "refresh_mid",
+      "case": "code-prose-shaped-really-code-09",
+      "route": "deepseek41-low",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-prose-shaped-really-code-09",
+      "route": "deepseek41-max",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-prose-shaped-really-code-09",
+      "route": "sol61-low",
+      "samples": 1,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-chinese-hooks-08",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-chinese-hooks-08",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-chinese-hooks-08",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "code-chinese-hooks-08",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "debug-css-overflow-17",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "debug-css-overflow-17",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "debug-css-overflow-17",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "debug-css-overflow-17",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-borrow-checker-misleading-75",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-borrow-checker-misleading-75",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-borrow-checker-misleading-75",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-borrow-checker-misleading-75",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multilingual-pt-coorte-retencao-161",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multilingual-pt-coorte-retencao-161",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multilingual-pt-coorte-retencao-161",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multilingual-pt-coorte-retencao-161",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multiturn-ratelimiter-continue-138",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multiturn-ratelimiter-continue-138",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multiturn-ratelimiter-continue-138",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "multiturn-ratelimiter-continue-138",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-five-second-cron-tz-96",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-five-second-cron-tz-96",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-five-second-cron-tz-96",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-five-second-cron-tz-96",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "design-index-strategy-26",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "design-index-strategy-26",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "design-index-strategy-26",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "design-index-strategy-26",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-static-markup-rounding-99",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-static-markup-rounding-99",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-static-markup-rounding-99",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "adv-static-markup-rounding-99",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-weakmap-vs-map-72",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-weakmap-vs-map-72",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-weakmap-vs-map-72",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_mid",
+      "case": "quick-weakmap-vs-map-72",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "writing-medical-discharge-38",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "writing-medical-discharge-38",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "writing-medical-discharge-38",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "writing-medical-discharge-38",
+      "route": "astra-medium",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "writing-medical-discharge-38",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-trial-abstract-66",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-trial-abstract-66",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-trial-abstract-66",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-trial-abstract-66",
+      "route": "astra-medium",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-trial-abstract-66",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "extract-invoice-json-62",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "extract-invoice-json-62",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "extract-invoice-json-62",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "extract-invoice-json-62",
+      "route": "astra-medium",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "extract-invoice-json-62",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-meeting-notes-dates-61",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-meeting-notes-dates-61",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-meeting-notes-dates-61",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-meeting-notes-dates-61",
+      "route": "astra-medium",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "summarise-meeting-notes-dates-61",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "adv-sow-dates-91",
+      "route": "deepseek41-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "adv-sow-dates-91",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "adv-sow-dates-91",
+      "route": "sol61-low",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "adv-sow-dates-91",
+      "route": "astra-medium",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_faithful",
+      "case": "adv-sow-dates-91",
+      "route": "glm-5.3",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-go-deadlock-short-40-11",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-go-deadlock-short-40-11",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-go-deadlock-short-40-11",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-go-deadlock-short-40-11",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-go-deadlock-short-40-11",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-adversarial-injection-in-log-16",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-adversarial-injection-in-log-16",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-adversarial-injection-in-log-16",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-adversarial-injection-in-log-16",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-adversarial-injection-in-log-16",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-investor-update-numbers-44",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-investor-update-numbers-44",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-investor-update-numbers-44",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-investor-update-numbers-44",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-investor-update-numbers-44",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-simple-question-proof-78",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-simple-question-proof-78",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-simple-question-proof-78",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-simple-question-proof-78",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-simple-question-proof-78",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-probability-puzzle-79",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-probability-puzzle-79",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-probability-puzzle-79",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-probability-puzzle-79",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-probability-puzzle-79",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "other-buy-vs-rent-84",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "debug-spanish-slow-query-18",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "design-eventbus-tradeoff-20",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-legal-clause-39",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-regulator-response-42",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "deepseek41-max",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol61-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol61-xhigh",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "astra-high",
+      "samples": 0,
+      "planned": 2
+    },
+    {
+      "step": "refresh_hard",
+      "case": "writing-rsu-tax-explainer-40",
+      "route": "sol6-xhigh",
+      "samples": 0,
+      "planned": 2
+    }
+  ],
+  "stop_reason": "ollama/deepseek-v4.1-flash:1017(low) median latency went from 1.4s to 5.2s, more than 3x, stopping",
+  "steps": [
+    "refresh_fast",
+    "refresh_mid",
+    "refresh_faithful",
+    "refresh_hard"
+  ],
+  "limitations": [
+    "Text-only, not tool qualification",
+    "Mixed historical/fresh control latencies are not fresh measurements",
+    "Same-family Sol judge; report checked and judged populations separately",
+    "Provider effort internals not observable from completion replies"
+  ]
+}

@@ -1,0 +1,1689 @@
+{
+  "steps": {
+    "refresh_fast": {
+      "step": "refresh_fast",
+      "question": "Can DeepSeek V4.1 Flash 1017 low replace GLM Flash for easy text?",
+      "when": "2026-10-27T16:15:46+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "glm-5.3-flash",
+      "candidates": [
+        "deepseek41-low"
+      ],
+      "cases_run": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76"
+      ],
+      "cases_planned": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76"
+      ],
+      "rows": [
+        {
+          "case_id": "quick-postgres-port-71",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 818,
+              "output_tokens": 62,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 780,
+              "output_tokens": 30,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-percentage-74",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 818,
+              "output_tokens": 41,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 908,
+              "output_tokens": 38,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-timezone-abbrev-77",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 916,
+              "output_tokens": 84,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1551,
+              "output_tokens": 112,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-bash-for-loop-70",
+          "routes": {
+            "deepseek41-low": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 200 words, limit 150",
+              "latency_ms": 2052,
+              "output_tokens": 401,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8028,
+              "output_tokens": 192,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-shell-oneliner-06",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2740,
+              "output_tokens": 505,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1278,
+              "output_tokens": 111,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-nameerror-typo-14",
+          "routes": {
+            "deepseek41-low": {
+              "score": 6.67,
+              "scores": [
+                6.67,
+                6.67
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 238 words, limit 150",
+              "latency_ms": 2470,
+              "output_tokens": 466,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1259,
+              "output_tokens": 120,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "polish-slack-grammar-54",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1890,
+              "output_tokens": 206,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 3651,
+              "output_tokens": 146,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-blogpost-tldr-63",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2044,
+              "output_tokens": 242,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1208,
+              "output_tokens": 94,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-chitchat-85",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 894,
+              "output_tokens": 68,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 834,
+              "output_tokens": 34,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-german-idempotent-76",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 7824,
+              "output_tokens": 1397,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4316,
+              "output_tokens": 612,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "deepseek41-low": {
+          "route": "deepseek41-low",
+          "provider": "local",
+          "cases": 10,
+          "samples": 20,
+          "mean": 9.47,
+          "ci": [
+            8.78,
+            10.15
+          ],
+          "spread": 0.0,
+          "min_case": 6.67,
+          "adequate": 9,
+          "latency_ms": 1967,
+          "output_tokens": 224,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "glm-5.3-flash": {
+          "route": "glm-5.3-flash",
+          "provider": "local",
+          "cases": 10,
+          "samples": 20,
+          "mean": 10.0,
+          "ci": [
+            10.0,
+            10.0
+          ],
+          "spread": 0.0,
+          "min_case": 10.0,
+          "adequate": 10,
+          "latency_ms": 1268,
+          "output_tokens": 112,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "deepseek41-low": 8,
+        "glm-5.3-flash": 10
+      },
+      "paired": {
+        "deepseek41-low": {
+          "cases": 10,
+          "candidate_mean": 9.47,
+          "incumbent_mean": 10.0
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "deepseek41-low": {
+          "pass": false,
+          "score_deficit": 0.53,
+          "quality_ok": false,
+          "faster_30pct": false,
+          "speedup": 0.64,
+          "different_provider": false,
+          "why_not": "scores 0.53 below the incumbent, more than 0.5; neither 30% faster nor on another provider"
+        }
+      },
+      "budget": "upstream calls 0/262, empty 0, median latency 0.0s"
+    },
+    "refresh_mid": {
+      "step": "refresh_mid",
+      "question": "Does DeepSeek low or max replace GLM for moderate text, and does Sol 6.1 low qualify?",
+      "when": "2026-10-27T16:24:24+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "glm-5.3",
+      "candidates": [
+        "deepseek41-low",
+        "deepseek41-max",
+        "sol61-low"
+      ],
+      "cases_run": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99"
+      ],
+      "cases_planned": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72"
+      ],
+      "rows": [
+        {
+          "case_id": "code-regex-extract-04",
+          "routes": {
+            "deepseek41-low": {
+              "score": 7.19,
+              "scores": [
+                10.0,
+                4.38
+              ],
+              "score_sd": 2.81,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "regex_examples 0.25: no named group captured '10.4.19.7' for ip (got []); no named group captured '200' for status (got []); no match on example 2",
+              "latency_ms": 7730,
+              "output_tokens": 1662,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 9206,
+              "output_tokens": 2232,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 10254,
+              "output_tokens": 276,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.06,
+              "scores": [
+                10.0,
+                8.12
+              ],
+              "score_sd": 0.94,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "regex_examples 0.75: no match on example 2",
+              "latency_ms": 3852,
+              "output_tokens": 405,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-sql-window-query-05",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 23160,
+              "output_tokens": 4916,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 33840,
+              "output_tokens": 6878,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 28104,
+              "output_tokens": 832,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 16030,
+              "output_tokens": 801,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-prose-shaped-really-code-09",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4618,
+              "output_tokens": 844,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            },
+            "deepseek41-max": {
+              "score": 8.33,
+              "scores": [
+                6.67,
+                10.0
+              ],
+              "score_sd": 1.67,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['csv\\\\.writer|csv module|import csv|RFC ?4180']",
+              "latency_ms": 5612,
+              "output_tokens": 980,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11970,
+              "output_tokens": 303,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5406,
+              "output_tokens": 594,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-chinese-hooks-08",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8184,
+              "output_tokens": 1566,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22660,
+              "output_tokens": 4332,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 12616,
+              "output_tokens": 338,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2215,
+              "output_tokens": 320,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-css-overflow-17",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5260,
+              "output_tokens": 1110,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11530,
+              "output_tokens": 2412,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11501,
+              "output_tokens": 282,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1523,
+              "output_tokens": 226,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-borrow-checker-misleading-75",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4579,
+              "output_tokens": 1108,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11588,
+              "output_tokens": 2760,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 7888,
+              "output_tokens": 204,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2792,
+              "output_tokens": 370,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multilingual-pt-coorte-retencao-161",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 16052,
+              "output_tokens": 3794,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22632,
+              "output_tokens": 5410,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 33456,
+              "output_tokens": 1055,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5276,
+              "output_tokens": 946,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multiturn-ratelimiter-continue-138",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 19652,
+              "output_tokens": 4785,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 9.25,
+              "scores": [
+                8.5,
+                10.0
+              ],
+              "score_sd": 0.75,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['reject|denied|blocked|limit exceeded']",
+              "latency_ms": 26201,
+              "output_tokens": 6178,
+              "finish_reasons": [
+                "length",
+                "stop"
+              ],
+              "truncated": 1,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['weighted|prev|elapsed']",
+              "latency_ms": 33021,
+              "output_tokens": 1025,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2752,
+              "output_tokens": 452,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-five-second-cron-tz-96",
+          "routes": {
+            "deepseek41-low": {
+              "score": 9.09,
+              "scores": [
+                8.18,
+                10.0
+              ],
+              "score_sd": 0.91,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['VAT|invoice date|tax period|audit']",
+              "latency_ms": 10973,
+              "output_tokens": 2190,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 26294,
+              "output_tokens": 5226,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 8.64,
+              "scores": [
+                7.27,
+                10.0
+              ],
+              "score_sd": 1.36,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['hourly|every hour|guard|two cron|both[^.\\\\n]{0,30}entries|check[^.\\\\n]{0,30}local time|systemd|OnCalendar|TZ=|timezone-aware scheduler|wrapper']",
+              "latency_ms": 12484,
+              "output_tokens": 318,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 9.09,
+              "scores": [
+                8.18,
+                10.0
+              ],
+              "score_sd": 0.91,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['Europe/Berlin|zoneinfo|tzdata']",
+              "latency_ms": 7344,
+              "output_tokens": 1014,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "design-index-strategy-26",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 21887,
+              "output_tokens": 4025,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 30242,
+              "output_tokens": 5612,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22430,
+              "output_tokens": 616,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5736,
+              "output_tokens": 618,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-static-markup-rounding-99",
+          "routes": {
+            "deepseek41-low": {
+              "score": 7.69,
+              "scores": [
+                6.92,
+                8.46
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['per[- ]row|per line|separately|twice|sum of (the )?rounded|rounded[^.\\\\n]{0,40}total|independent']; contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 21184,
+              "output_tokens": 4052,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "deepseek41-max": {
+              "score": 0.0,
+              "scores": [
+                0.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "checks",
+              "note": "empty reply",
+              "latency_ms": 39034,
+              "output_tokens": 8000,
+              "finish_reasons": [
+                "length"
+              ],
+              "truncated": 1,
+              "empty": 1,
+              "live": 1
+            },
+            "sol61-low": {
+              "score": 8.46,
+              "scores": [
+                8.46
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 29271,
+              "output_tokens": 919,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            },
+            "glm-5.3": {
+              "score": 9.23,
+              "scores": [
+                10.0,
+                8.46
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 7320,
+              "output_tokens": 952,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 1
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "deepseek41-low": {
+          "route": "deepseek41-low",
+          "provider": "local",
+          "cases": 11,
+          "samples": 22,
+          "mean": 9.45,
+          "ci": [
+            8.87,
+            10.04
+          ],
+          "spread": 0.41,
+          "min_case": 7.19,
+          "adequate": 11,
+          "latency_ms": 10973,
+          "output_tokens": 2190,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 17
+        },
+        "deepseek41-max": {
+          "route": "deepseek41-max",
+          "provider": "local",
+          "cases": 11,
+          "samples": 21,
+          "mean": 8.87,
+          "ci": [
+            7.19,
+            10.55
+          ],
+          "spread": 0.22,
+          "min_case": 0.0,
+          "adequate": 10,
+          "latency_ms": 22660,
+          "output_tokens": 5226,
+          "truncated": 2,
+          "truncation_rate": 9.5,
+          "empty": 1,
+          "live_calls": 16
+        },
+        "sol61-low": {
+          "route": "sol61-low",
+          "provider": "openai",
+          "cases": 11,
+          "samples": 21,
+          "mean": 9.69,
+          "ci": [
+            9.36,
+            10.02
+          ],
+          "spread": 0.17,
+          "min_case": 8.46,
+          "adequate": 11,
+          "latency_ms": 12616,
+          "output_tokens": 338,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 16
+        },
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 11,
+          "samples": 22,
+          "mean": 9.76,
+          "ci": [
+            9.53,
+            9.99
+          ],
+          "spread": 0.24,
+          "min_case": 9.06,
+          "adequate": 11,
+          "latency_ms": 5276,
+          "output_tokens": 594,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 8
+        }
+      },
+      "wins": {
+        "deepseek41-low": 8,
+        "deepseek41-max": 8,
+        "sol61-low": 8,
+        "glm-5.3": 9
+      },
+      "paired": {
+        "deepseek41-low": {
+          "cases": 11,
+          "candidate_mean": 9.45,
+          "incumbent_mean": 9.76
+        },
+        "deepseek41-max": {
+          "cases": 11,
+          "candidate_mean": 8.87,
+          "incumbent_mean": 9.76
+        },
+        "sol61-low": {
+          "cases": 11,
+          "candidate_mean": 9.69,
+          "incumbent_mean": 9.76
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "deepseek41-low": {
+          "pass": false,
+          "score_deficit": 0.31,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.48,
+          "different_provider": false,
+          "why_not": "neither 30% faster nor on another provider"
+        },
+        "deepseek41-max": {
+          "pass": false,
+          "score_deficit": 0.89,
+          "quality_ok": false,
+          "faster_30pct": false,
+          "speedup": 0.23,
+          "different_provider": false,
+          "why_not": "scores 0.89 below the incumbent, more than 0.5; neither 30% faster nor on another provider"
+        },
+        "sol61-low": {
+          "pass": true,
+          "score_deficit": 0.07,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.42,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": "upstream calls 57/262, empty 1, median latency 13.0s, STOPPED: provider error: empty reply"
+    }
+  }
+}

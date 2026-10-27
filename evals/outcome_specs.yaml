@@ -1008,7 +1008,13 @@ cases:
     checks:
       - kind: contains_all
         weight: 4
-        patterns: ["\\bmoved\\b", "Thursday", "Wednesday", "don't|do not", "it's|it is"]
+        # Curly apostrophes are valid punctuation, not missing corrections.
+        patterns:
+          - "\\bmoved\\b"
+          - "Thursday"
+          - "Wednesday"
+          - "don['’]t|do not"
+          - "it['’]s|it is"
       - kind: max_words
         limit: 160
         weight: 2

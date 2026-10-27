@@ -630,9 +630,9 @@ async def run_step(
 
     summary = {}
     for route in step.routes:
-        cells = [row["routes"][route] for row in rows if route in row["routes"]]
-        if cells:
-            summary[route] = summarise_route(route, route_meta(cfg, route), cells)
+        route_cells = [row["routes"][route] for row in rows if route in row["routes"]]
+        if route_cells:
+            summary[route] = summarise_route(route, route_meta(cfg, route), route_cells)
 
     pair_results = {}
     verdicts = {}

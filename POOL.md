@@ -236,6 +236,58 @@ Ollama's usage numbers come from its settings page, not its API, so the
 ollama.com session. Without a signed-in browser on the router's machine it
 reads as unknown, which is pressure 0.
 
+## DeepSeek 1017 and Sol 6.1 (2026-10-27)
+
+Evidence: [refresh method](evals/reports/2026-10-27-model-refresh/METHOD.md),
+[paired measurements](evals/reports/2026-10-27-model-refresh/measurements.md),
+and [isolated coding pilot](evals/reports/2026-10-27-model-refresh/sessions/sessions.md).
+Exact DeepSeek revision: `ollama/deepseek-v4.1-flash:1017`, not the rolling alias.
+
+Completed moderate-text admission qualifies **gpt-6.1-sol low** as another
+Ollama-pressure equivalent, ahead of the retained GPT-6 Sol low fallback.
+It scored 9.55 [9.12, 9.92] against GLM none 9.71 [9.48, 9.93], paired difference
+-0.16 [-0.43, +0.12], centred paired bootstrap p = 0.254. The different-provider
+condition passes; it is not a speed upgrade. Fresh median latency was
+15.24 s [11.74, 27.83] versus GLM 4.35 s [2.48, 5.01]. Score and latency intervals
+are case-bootstrap 95% intervals; two samples per case, twelve cases. This is
+bounded admission, not proof of general equivalence.
+
+**Do not replace either GLM route with DeepSeek from this evidence.** On ten easy
+text cases DeepSeek low scored 9.47 [8.67, 10.00] against Flash 10.00
+[10.00, 10.00]; paired difference -0.53 [-1.27, 0.00]. It over-answered two simple
+requests and is on the same subscription, not another capacity source. Fresh
+median latency was 1.97 s [0.87, 2.47] versus Flash 0.79 s [0.48, 1.27]. DeepSeek
+low also failed the same-provider speed condition on moderate text. DeepSeek max
+consumed all 8,000 output tokens with an empty, truncated answer on the static
+markup case; its stopped run remains in `stopped-empty/` and it was excluded from
+further text calls, not silently dropped from the results.
+
+The one-repeat, eight-task tool pilot completed 4/8 for DeepSeek max (50.0%,
+95% Wilson [21.5%, 78.5%]), 7/8 for GLM high and 7/8 for Sol 6.1 low (both 87.5%,
+[52.9%, 97.8%]). All three hit the multi-turn call cap; DeepSeek also capped both
+implementation tasks and the environment task. The predeclared all-task criterion
+was not met, so **no new tool pair is admitted**. Post-run inspection also found
+hidden-test names leaking through pytest cache metadata left by preflight checks;
+these are descriptive counts of a contaminated pilot, not clean model-comparison
+evidence. Repair that isolation before using a follow-up to qualify tools.
+Existing GLM high and Sol 6 low bindings and qualifications are retained, not
+reinterpreted as fresh passes.
+
+The hard-text stage was stopped after repeated Sol 6.1 xhigh timeouts on the
+buy-versus-rent case. It did not complete the planned population, so no new hard
+pair is admitted. The five-case faithful-text screening does not establish full
+coverage of the tool-bearing careful/high-consequence populations; existing
+careful-work routes are unchanged. Full decision: [refresh summary](evals/reports/2026-10-27-model-refresh/SUMMARY.md).
+
+The local configuration adds Sol 6.1 low to `moderate-work` only. Image, high-harm,
+hardest-work and tool lanes remain unchanged. A conservative 400k operational
+window is retained, not the advertised 1.05M limit; no long-context qualification
+was performed. `quota_cost: 0.2` comes from the standard $2/$10 per-million-token
+input/output price versus Astra $10/$50, not fitting the evaluation results:
+[official model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+No real model is marked adaptive-effort verified. No existing model profile or
+allowed-model entry is removed, so existing strict bindings retain their model.
+
 ## Evidence so far
 
 Measured through the proxy on 2026-09-19. One streamed 400-token coding prompt

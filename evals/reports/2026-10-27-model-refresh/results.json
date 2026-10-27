@@ -1,0 +1,2957 @@
+{
+  "steps": {
+    "refresh_fast": {
+      "step": "refresh_fast",
+      "question": "Can DeepSeek V4.1 Flash 1017 low replace GLM Flash for easy text?",
+      "when": "2026-10-27T16:53:43+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "glm-5.3-flash",
+      "candidates": [
+        "deepseek41-low"
+      ],
+      "cases_run": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76"
+      ],
+      "cases_planned": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76"
+      ],
+      "rows": [
+        {
+          "case_id": "quick-postgres-port-71",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 818,
+              "output_tokens": 62,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 780,
+              "output_tokens": 30,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-percentage-74",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 818,
+              "output_tokens": 41,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 908,
+              "output_tokens": 38,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-timezone-abbrev-77",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 916,
+              "output_tokens": 84,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1551,
+              "output_tokens": 112,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-bash-for-loop-70",
+          "routes": {
+            "deepseek41-low": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 200 words, limit 150",
+              "latency_ms": 2052,
+              "output_tokens": 401,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8028,
+              "output_tokens": 192,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-shell-oneliner-06",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2740,
+              "output_tokens": 505,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1278,
+              "output_tokens": 111,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-nameerror-typo-14",
+          "routes": {
+            "deepseek41-low": {
+              "score": 6.67,
+              "scores": [
+                6.67,
+                6.67
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.00: 238 words, limit 150",
+              "latency_ms": 2470,
+              "output_tokens": 466,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1259,
+              "output_tokens": 120,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "polish-slack-grammar-54",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1890,
+              "output_tokens": 206,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 3651,
+              "output_tokens": 146,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-blogpost-tldr-63",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2044,
+              "output_tokens": 242,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1208,
+              "output_tokens": 94,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-chitchat-85",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 894,
+              "output_tokens": 68,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 834,
+              "output_tokens": 34,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-german-idempotent-76",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 7824,
+              "output_tokens": 1397,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4316,
+              "output_tokens": 612,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "deepseek41-low": {
+          "route": "deepseek41-low",
+          "provider": "local",
+          "cases": 10,
+          "samples": 20,
+          "mean": 9.47,
+          "ci": [
+            8.78,
+            10.15
+          ],
+          "spread": 0.0,
+          "min_case": 6.67,
+          "adequate": 9,
+          "latency_ms": 1967,
+          "output_tokens": 224,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "glm-5.3-flash": {
+          "route": "glm-5.3-flash",
+          "provider": "local",
+          "cases": 10,
+          "samples": 20,
+          "mean": 10.0,
+          "ci": [
+            10.0,
+            10.0
+          ],
+          "spread": 0.0,
+          "min_case": 10.0,
+          "adequate": 10,
+          "latency_ms": 1268,
+          "output_tokens": 112,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "deepseek41-low": 8,
+        "glm-5.3-flash": 10
+      },
+      "paired": {
+        "deepseek41-low": {
+          "cases": 10,
+          "candidate_mean": 9.47,
+          "incumbent_mean": 10.0
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "deepseek41-low": {
+          "pass": false,
+          "score_deficit": 0.53,
+          "quality_ok": false,
+          "faster_30pct": false,
+          "speedup": 0.64,
+          "different_provider": false,
+          "why_not": "scores 0.53 below the incumbent, more than 0.5; neither 30% faster nor on another provider"
+        }
+      },
+      "budget": ""
+    },
+    "refresh_mid": {
+      "step": "refresh_mid",
+      "question": "Does DeepSeek low or max replace GLM for moderate text, and does Sol 6.1 low qualify?",
+      "when": "2026-10-27T16:53:43+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "glm-5.3",
+      "candidates": [
+        "deepseek41-low",
+        "sol61-low"
+      ],
+      "cases_run": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72"
+      ],
+      "cases_planned": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72"
+      ],
+      "rows": [
+        {
+          "case_id": "code-regex-extract-04",
+          "routes": {
+            "deepseek41-low": {
+              "score": 7.19,
+              "scores": [
+                10.0,
+                4.38
+              ],
+              "score_sd": 2.81,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "regex_examples 0.25: no named group captured '10.4.19.7' for ip (got []); no named group captured '200' for status (got []); no match on example 2",
+              "latency_ms": 7730,
+              "output_tokens": 1662,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 10254,
+              "output_tokens": 276,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.06,
+              "scores": [
+                10.0,
+                8.12
+              ],
+              "score_sd": 0.94,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "regex_examples 0.75: no match on example 2",
+              "latency_ms": 3852,
+              "output_tokens": 405,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-sql-window-query-05",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 23160,
+              "output_tokens": 4916,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 28104,
+              "output_tokens": 832,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 16030,
+              "output_tokens": 801,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-prose-shaped-really-code-09",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4618,
+              "output_tokens": 844,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11970,
+              "output_tokens": 303,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5406,
+              "output_tokens": 594,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "code-chinese-hooks-08",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 8184,
+              "output_tokens": 1566,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 12616,
+              "output_tokens": 338,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2215,
+              "output_tokens": 320,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-css-overflow-17",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5260,
+              "output_tokens": 1110,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 11501,
+              "output_tokens": 282,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1523,
+              "output_tokens": 226,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-borrow-checker-misleading-75",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4579,
+              "output_tokens": 1108,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 7888,
+              "output_tokens": 204,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2792,
+              "output_tokens": 370,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multilingual-pt-coorte-retencao-161",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 16052,
+              "output_tokens": 3794,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 33456,
+              "output_tokens": 1055,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5276,
+              "output_tokens": 946,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "multiturn-ratelimiter-continue-138",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 19652,
+              "output_tokens": 4785,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['weighted|prev|elapsed']",
+              "latency_ms": 33021,
+              "output_tokens": 1025,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 2752,
+              "output_tokens": 452,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-five-second-cron-tz-96",
+          "routes": {
+            "deepseek41-low": {
+              "score": 9.09,
+              "scores": [
+                8.18,
+                10.0
+              ],
+              "score_sd": 0.91,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['VAT|invoice date|tax period|audit']",
+              "latency_ms": 10973,
+              "output_tokens": 2190,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 8.64,
+              "scores": [
+                7.27,
+                10.0
+              ],
+              "score_sd": 1.36,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['hourly|every hour|guard|two cron|both[^.\\\\n]{0,30}entries|check[^.\\\\n]{0,30}local time|systemd|OnCalendar|TZ=|timezone-aware scheduler|wrapper']",
+              "latency_ms": 12484,
+              "output_tokens": 318,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.09,
+              "scores": [
+                8.18,
+                10.0
+              ],
+              "score_sd": 0.91,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['Europe/Berlin|zoneinfo|tzdata']",
+              "latency_ms": 7344,
+              "output_tokens": 1014,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "design-index-strategy-26",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 21887,
+              "output_tokens": 4025,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22430,
+              "output_tokens": 616,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5736,
+              "output_tokens": 618,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-static-markup-rounding-99",
+          "routes": {
+            "deepseek41-low": {
+              "score": 7.69,
+              "scores": [
+                6.92,
+                8.46
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['per[- ]row|per line|separately|twice|sum of (the )?rounded|rounded[^.\\\\n]{0,40}total|independent']; contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 21184,
+              "output_tokens": 4052,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 8.46,
+              "scores": [
+                8.46,
+                8.46
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 27558,
+              "output_tokens": 856,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.23,
+              "scores": [
+                10.0,
+                8.46
+              ],
+              "score_sd": 0.77,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['suspicious|prompt injection|injected|ignore[d]? (that|the|this) comment|should be removed|not an instruction|embedded instruction|do not (follow|obey)']",
+              "latency_ms": 7320,
+              "output_tokens": 952,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "quick-weakmap-vs-map-72",
+          "routes": {
+            "deepseek41-low": {
+              "score": 8.06,
+              "scores": [
+                7.22,
+                8.89
+              ],
+              "score_sd": 0.83,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['not iterable|cannot (be )?iterat|no \\\\.?size|not enumerable|no keys\\\\(\\\\)|cannot enumerate|non-enumerable']; max_words 0.00: 566 words, limit 350",
+              "latency_ms": 8341,
+              "output_tokens": 1476,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 8.06,
+              "scores": [
+                8.33,
+                7.78
+              ],
+              "score_sd": 0.28,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['not iterable|cannot (be )?iterat|no \\\\.?size|not enumerable|no keys\\\\(\\\\)|cannot enumerate|non-enumerable']",
+              "latency_ms": 17872,
+              "output_tokens": 510,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.17,
+              "scores": [
+                8.33,
+                10.0
+              ],
+              "score_sd": 0.83,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['not iterable|cannot (be )?iterat|no \\\\.?size|not enumerable|no keys\\\\(\\\\)|cannot enumerate|non-enumerable']",
+              "latency_ms": 3530,
+              "output_tokens": 528,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "deepseek41-low": {
+          "route": "deepseek41-low",
+          "provider": "local",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.34,
+          "ci": [
+            8.76,
+            9.91
+          ],
+          "spread": 0.44,
+          "min_case": 7.19,
+          "adequate": 12,
+          "latency_ms": 9657,
+          "output_tokens": 1926,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "sol61-low": {
+          "route": "sol61-low",
+          "provider": "openai",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.55,
+          "ci": [
+            9.16,
+            9.95
+          ],
+          "spread": 0.18,
+          "min_case": 8.06,
+          "adequate": 12,
+          "latency_ms": 15244,
+          "output_tokens": 424,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 12,
+          "samples": 24,
+          "mean": 9.71,
+          "ci": [
+            9.48,
+            9.94
+          ],
+          "spread": 0.29,
+          "min_case": 9.06,
+          "adequate": 12,
+          "latency_ms": 4564,
+          "output_tokens": 561,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "deepseek41-low": 9,
+        "sol61-low": 8,
+        "glm-5.3": 11
+      },
+      "paired": {
+        "deepseek41-low": {
+          "cases": 12,
+          "candidate_mean": 9.34,
+          "incumbent_mean": 9.71
+        },
+        "sol61-low": {
+          "cases": 12,
+          "candidate_mean": 9.55,
+          "incumbent_mean": 9.71
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "deepseek41-low": {
+          "pass": false,
+          "score_deficit": 0.37,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.47,
+          "different_provider": false,
+          "why_not": "neither 30% faster nor on another provider"
+        },
+        "sol61-low": {
+          "pass": true,
+          "score_deficit": 0.16,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.3,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": ""
+    },
+    "refresh_faithful": {
+      "step": "refresh_faithful",
+      "question": "Which new pairs can handle faithfulness-sensitive work against Astra medium?",
+      "when": "2026-10-27T16:53:43+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "astra-medium",
+      "candidates": [
+        "deepseek41-low",
+        "sol61-low",
+        "glm-5.3"
+      ],
+      "cases_run": [
+        "writing-medical-discharge-38",
+        "summarise-trial-abstract-66",
+        "extract-invoice-json-62",
+        "summarise-meeting-notes-dates-61",
+        "adv-sow-dates-91"
+      ],
+      "cases_planned": [
+        "writing-medical-discharge-38",
+        "summarise-trial-abstract-66",
+        "extract-invoice-json-62",
+        "summarise-meeting-notes-dates-61",
+        "adv-sow-dates-91"
+      ],
+      "rows": [
+        {
+          "case_id": "writing-medical-discharge-38",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 20054,
+              "output_tokens": 3593,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 22452,
+              "output_tokens": 688,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-medium": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 29896,
+              "output_tokens": 774,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4242,
+              "output_tokens": 620,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-trial-abstract-66",
+          "routes": {
+            "deepseek41-low": {
+              "score": 9.5,
+              "scores": [
+                9.5,
+                9.5
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.83: missing ['0\\\\.16']",
+              "latency_ms": 12000,
+              "output_tokens": 3100,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 121 words, limit 120",
+              "latency_ms": 10278,
+              "output_tokens": 276,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-medium": {
+              "score": 9.0,
+              "scores": [
+                10.0,
+                8.0
+              ],
+              "score_sd": 1.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['primary (end ?point|outcome|result)[^.]{0,60}bleed']",
+              "latency_ms": 20490,
+              "output_tokens": 696,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 125 words, limit 120",
+              "latency_ms": 1428,
+              "output_tokens": 254,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "extract-invoice-json-62",
+          "routes": {
+            "deepseek41-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 4191,
+              "output_tokens": 514,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 9.58,
+              "scores": [
+                9.17,
+                10.0
+              ],
+              "score_sd": 0.42,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+              "latency_ms": 11652,
+              "output_tokens": 292,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-medium": {
+              "score": 9.58,
+              "scores": [
+                10.0,
+                9.17
+              ],
+              "score_sd": 0.42,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "json_fields 0.89: due_date=None wanted '2026-10-03'",
+              "latency_ms": 9509,
+              "output_tokens": 299,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 1216,
+              "output_tokens": 240,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "summarise-meeting-notes-dates-61",
+          "routes": {
+            "deepseek41-low": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 17928,
+              "output_tokens": 4366,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 23026,
+              "output_tokens": 696,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-medium": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 22141,
+              "output_tokens": 718,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 8.57,
+              "scores": [
+                8.57,
+                8.57
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_none 0.00: found ['(freeze|frozen)[^.\\\\n]{0,40}2026-10-02(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))', 'GA[^.\\\\n]{0,30}2026-10-13(?![^.\\\\n]{0,60}(moved|was|originally|previous|instead of))']",
+              "latency_ms": 3398,
+              "output_tokens": 574,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "adv-sow-dates-91",
+          "routes": {
+            "deepseek41-low": {
+              "score": 9.44,
+              "scores": [
+                8.89,
+                10.0
+              ],
+              "score_sd": 0.56,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 3994,
+              "output_tokens": 732,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-low": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 5820,
+              "output_tokens": 134,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-medium": {
+              "score": 8.89,
+              "scores": [
+                8.89,
+                8.89
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 4888,
+              "output_tokens": 127,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "glm-5.3": {
+              "score": 9.44,
+              "scores": [
+                10.0,
+                8.89
+              ],
+              "score_sd": 0.56,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.00: missing ['last business day']",
+              "latency_ms": 1524,
+              "output_tokens": 156,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "deepseek41-low": {
+          "route": "deepseek41-low",
+          "provider": "local",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.5,
+          "ci": [
+            9.04,
+            9.96
+          ],
+          "spread": 0.11,
+          "min_case": 8.57,
+          "adequate": 5,
+          "latency_ms": 12000,
+          "output_tokens": 3100,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "sol61-low": {
+          "route": "sol61-low",
+          "provider": "openai",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.43,
+          "ci": [
+            8.93,
+            9.93
+          ],
+          "spread": 0.08,
+          "min_case": 8.57,
+          "adequate": 5,
+          "latency_ms": 11652,
+          "output_tokens": 292,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra-medium": {
+          "route": "astra-medium",
+          "provider": "openai",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.21,
+          "ci": [
+            8.76,
+            9.66
+          ],
+          "spread": 0.28,
+          "min_case": 8.57,
+          "adequate": 5,
+          "latency_ms": 20490,
+          "output_tokens": 696,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.5,
+          "ci": [
+            9.04,
+            9.96
+          ],
+          "spread": 0.21,
+          "min_case": 8.57,
+          "adequate": 5,
+          "latency_ms": 1524,
+          "output_tokens": 254,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "deepseek41-low": 4,
+        "sol61-low": 3,
+        "astra-medium": 2,
+        "glm-5.3": 4
+      },
+      "paired": {
+        "deepseek41-low": {
+          "cases": 5,
+          "candidate_mean": 9.5,
+          "incumbent_mean": 9.21
+        },
+        "sol61-low": {
+          "cases": 5,
+          "candidate_mean": 9.43,
+          "incumbent_mean": 9.21
+        },
+        "glm-5.3": {
+          "cases": 5,
+          "candidate_mean": 9.5,
+          "incumbent_mean": 9.21
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {
+        "deepseek41-low": {
+          "pass": true,
+          "score_deficit": -0.29,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 1.71,
+          "different_provider": true,
+          "why_not": ""
+        },
+        "sol61-low": {
+          "pass": true,
+          "score_deficit": -0.22,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 1.76,
+          "different_provider": false,
+          "why_not": ""
+        },
+        "glm-5.3": {
+          "pass": true,
+          "score_deficit": -0.29,
+          "quality_ok": true,
+          "faster_30pct": true,
+          "speedup": 13.44,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": ""
+    },
+    "refresh_hard": {
+      "step": "refresh_hard",
+      "question": "Do DeepSeek max or Sol 6.1 high/xhigh earn a hard-work pair against Astra high?",
+      "when": "2026-10-27T16:53:43+00:00",
+      "mode": "score",
+      "samples": 2,
+      "incumbent": "astra-high",
+      "candidates": [
+        "sol61-high",
+        "sol61-xhigh",
+        "sol6-xhigh"
+      ],
+      "cases_run": [
+        "debug-go-deadlock-short-40-11",
+        "debug-adversarial-injection-in-log-16",
+        "writing-investor-update-numbers-44",
+        "other-simple-question-proof-78",
+        "other-probability-puzzle-79",
+        "other-buy-vs-rent-84",
+        "debug-spanish-slow-query-18",
+        "design-eventbus-tradeoff-20",
+        "writing-legal-clause-39",
+        "writing-regulator-response-42",
+        "writing-rsu-tax-explainer-40"
+      ],
+      "cases_planned": [
+        "debug-go-deadlock-short-40-11",
+        "debug-adversarial-injection-in-log-16",
+        "writing-investor-update-numbers-44",
+        "other-simple-question-proof-78",
+        "other-probability-puzzle-79",
+        "other-buy-vs-rent-84",
+        "debug-spanish-slow-query-18",
+        "design-eventbus-tradeoff-20",
+        "writing-legal-clause-39",
+        "writing-regulator-response-42",
+        "writing-rsu-tax-explainer-40"
+      ],
+      "rows": [
+        {
+          "case_id": "debug-go-deadlock-short-40-11",
+          "routes": {
+            "sol61-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 46488,
+              "output_tokens": 1346,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-xhigh": {
+              "score": 9.38,
+              "scores": [
+                8.75,
+                10.0
+              ],
+              "score_sd": 0.62,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.67: missing ['(hold|while hold|under|inside)[^.\\\\n]{0,40}(lock|mutex|mu)|lock[^.\\\\n]{0,30}(held|while)[^.\\\\n]{0,30}send']",
+              "latency_ms": 102236,
+              "output_tokens": 2823,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 9.38,
+              "scores": [
+                8.75,
+                10.0
+              ],
+              "score_sd": 0.62,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.67: missing ['(hold|while hold|under|inside)[^.\\\\n]{0,40}(lock|mutex|mu)|lock[^.\\\\n]{0,30}(held|while)[^.\\\\n]{0,30}send']",
+              "latency_ms": 38411,
+              "output_tokens": 1096,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 27257,
+              "output_tokens": 1090,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-adversarial-injection-in-log-16",
+          "routes": {
+            "sol61-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 44176,
+              "output_tokens": 1269,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 86454,
+              "output_tokens": 2486,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 45912,
+              "output_tokens": 1169,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 21302,
+              "output_tokens": 788,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "writing-investor-update-numbers-44",
+          "routes": {
+            "sol61-high": {
+              "score": 9.23,
+              "scores": [
+                9.23,
+                9.23
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 48836,
+              "output_tokens": 1474,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-xhigh": {
+              "score": 9.23,
+              "scores": [
+                9.23,
+                9.23
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 92269,
+              "output_tokens": 2919,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 9.62,
+              "scores": [
+                10.0,
+                9.23
+              ],
+              "score_sd": 0.38,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 33130,
+              "output_tokens": 884,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 9.23,
+              "scores": [
+                9.23,
+                9.23
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['CAC|customer acquisition|gross margin|logo count|customer count|ARPU']",
+              "latency_ms": 39227,
+              "output_tokens": 1804,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-simple-question-proof-78",
+          "routes": {
+            "sol61-high": {
+              "score": 9.25,
+              "scores": [
+                10.0,
+                8.5
+              ],
+              "score_sd": 0.75,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['generates (the group|G)|Z\\\\}?\\\\s*/\\\\s*15|G\\\\s*=\\\\s*\\\\\\\\langle|[CZ]_?\\\\{?15|Z/15|cyclic of order 15|[CZ]_?\\\\{?5\\\\}?[^\\\\n]{0,16}[CZ]_?\\\\{?3|[CZ]_?\\\\{?3\\\\}?[^\\\\n]{0,16}[CZ]_?\\\\{?5']",
+              "latency_ms": 10598,
+              "output_tokens": 292,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 17202,
+              "output_tokens": 496,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 9.25,
+              "scores": [
+                10.0,
+                8.5
+              ],
+              "score_sd": 0.75,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "contains_all 0.50: missing ['generates (the group|G)|Z\\\\}?\\\\s*/\\\\s*15|G\\\\s*=\\\\s*\\\\\\\\langle|[CZ]_?\\\\{?15|Z/15|cyclic of order 15|[CZ]_?\\\\{?5\\\\}?[^\\\\n]{0,16}[CZ]_?\\\\{?3|[CZ]_?\\\\{?3\\\\}?[^\\\\n]{0,16}[CZ]_?\\\\{?5']",
+              "latency_ms": 9006,
+              "output_tokens": 235,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 6008,
+              "output_tokens": 206,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-probability-puzzle-79",
+          "routes": {
+            "sol61-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 23096,
+              "output_tokens": 664,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol61-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 41141,
+              "output_tokens": 1305,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 23314,
+              "output_tokens": 612,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 10489,
+              "output_tokens": 420,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "other-buy-vs-rent-84",
+          "routes": {
+            "sol61-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 128536,
+              "output_tokens": 3456,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 114614,
+              "output_tokens": 2864,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 55289,
+              "output_tokens": 2666,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "checks"
+        },
+        {
+          "case_id": "debug-spanish-slow-query-18",
+          "routes": {
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: La respuesta est\u00e1 en espa\u00f1ol, interpreta correctamente el EXPLAIN se\u00f1alando el seq scan, la grave subestimaci\u00f3n y el nested loop costoso, explica el papel de ANALYZE/autovacuum y propone soluciones concretas como un \u00edndice sobre lower(estado) o reescribir el filtro.",
+              "latency_ms": 41667,
+              "output_tokens": 1249,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: Responde en espa\u00f1ol, identifica correctamente el escaneo secuencial y la gran subestimaci\u00f3n de filas, explica por qu\u00e9 el \u00edndice simple no sirve para lower(estado), aborda ANALYZE/autovacuum y propone tanto una reescritura concreta como un \u00edndice funcional adecuado.",
+              "latency_ms": 36935,
+              "output_tokens": 1305,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "design-eventbus-tradeoff-20",
+          "routes": {
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: It gives a clear, context-specific recommendation, directly weighs JetStream\u2019s benefits against its operational and correctness costs, proposes cheaper incremental fixes first, and states concrete conditions that would change the decision.",
+              "latency_ms": 47945,
+              "output_tokens": 1534,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: It gives a concrete, context-sensitive recommendation, clearly weighs JetStream\u2019s latency/decoupling potential against workflow correctness and operational costs, proposes cheaper incremental fixes first, and states specific conditions that would change the decision.",
+              "latency_ms": 33911,
+              "output_tokens": 1042,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-legal-clause-39",
+          "routes": {
+            "astra-high": {
+              "score": 7.0,
+              "scores": [
+                7.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: It accurately explains the broad, uncapped indemnity and quotes the damaging language, but it overlooks that confidentiality breaches and gross negligence/wilful misconduct are also outside the cap, does not address or flag the inability to assess termination and assignment, and stops short of plainly stating that it is not legal advice.",
+              "latency_ms": 31123,
+              "output_tokens": 990,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 6.0,
+              "scores": [
+                6.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: It accurately identifies the uncapped indemnity and damaging language, but does not plainly state that it is not legal advice, fully discuss the other liability carve-outs, or address termination and assignment risks as required by the rubric.",
+              "latency_ms": 23939,
+              "output_tokens": 777,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-regulator-response-42",
+          "routes": {
+            "astra-high": {
+              "score": 10.0,
+              "scores": [
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: The draft directly answers the regulator\u2019s question, accurately presents the supplied chronology and remediation, acknowledges the missed deadline without conceding culpability, avoids speculation, and maintains an appropriately formal register for counsel review.",
+              "latency_ms": 30541,
+              "output_tokens": 965,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 9.5,
+              "scores": [
+                9.5
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: The draft directly answers the regulator\u2019s question in a formal, factual manner, accurately states the dates, causes, and remediation supplied, and acknowledges the missed deadline without speculating about or admitting culpability.",
+              "latency_ms": 25872,
+              "output_tokens": 987,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "writing-rsu-tax-explainer-40",
+          "routes": {
+            "astra-high": {
+              "score": 8.0,
+              "scores": [
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: The answer accurately distinguishes ordinary employment income at settlement from later capital gains, addresses double-trigger timing, valuation, withholding, liquidity risk, and Ireland\u2013Germany jurisdictional uncertainty, but it does not clearly lay out the practical sell-all, sell-to-cover, or hold options and their respective consequences before the tender deadline.",
+              "latency_ms": 98816,
+              "output_tokens": 3203,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            },
+            "sol6-xhigh": {
+              "score": 7.5,
+              "scores": [
+                7.5
+              ],
+              "score_sd": 0.0,
+              "samples": 1,
+              "graded_by": "judge",
+              "note": "judge: The answer correctly distinguishes double-trigger settlement, employment income, post-settlement capital gains, cross-border workday sourcing, and withholding uncertainty, but it does not clearly lay out tender-versus-hold options, sell-to-cover mechanics, or jurisdiction-specific holding-period and German capital-gains consequences.",
+              "latency_ms": 88941,
+              "output_tokens": 2945,
+              "finish_reasons": [
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 0
+            }
+          },
+          "graded_by": "judge"
+        }
+      ],
+      "summary": {
+        "sol61-high": {
+          "route": "sol61-high",
+          "provider": "openai",
+          "cases": 6,
+          "samples": 12,
+          "mean": 9.75,
+          "ci": [
+            9.46,
+            10.03
+          ],
+          "spread": 0.12,
+          "min_case": 9.23,
+          "adequate": 6,
+          "latency_ms": 45332,
+          "output_tokens": 1308,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "sol61-xhigh": {
+          "route": "sol61-xhigh",
+          "provider": "openai",
+          "cases": 5,
+          "samples": 10,
+          "mean": 9.72,
+          "ci": [
+            9.42,
+            10.02
+          ],
+          "spread": 0.12,
+          "min_case": 9.23,
+          "adequate": 5,
+          "latency_ms": 86454,
+          "output_tokens": 2486,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "astra-high": {
+          "route": "astra-high",
+          "provider": "openai",
+          "cases": 11,
+          "samples": 17,
+          "mean": 9.39,
+          "ci": [
+            8.82,
+            9.95
+          ],
+          "spread": 0.16,
+          "min_case": 7.0,
+          "adequate": 11,
+          "latency_ms": 38411,
+          "output_tokens": 1096,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        },
+        "sol6-xhigh": {
+          "route": "sol6-xhigh",
+          "provider": "openai",
+          "cases": 11,
+          "samples": 17,
+          "mean": 9.29,
+          "ci": [
+            8.55,
+            10.04
+          ],
+          "spread": 0.0,
+          "min_case": 6.0,
+          "adequate": 10,
+          "latency_ms": 27257,
+          "output_tokens": 1042,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 0
+        }
+      },
+      "wins": {
+        "sol61-high": 4,
+        "sol61-xhigh": 3,
+        "astra-high": 9,
+        "sol6-xhigh": 7
+      },
+      "paired": {
+        "sol61-high": {
+          "cases": 6,
+          "candidate_mean": 9.75,
+          "incumbent_mean": 9.71
+        },
+        "sol61-xhigh": {
+          "cases": 5,
+          "candidate_mean": 9.72,
+          "incumbent_mean": 9.65
+        },
+        "sol6-xhigh": {
+          "cases": 11,
+          "candidate_mean": 9.29,
+          "incumbent_mean": 9.39
+        }
+      },
+      "pairwise": {},
+      "pairwise_detail": {},
+      "verdicts": {},
+      "budget": "",
+      "qualification_status": "incomplete; repeated xhigh timeouts; no admission verdict"
+    }
+  }
+}
