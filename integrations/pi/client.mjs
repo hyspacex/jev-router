@@ -74,6 +74,13 @@ function waitText(seconds) {
 const CONTRACT_FIELDS = ["model_key", "wire_model", "protocol", "context_window",
   "max_output_tokens", "supports_tools", "supports_vision", "initial_effort", "effort_mode"];
 
+/**
+ * Fields a newer router adds to the contract. Each is kept only when it has
+ * the type it should; a missing or malformed one is dropped, never refused,
+ * so this client works against a router that predates them.
+ */
+const OPTIONAL_FIELDS = {quota_steered: "boolean", intended_model: "string", intended_effort: "string"};
+
 export function validateBinding(value, sessionId) {
   const e = value?.execution;
   // The first thing that is wrong, named. The router's own message text is
@@ -96,8 +103,63 @@ export function validateBinding(value, sessionId) {
   }
   if (!["prepared", "active"].includes(value.state)) throw new ContractError(`Binding is ${value.state}; it cannot execute.`);
   // Persist only the contract, never arbitrary fields from a control response.
-  return {session_id: value.session_id, binding_revision: value.binding_revision, state: value.state,
-    execution: Object.fromEntries(CONTRACT_FIELDS.map(key => [key, e[key]]))};
+  const execution = Object.fromEntries(CONTRACT_FIELDS.map(key => [key, e[key]]));
+  for (const [key, type] of Object.entries(OPTIONAL_FIELDS)) {
+    if (typeof e[key] === type && (type !== "string" || /^[A-Za-z0-9_.:/()+-]{1,64}$/.test(e[key]))) execution[key] = e[key];
+  }
+  return {session_id: value.session_id, binding_revision: value.binding_revision, state: value.state, execution};
+}
+
+/** `/jev <word>` to the verdict it records. */
+export const FEEDBACK_WORDS = {
+  more: "too_weak", "+": "too_weak", up: "too_weak",
+  less: "too_strong", "-": "too_strong", down: "too_strong",
+  good: "right", ok: "right",
+};
+
+/** The picker's choices, in the order shown, and the verdict each records. */
+export const FEEDBACK_CHOICES = [
+  ["↑ Needed more intelligence (too_weak)", "too_weak"],
+  ["✓ Just right (right)", "right"],
+  ["↓ Needed less intelligence / overkill (too_strong)", "too_strong"],
+];
+
+export const NOTE_MAX_CHARS = 2000;
+
+/**
+ * `/jev` arguments read as feedback: `{verdict, note}`, `{picker: true}` for
+ * `/jev feedback` or `/jev fb`, or null when the arguments are not feedback.
+ */
+export function parseFeedbackCommand(args) {
+  const text = String(args ?? "").trim();
+  const [word] = text.split(/\s+/);
+  const lowered = (word ?? "").toLowerCase();
+  if (lowered === "feedback" || lowered === "fb") return {picker: true};
+  const verdict = FEEDBACK_WORDS[lowered];
+  if (!verdict) return null;
+  const note = text.slice(word.length).trim();
+  return {verdict, note: note ? note.slice(0, NOTE_MAX_CHARS) : undefined};
+}
+
+/** What Pi tells the person after feedback. Built from fields, never router text. */
+export function feedbackMessage(result) {
+  const said = {too_weak: "more intelligence", too_strong: "less intelligence", right: "right intelligence"}[result.verdict] ?? result.verdict;
+  if (result.effortChanged) return `Recorded '${said}': ${result.modelKey} effort ${result.previousEffort} → ${result.currentEffort} for the rest of this session.`;
+  if (result.reasonCode === "at_highest") return `Recorded '${said}' (already at max effort for ${result.modelKey}). Run /new to start a fresh session on a higher model tier.`;
+  if (result.reasonCode === "at_lowest") return `Recorded '${said}' (already at the lowest effort ${result.modelKey} allows here).`;
+  if (result.reasonCode && result.reasonCode !== "verdict_keeps_effort") return `Recorded '${said}'. Effort unchanged (${result.reasonCode}).`;
+  return `Recorded '${said}'.`;
+}
+
+/** The status bar text for a bound session. */
+export function statusLine(state) {
+  const binding = state?.binding;
+  if (!binding) return "Jev · awaiting fresh admission";
+  const e = binding.execution;
+  const steered = e.quota_steered === true && e.intended_model && e.intended_model !== e.model_key
+    ? ` (steered from ${e.intended_model}: quota)` : "";
+  const mark = state.lastFeedback === "too_weak" ? " · [↑ more]" : state.lastFeedback === "too_strong" ? " · [↓ less]" : "";
+  return `Jev ${state.alias ?? "auto"} · ${e.model_key} · ${e.initial_effort || "none"}${steered} · ${state.pending ? "outcome unresolved" : "strict"}${mark}`;
 }
 
 /** Owns identity only. No policy, prompt persistence, model fallback or automatic retry. */
@@ -185,6 +247,8 @@ export class StrictClient {
     if (!this.state.binding) throw new ContractError("No binding available.");
     if (!this.state.pending) {
       this.state.pending = randomUUID();
+      // Kept after completion, so feedback can name the request it is about.
+      this.state.lastRequestId = this.state.pending;
       this.persist(); // Must succeed before any inference is sent.
     }
     return {"X-Router-Client": "pi", "X-Router-Admin-Token": this.adminToken,
@@ -219,6 +283,37 @@ export class StrictClient {
     if (this.busy) throw new ContractError("Wait for the current request to settle.");
     this.state.pending = null;
     this.persist();
+  }
+  /**
+   * Tell the router what this session's routing felt like. `too_weak` and
+   * `too_strong` also ask for one effort rung up or down on the same model
+   * (`adjustEffort`, on by default for those two). The router decides; when
+   * it moved the effort, the local contract takes the new effort and wire
+   * model so the next request is sent at it. The model never changes.
+   */
+  async feedback(verdict, {note, adjustEffort, signal} = {}) {
+    if (!["too_weak", "too_strong", "right", "too_slow"].includes(verdict)) throw new ContractError("Unknown feedback verdict.");
+    const binding = this.state.binding;
+    if (!binding) throw new ContractError("No binding yet. Feedback is about a bound session.");
+    const payload = {verdict, adjust_effort: adjustEffort ?? (verdict === "too_weak" || verdict === "too_strong"), source: "pi"};
+    if (this.state.lastRequestId) payload.request_id = this.state.lastRequestId;
+    if (note) payload.note = String(note).slice(0, NOTE_MAX_CHARS);
+    const value = await this.control(`/router/sessions/${encodeURIComponent(this.state.sessionId)}/feedback`, payload, signal);
+    const e = binding.execution;
+    const changed = value?.effort_changed === true && value.model_key === e.model_key
+      && typeof value.current_effort === "string" && typeof value.wire_model === "string" && value.wire_model.length > 0;
+    if (changed) {
+      // A new object, so a request already holding the old contract keeps it.
+      this.state.binding = {...binding, execution: {...e, initial_effort: value.current_effort, wire_model: value.wire_model}};
+    }
+    this.state.lastFeedback = verdict;
+    this.persist();
+    return {
+      verdict, effortChanged: changed, modelKey: e.model_key,
+      previousEffort: typeof value?.previous_effort === "string" ? value.previous_effort : e.initial_effort,
+      currentEffort: changed ? value.current_effort : e.initial_effort,
+      reasonCode: typeof value?.reason_code === "string" && /^[a-z_]{1,40}$/.test(value.reason_code) ? value.reason_code : null,
+    };
   }
   async close(signal) {
     if (this.busy) throw new ContractError("Wait for the current request to settle.");

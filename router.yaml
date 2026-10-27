@@ -18,7 +18,16 @@ settings:
   pin_ttl_seconds: 21600      # 6 hours
   mode: active                # shadow = decide and log, but send to default_route
   sqlite_path: ~/.jev-router/router.db
-  log_state: false            # true also stores the state sent to Jev
+  # Text capture. With log_state on, the router keeps the state Jev was
+  # shown, each user turn's prompt, the session title and a short summary of
+  # each turn's tool calls, all scrubbed of keys, tokens, private keys and
+  # encoded blobs first, and each cut to turn_text_max_chars (head and tail
+  # kept). false stores no message text at all. scrub_secrets cannot be
+  # turned off; false is a config error. API keys and the Authorization
+  # header are never stored either way.
+  log_state: true
+  scrub_secrets: true
+  turn_text_max_chars: 2048
   decider: jev
   fallback_decider: rules     # used when Jev is slow, down or has no key
   effort_order: [none, low, medium, high, xhigh, max]

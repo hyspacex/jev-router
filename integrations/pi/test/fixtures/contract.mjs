@@ -24,6 +24,9 @@ export function contract(sessionId, overrides = {}) {
       effective_effort: "high",
       adaptation: "off",
       compaction_epoch: 0,
+      quota_steered: false,
+      intended_model: "big",
+      intended_effort: "high",
       ...execution,
     },
     decision: {
