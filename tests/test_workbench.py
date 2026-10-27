@@ -93,6 +93,8 @@ async def test_config_lists_rules_with_lines_and_hits(svc):
         assert body["models"]["big"]["quota_cost"] is None
         assert body["adaptive_effort"]["mode"] == "off"
         assert body["questions"]["difficulty"]["max"] == 2
+        # The running wording, for the Jev sandbox to start from.
+        assert body["questions"]["difficulty"]["instructions"] == svc.config.questions["difficulty"]["instructions"]
         for query in ("window=2h", "nope=1"):
             assert (await call(svc, "GET", "/router/config?" + query)).status_code == 400
         assert (await call(svc, "GET", "/router/config", token="wrong")).status_code == 401
