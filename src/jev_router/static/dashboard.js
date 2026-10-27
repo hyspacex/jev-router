@@ -16,9 +16,12 @@ const PROBLEMS = {
   stream_failed: "Stream failed", fallback: "Fallback admission", low_confidence: "Low-confidence gate",
 };
 const PROBLEM_SHORT = {unknown: "unknown", rejected: "rejected", stream_failed: "stream failed", fallback: "fallback", low_confidence: "low conf"};
-// Feedback verdicts as the owner says them. too_weak: the model needed more.
-const VERDICT_WORDS = {too_weak: "↑ more", too_strong: "↓ less", right: "✓ right", too_slow: "slow"};
-const FEEDBACK_OPTIONS = [["too_weak", "↑ Needed more"], ["too_strong", "↓ Needed less"], ["right", "✓ Right"], ["too_slow", "Too slow"], ["unrated", "Unrated"]];
+// Feedback verdicts, one vocabulary for every view: list badges, the
+// inspector's badge and buttons, the rules legend and the preview marks.
+// The database values (right, too_weak, too_strong, too_slow) never change.
+const VERDICT_WORDS = {right: "✓ good", too_weak: "↑ too weak", too_strong: "↓ too strong", too_slow: "too slow"};
+const FEEDBACK_OPTIONS = [["right", VERDICT_WORDS.right], ["too_weak", VERDICT_WORDS.too_weak], ["too_strong", VERDICT_WORDS.too_strong],
+  ["too_slow", VERDICT_WORDS.too_slow], ["unrated", "unrated"]];
 // Search accepts what the router's `q` filter accepts: up to 80 plain characters.
 const SEARCH_OK = /^[\p{L}\p{N}_ .,:;!?'"()[\]/#@+=&*-]{1,80}$/u;
 
@@ -56,6 +59,7 @@ const S = {
   draft: null,        // the edited text, or null while the editor follows the server
   draftBase: null,    // the config hash the draft was started from
   report: null,       // the last preview's body, or null
+  passed: null,       // the draft text the last Check or Preview accepted; Apply needs it to match
   edres: null,        // what the last check or apply said, shown under the editor
   confirming: false,  // the in-page "apply?" question is open
   busy: null,         // "check" | "preview" | "apply" while one is in flight
@@ -120,10 +124,14 @@ function windowSeg(current, hashOf) {
   }
   return seg;
 }
+// The one badge for a verdict, in its colour: mint good, amber too weak,
+// blue too strong. Null for no verdict.
 function verdictBadge(v) {
   if (!v || !VERDICT_WORDS[v]) return null;
   return el("span", "vbadge v-" + v, VERDICT_WORDS[v]);
 }
+// "1 call", "2 calls".
+function plural(n, one, many) { return int(n) + " " + (Math.round(Number(n)) === 1 ? one : (many || one + "s")); }
 
 // --- formatting ----------------------------------------------------------
 
@@ -668,14 +676,18 @@ function sessionRow(s, i) {
   const turns = el("span", "c4 num mono");
   add(turns, absent(s.turn_count) ? gap() : int(s.turn_count));
 
-  // Model · effort. An adaptive session that moved says from where to where.
+  // Model · effort. A session whose effort moved, by a plan or by feedback,
+  // says from where to where: mint for up, blue for down.
   const mdl = el("span", "c5 mono");
   const [prov, name] = splitModel(s.model);
   add(mdl, prov ? el("span", "faint", prov) : null, show(name));
+  const from = s.admitted_effort || s.effort;
   const now = s.effective_effort || s.effort;
-  if (s.effort && now && now !== s.effort) {
-    const up = LADDER.indexOf(now) > LADDER.indexOf(s.effort);
-    add(mdl, el("span", "eff", " · " + s.effort + " → "), el("span", up ? "eff up" : "eff", now));
+  if (from && now && now !== from) {
+    const a = LADDER.indexOf(from);
+    const b = LADDER.indexOf(now);
+    const dir = a < 0 || b < 0 ? "" : b > a ? " up" : " down";
+    add(mdl, el("span", "eff", " · " + from + " "), el("span", "earr" + dir, "→"), el("span", "eff" + dir, " " + now));
   } else if (now) add(mdl, el("span", "eff", " · " + now));
   const rl = add(el("span", "c6 mono"), show(s.rule));
   const fb = el("span", "c7");
@@ -737,6 +749,8 @@ function ruleWhy(r) {
 
 $("auth").addEventListener("submit", (event) => {
   event.preventDefault();
+  // An empty token is never sent: the router could only answer 401.
+  if (!$("token").value) { fail("Admin token required"); return; }
   S.token = $("token").value;
   $("token").value = "";
   S.listJson = "";
@@ -765,6 +779,7 @@ $("disconnect").addEventListener("click", () => {
   S.draft = null;
   S.draftBase = null;
   S.report = null;
+  S.passed = null;
   S.edres = null;
   S.confirming = false;
   S.hl = null;
@@ -825,4 +840,6 @@ document.addEventListener("keydown", (event) => {
 
 onHash();
 chrome();
-refresh("view");
+// Nothing is fetched before a token exists: the form asks for one first.
+if (S.token) refresh("view");
+else fail("Admin token required");

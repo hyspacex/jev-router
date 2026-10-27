@@ -6,11 +6,12 @@
 // The page writes only on a person's click: feedback, an eval case, a probe.
 
 (() => {
+  // One vocabulary with the list and the Rules view: VERDICT_WORDS in dashboard.js.
   const VERDICT = {
-    right: {badge: "✓ good", button: "✓ good"},
-    too_weak: {badge: "↑ too weak", button: "↑ too weak"},
-    too_strong: {badge: "↓ too strong", button: "↓ too strong"},
-    too_slow: {badge: "too slow", button: null},
+    right: {badge: VERDICT_WORDS.right, button: VERDICT_WORDS.right},
+    too_weak: {badge: VERDICT_WORDS.too_weak, button: VERDICT_WORDS.too_weak},
+    too_strong: {badge: VERDICT_WORDS.too_strong, button: VERDICT_WORDS.too_strong},
+    too_slow: {badge: VERDICT_WORDS.too_slow, button: null},
   };
   const STATUS_WORDS = {planned: "planned", accepted: "sent, not confirmed", confirmed: "confirmed", rejected: "rejected", outcome_unknown: "outcome unknown"};
   // A plan's thresholds, by the question each one is weighed against.

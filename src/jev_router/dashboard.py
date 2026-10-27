@@ -695,6 +695,8 @@ async def audit_sessions(request: Request) -> Response:
         listed = {key: item[key] for key in LISTED_FIELDS}
         listed["effort"] = listed.pop("base_effort")
         listed["rule"] = listed.pop("decision_rule")
+        admitted = row.get("admitted_effort")
+        listed["admitted_effort"] = admitted if _label(admitted) is not None else None
         listed["requests"] = {
             str(k): int(v) for k, v in (row.get("requests") or {}).items()
         }
@@ -977,15 +979,57 @@ def quota_costs(config: RouterConfig | None) -> dict[str, float]:
     }
 
 
-def quota_saved(models: list[Any], costs: dict[str, float]) -> dict[str, Any]:
-    """1 minus the mean quota_cost over the priced rows; unpriced rows apart."""
-    priced = [costs[m] for m in models if isinstance(m, str) and m in costs]
-    total = sum(priced)
+def frontier_baseline(config: RouterConfig | None) -> tuple[str, str, float] | None:
+    """The model "quota saved" is measured against, its provider and its price.
+
+    The priced model with the highest `quota_cost`; on a tie, the one
+    router.yaml names first. None when no model is priced.
+    """
+    costs = quota_costs(config)
+    if config is None or not costs:
+        return None
+    top = max(costs.values())
+    model = next(name for name, cost in costs.items() if cost == top)
+    return model, config.provider_of(model), top
+
+
+def quota_saved(models: list[Any], config: RouterConfig | None) -> dict[str, Any]:
+    """Frontier quota saved: 1 minus what the calls cost the baseline's provider.
+
+    The baseline is `frontier_baseline`: every call sent to that model would
+    cost 1. A call on the baseline's provider costs its model's `quota_cost`
+    over the baseline's; a call on another provider costs 0, since it spent
+    none of that provider's quota. A call on the baseline's provider whose
+    model has no `quota_cost`, or whose model the config does not know, is
+    `unknown` and is left out of `counted`.
+    """
+    baseline = frontier_baseline(config)
+    if baseline is None or config is None or baseline[2] <= 0:
+        return {
+            "saved_rate": None, "baseline_model": None, "provider": None,
+            "counted": 0, "unknown": len(models), "quota_cost_sum": None,
+        }
+    name, provider, top = baseline
+    costs = quota_costs(config)
+    total = 0.0
+    counted = unknown = 0
+    for model in models:
+        if not isinstance(model, str) or model not in config.models:
+            unknown += 1
+        elif config.provider_of(model) != provider:
+            counted += 1
+        elif model in costs:
+            counted += 1
+            total += costs[model] / top
+        else:
+            unknown += 1
     return {
-        "saved_rate": 1 - total / len(priced) if priced else None,
-        "quota_cost_sum": total if priced else None,
-        "priced": len(priced),
-        "unpriced": len(models) - len(priced),
+        "saved_rate": 1 - total / counted if counted else None,
+        "baseline_model": name,
+        "provider": provider,
+        "counted": counted,
+        "unknown": unknown,
+        "quota_cost_sum": total if counted else None,
     }
 
 
@@ -1071,57 +1115,73 @@ def _grouped(pairs: list[tuple[Any, bool]]) -> list[dict[str, Any]]:
     return [{"rule": _label(group), **_rate(hits, n)} for group, (hits, n) in ranked]
 
 
-def _knife_edge(admissions: list[dict[str, Any]], config: RouterConfig | None) -> dict[str, Any]:
-    """Admissions whose answer sits within KNIFE_EDGE of a nearby cutoff.
+def knife_edge_of(
+    row: dict[str, Any], values: dict[str, Any], config: RouterConfig | None
+) -> bool | str:
+    """Whether one admission's answer sits within KNIFE_EDGE of a nearby cutoff.
 
-    Nearby means the rule the admission matched and its two neighbours on the
-    ladder. Only under the running config: a row taken under another config
-    was judged against other cutoffs, so it is counted as unassessed.
+    `values` maps a question id to the number it answered. Nearby means the
+    rule the admission matched and its two neighbours on the ladder. Returns
+    True or False, or, when the row cannot be judged, the reason as a string:
+    `config_changed` (taken under another config, so other cutoffs decided
+    it), `alias_not_in_config` or `no_ladder_rule`. Pure.
     """
     from .policy import FEATURE_CONDITIONS
 
-    edge = assessed = 0
+    recorded = row.get("config_hash")
+    if config is None or not recorded or recorded != config.config_hash:
+        return "config_changed"
+    alias_cfg = config.aliases.get(str(row.get("alias") or ""))
+    if alias_cfg is None:
+        return "alias_not_in_config"
+    rules = config.ruleset_for(alias_cfg).rules
+    names = [rule.name for rule in rules]
+    if row.get("rule") not in names:
+        # A fallback, the confidence gate or the default: no cutoff decided it.
+        return "no_ladder_rule"
+    at = names.index(row["rule"])
+    for rule in rules[max(0, at - 1): at + 2]:
+        for key, cond in rule.when.items():
+            if key in FEATURE_CONDITIONS or not isinstance(cond, dict):
+                continue
+            value = values.get(key)
+            if not _is_number(value):
+                continue
+            for op in ("gte", "lte"):
+                operand = cond.get(op)
+                if _is_number(operand) and abs(value - operand) <= KNIFE_EDGE + 1e-9:
+                    return True
+    return False
+
+
+def knife_edge_rate(judged: list[bool | str]) -> dict[str, Any]:
+    """`knife_edge_of` results as a rate, the unjudged counted by reason."""
     unassessed: dict[str, int] = {}
-
-    def skip(why: str) -> None:
-        unassessed[why] = unassessed.get(why, 0) + 1
-
-    for row in admissions:
-        recorded = row.get("config_hash")
-        if config is None or not recorded or recorded != config.config_hash:
-            skip("config_changed")
-            continue
-        alias_cfg = config.aliases.get(str(row.get("alias") or ""))
-        if alias_cfg is None:
-            skip("alias_not_in_config")
-            continue
-        rules = config.ruleset_for(alias_cfg).rules
-        names = [rule.name for rule in rules]
-        if row.get("rule") not in names:
-            # A fallback, the confidence gate or the default: no cutoff decided it.
-            skip("no_ladder_rule")
-            continue
-        at = names.index(row["rule"])
-        near = False
-        for rule in rules[max(0, at - 1): at + 2]:
-            for key, cond in rule.when.items():
-                if key in FEATURE_CONDITIONS or not isinstance(cond, dict):
-                    continue
-                value = _value(row, key)
-                if not _is_number(value):
-                    continue
-                for op in ("gte", "lte"):
-                    operand = cond.get(op)
-                    if _is_number(operand) and abs(value - operand) <= KNIFE_EDGE + 1e-9:
-                        near = True
-        assessed += 1
-        edge += int(near)
+    for result in judged:
+        if isinstance(result, str):
+            unassessed[result] = unassessed.get(result, 0) + 1
+    assessed = [r for r in judged if isinstance(r, bool)]
     return {
         "margin": KNIFE_EDGE,
-        **_rate(edge, assessed),
+        **_rate(sum(assessed), len(assessed)),
         "unassessed": sum(unassessed.values()),
         "unassessed_by_reason": unassessed,
     }
+
+
+def _knife_edge(admissions: list[dict[str, Any]], config: RouterConfig | None) -> dict[str, Any]:
+    """Admissions whose answer sits within KNIFE_EDGE of a nearby cutoff.
+
+    Only under the running config: a row taken under another config was
+    judged against other cutoffs, so it is counted as unassessed.
+    """
+    judged = []
+    for row in admissions:
+        values = row.get("values") if isinstance(row.get("values"), dict) else {}
+        judged.append(knife_edge_of(
+            row, {qid: _value(row, qid) for qid in values}, config
+        ))
+    return knife_edge_rate(judged)
 
 
 def verdicts_by_admission(
@@ -1260,7 +1320,7 @@ def _efficiency(executions: list[dict[str, Any]], config: RouterConfig | None) -
 
     ranked = sorted(by_model.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:TOP]
     return {
-        "quota_saved": quota_saved([r.get("model") for r in executions], quota_costs(config)),
+        "quota_saved": quota_saved([r.get("model") for r in executions], config),
         "cache": {
             **_cache(executions),
             "by_model": [{"model": model or None, **_cache(rows)} for model, rows in ranked],
