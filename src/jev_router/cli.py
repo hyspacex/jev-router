@@ -106,8 +106,16 @@ def cmd_check_config(args: argparse.Namespace) -> int:
         source = "none"
         if quota is not None:
             source = f"{quota.source} ({'enabled' if quota.enabled else 'disabled'})"
+            if quota.codexbar_provider:
+                source = f"{quota.source}:{quota.codexbar_provider} " + source.split(" ", 1)[1]
         models = [m for m in config.models if config.provider_of(m) == name]
         print(f"  provider {name}: quota={source} models=[{', '.join(models)}]")
+    bar = config.codexbar
+    print(
+        f"  codexbar: {'enabled' if bar.enabled else 'disabled'}"
+        f" tracked={'on' if bar.enabled and bar.include_external_subscriptions else 'off'}"
+        f" cli={bar.cli_binary or '-'}"
+    )
     for name, lane in config.routes.items():
         rungs = " -> ".join(
             f"{e.model}({e.effort or '-'})" + ("*" if e.equivalent else "")
@@ -221,11 +229,13 @@ def cmd_quota(args: argparse.Namespace) -> int:
     async def run() -> None:
         for provider in list(monitor.sources):
             await monitor.poll_once(provider)
+        await monitor.poll_tracked()
 
     if args.poll:
         asyncio.run(run())
 
     report = monitor.report()
+    live = monitor.all_snapshots()
     report["breaker_pressure"] = {
         name: round(breakers.pressure(name), 4) for name in config.provider_names()
     }
@@ -234,9 +244,11 @@ def cmd_quota(args: argparse.Namespace) -> int:
         for k, v in merge_pressures(config, monitor.pressures(), breakers).items()
     }
     if args.json:
+        report["subscriptions"] = {"routed": live["routed"], "tracked": live["tracked"]}
         print(json.dumps(report, indent=2, default=str))
         return 0
 
+    steering = {row["provider"]: row for row in live["routed"]}
     print(f"quota routing: {'on' if report['enabled'] else 'off'}")
     print(f"demote above:  {report['demote_above']}")
     if not args.poll:
@@ -250,6 +262,12 @@ def cmd_quota(args: argparse.Namespace) -> int:
             f"{'enabled' if row['enabled'] else 'disabled'}"
         )
         print(f"    pressure:  {row['pressure']:.2f}  ({row['reason']})")
+        live_row = steering.get(name) or {}
+        if live_row.get("via") or live_row.get("steering"):
+            print(
+                f"    steering:  {live_row.get('steering') or '-'}"
+                f"   via: {live_row.get('via') or '-'}"
+            )
         print(
             f"    status:    {row.get('status', 'unknown')}"
             + (
@@ -287,7 +305,39 @@ def cmd_quota(args: argparse.Namespace) -> int:
         )
         if row["last_error"]:
             print(f"    error:     {row['last_error']}")
+    if live["tracked"]:
+        print("\ntracked subscriptions (CodexBar, never routed):")
+    for sub in live["tracked"]:
+        age = sub["age_seconds"]
+        print(
+            f"\n  {sub['id']}: status={sub['status']} via={sub['via'] or '-'}"
+            f" age={'-' if age is None else f'{age:.0f}s'}"
+        )
+        for window in sub["windows"]:
+            print("    " + _window_line(window))
+        for plan in sub["plans"]:
+            used = plan["used_percent"]
+            print(f"    plan {plan['title'] or '-'}: used {'-' if used is None else f'{used:.1f}%'}")
+        tokens = sub["tokens"] or {}
+        if tokens:
+            cost = tokens.get("last_30_days_cost_usd")
+            count = tokens.get("last_30_days_tokens")
+            print(
+                f"    30 days:   tokens={'-' if count is None else f'{count:.0f}'}"
+                f"  cost={'-' if cost is None else f'{cost:.2f} {sub["currency"] or ""}'.rstrip()}"
+            )
     return 0
+
+
+def _window_line(window: dict) -> str:
+    used = window.get("used_percent")
+    expected = window.get("expected_percent")
+    delta = window.get("pace_delta")
+    return (
+        f"window {window.get('name') or '-'}: used {'-' if used is None else f'{used:.1f}%'}"
+        f"  expected {'-' if expected is None else f'{expected:.1f}%'}"
+        f"  pace {'-' if delta is None else f'{delta:+.1f}'}"
+    )
 
 
 def cmd_explain(args: argparse.Namespace) -> int:

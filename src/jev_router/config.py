@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -124,8 +125,68 @@ class QuotaSourceCfg(Base):
     enabled: bool = False
     poll_seconds: float = 300.0
     stale_after_seconds: float = 1800.0
+    # For `source: codexbar` only: the CodexBar provider id this provider is
+    # billed against, such as `codex` or `ollama`.
+    codexbar_provider: str | None = None
     # Passed to the source verbatim. Its shape is the source's business.
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _codexbar_link(self) -> QuotaSourceCfg:
+        if self.source == "codexbar":
+            if not self.codexbar_provider:
+                raise ValueError("source 'codexbar' needs codexbar_provider (e.g. codex)")
+            if not CODEXBAR_ID.fullmatch(self.codexbar_provider):
+                raise ValueError(
+                    f"codexbar_provider {self.codexbar_provider!r} is not a CodexBar "
+                    "provider id (lowercase letters, digits, - and _)"
+                )
+        elif self.codexbar_provider is not None:
+            raise ValueError(
+                f"codexbar_provider is only read by source 'codexbar', not {self.source!r}"
+            )
+        return self
+
+
+# A CodexBar provider id, as CodexBar writes it: `codex`, `claude`, `ollama`.
+CODEXBAR_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+
+
+class CodexBarCfg(Base):
+    """Where CodexBar keeps its numbers, and whether to read them at all.
+
+    CodexBar.app writes every subscription it watches to one small JSON file
+    about once a minute. A provider with `quota.source: codexbar` reads its
+    windows from there. When the file is missing or older than
+    `cli_fallback_after_seconds`, the source runs the CodexBar CLI instead,
+    in the background, at most once per that many seconds.
+
+    With `enabled: true` and `include_external_subscriptions: true`, every
+    subscription CodexBar watches that no provider links to is also read and
+    shown as a tracked subscription. A tracked subscription never produces
+    pressure and never touches routing.
+
+    `enabled: false` is the shipped default: nothing here is read or run.
+    """
+
+    enabled: bool = False
+    # Unset means CodexBar's default group container, then any
+    # `*.com.steipete.codexbar` container that has the file.
+    snapshot_path: str | None = None
+    # Read only for the ids of the providers it enables. Nothing else in it
+    # is kept: the file can hold API keys.
+    config_path: str = "~/.codexbar/config.json"
+    # An empty string turns the CLI fallback off.
+    cli_binary: str = "codexbar"
+    cli_timeout_ms: int = Field(default=8000, gt=0)
+    # How often tracked subscriptions are read. A linked provider polls on
+    # its own `quota.poll_seconds`.
+    poll_interval_seconds: float = Field(default=60.0, gt=0)
+    cli_fallback_after_seconds: float = Field(default=300.0, ge=0)
+    # A tracked subscription older than this reads as stale. A linked
+    # provider uses its own `quota.stale_after_seconds`.
+    stale_after_seconds: float = Field(default=1800.0, gt=0)
+    include_external_subscriptions: bool = True
 
 
 class ProviderCfg(Base):
@@ -661,6 +722,7 @@ class RouterConfig(Base):
     aliases: dict[str, AliasCfg] = Field(default_factory=dict)
     clients: dict[str, ClientCfg] = Field(default_factory=dict)
     quota_policy: QuotaPolicyCfg = Field(default_factory=QuotaPolicyCfg)
+    codexbar: CodexBarCfg = Field(default_factory=CodexBarCfg)
     session_routing: SessionRoutingCfg = Field(default_factory=SessionRoutingCfg)
     semantic_policy: SemanticPolicyCfg = Field(default_factory=SemanticPolicyCfg)
     quality_lanes: dict[str, QualityLaneCfg] = Field(default_factory=dict)
@@ -1007,6 +1069,7 @@ class RouterConfig(Base):
                 )
             problems.extend(self._check_envelope(alias, acfg))
 
+        problems.extend(self._check_codexbar())
         problems.extend(self._check_semantic_policy())
         problems.extend(self._check_lanes(check_pair, check_route))
         problems.extend(self._check_adaptive_effort())
@@ -1023,6 +1086,33 @@ class RouterConfig(Base):
         if problems:
             raise ValueError("\n".join(f"- {p}" for p in problems))
         return self
+
+    def _check_codexbar(self) -> list[str]:
+        """An enabled CodexBar link needs the codexbar block on, and one owner.
+
+        Two providers reading the same CodexBar subscription would count one
+        allowance twice, so a CodexBar id may be linked once.
+        """
+        problems: list[str] = []
+        owners: dict[str, str] = {}
+        for name, pcfg in self.providers.items():
+            quota = pcfg.quota
+            if quota is None or quota.source != "codexbar" or not quota.enabled:
+                continue
+            if not self.codexbar.enabled:
+                problems.append(
+                    f"providers.{name}.quota: an enabled 'codexbar' source needs "
+                    "codexbar.enabled: true"
+                )
+            cid = quota.codexbar_provider or ""
+            if cid in owners:
+                problems.append(
+                    f"providers.{name}.quota.codexbar_provider: {cid!r} is already "
+                    f"linked to providers.{owners[cid]}"
+                )
+            else:
+                owners[cid] = name
+        return problems
 
     def _check_semantic_policy(self) -> list[str]:
         """Every named question exists, and no question is both sets at once."""

@@ -24,8 +24,8 @@ install runs no subprocess.
 
 ### A quota source
 
-Sources are registered by name, like deciders. Three ship: `command`, `static`
-and `none`.
+Sources are registered by name, like deciders. Four ship: `codexbar`,
+`command`, `static` and `none`.
 
 ```yaml
 providers:
@@ -108,6 +108,49 @@ providers:
 
 `static` takes the numbers straight from `config` and is for tests and demos.
 `none` reports nothing.
+
+### The CodexBar source
+
+CodexBar.app writes every subscription it watches to
+`~/Library/Group Containers/<team>.com.steipete.codexbar/widget-snapshot.json`
+about once a minute, web-cookie providers such as Ollama included. The
+`codexbar` source reads one subscription out of that file:
+
+```yaml
+codexbar:
+  enabled: true
+  cli_binary: codexbar              # "" turns the CLI fallback off
+  cli_fallback_after_seconds: 300
+  include_external_subscriptions: true
+
+providers:
+  openai:
+    quota:
+      source: codexbar
+      codexbar_provider: codex      # CodexBar's id for the subscription
+      enabled: true
+      poll_seconds: 60
+      stale_after_seconds: 900
+```
+
+Each window CodexBar reports (`primary`, `secondary`, `tertiary`) becomes a
+window record of its own, so pressure, exhaustion and pace work exactly as
+they do for a `command` source. A reading is dated by when CodexBar measured
+it, not when the file was read.
+
+When the file is missing, older than `cli_fallback_after_seconds`, or has no
+entry for the subscription, the source runs `codexbar usage --provider <id>
+--json-only` through the `command` machinery, at most once per that many
+seconds. A missing file with no CLI installed is `unknown`; a CLI that fails
+is an `error`. Both are pressure 0.
+
+An enabled `codexbar` source needs `codexbar.enabled: true`, and a CodexBar id
+may be linked to one provider only. With `include_external_subscriptions`,
+every subscription CodexBar watches that no enabled provider links to is read
+as well, every `poll_interval_seconds`, and shown on the dashboard overview
+under `subscriptions.tracked`. Those never produce pressure. CodexBar's own
+`config_path` is read for provider ids and `enabled` flags only; it can hold
+API keys, and nothing else in it is kept.
 
 To add a source, write a class with `async def fetch() -> QuotaSnapshot` in
 `src/jev_router/quota.py` and register a factory with

@@ -20,15 +20,27 @@ Three rules hold this together:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import glob
 import json
 import logging
 import math
+import os
+import re
+import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
-from .config import QuotaPolicyCfg, QuotaSourceCfg, RouterConfig
+from .config import (
+    CODEXBAR_ID,
+    CodexBarCfg,
+    QuotaPolicyCfg,
+    QuotaSourceCfg,
+    RouterConfig,
+)
 
 log = logging.getLogger("jev_router.quota")
 
@@ -52,6 +64,10 @@ class QuotaWindow:
     expected_used_percent: float | None = None
     window_minutes: float | None = None
     resets_at: float | None = None  # epoch seconds
+    # A short reset phrase another program wrote, kept only when it passes
+    # `foreign_label`. Shown on the live overview; never stored, so it is
+    # left out of `to_dict`.
+    reset_description: str = field(default="", compare=False)
 
     @property
     def percent(self) -> float | None:
@@ -170,13 +186,19 @@ def register_quota_source(name: str) -> Callable[[QuotaSourceFactory], QuotaSour
     return deco
 
 
-def build_quota_source(provider: str, cfg: QuotaSourceCfg) -> QuotaSource:
+def build_quota_source(
+    provider: str, cfg: QuotaSourceCfg, root: RouterConfig | None = None
+) -> QuotaSource:
+    """Build one provider's source. A factory marked `takes_root` also gets
+    the whole config, for settings that live outside the provider block."""
     try:
         factory = QUOTA_SOURCES[cfg.source]
     except KeyError:
         raise KeyError(
             f"unknown quota source {cfg.source!r} (known: {', '.join(sorted(QUOTA_SOURCES))})"
         ) from None
+    if root is not None and getattr(factory, "takes_root", False):
+        return factory(provider, cfg, root)  # type: ignore[call-arg]
     return factory(provider, cfg)
 
 
@@ -475,6 +497,431 @@ def _make_command(provider: str, cfg: QuotaSourceCfg) -> QuotaSource:
     return CommandSource(provider, cfg)
 
 
+# --- CodexBar -----------------------------------------------------------
+#
+# CodexBar.app watches coding subscriptions and writes all of them to one
+# small JSON file about once a minute. Reading that file is tier 1. When the
+# file is missing or old, the CodexBar CLI is tier 2, run through
+# `CommandSource` exactly as a `command` source would run it.
+#
+# Only numbers and a few short labels come out of either. CodexBar's files
+# also hold account emails, API keys and long free text; none of that is
+# read into anything the router keeps.
+
+CODEXBAR_SLOTS = ("primary", "secondary", "tertiary")
+DEFAULT_SNAPSHOT_PATH = (
+    "~/Library/Group Containers/Y5PE65HELJ.com.steipete.codexbar/widget-snapshot.json"
+)
+SNAPSHOT_GLOB = "~/Library/Group Containers/*.com.steipete.codexbar/widget-snapshot.json"
+MAX_SNAPSHOT_BYTES = 1_000_000
+MAX_ROWS = 8
+
+# A string from another program passes only when it reads like a short
+# label: letters, digits, spaces and a little punctuation. Anything longer or
+# stranger is dropped, not trimmed.
+_FOREIGN_LABEL = re.compile(r"[A-Za-z0-9 ,.:()/_+-]{1,48}")
+_CURRENCY = re.compile(r"[A-Z]{3}")
+
+TOKEN_FIELDS = (
+    ("session_tokens", "sessionTokens"),
+    ("session_cost_usd", "sessionCostUSD"),
+    ("last_30_days_tokens", "last30DaysTokens"),
+    ("last_30_days_cost_usd", "last30DaysCostUSD"),
+)
+
+
+def foreign_label(value: Any) -> str:
+    """The value when it is a short plain label, else an empty string."""
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(value.replace(" ", " ").replace(" ", " ").split())
+    return text if _FOREIGN_LABEL.fullmatch(text) else ""
+
+
+def _percent(value: Any) -> float | None:
+    number = _number(value)
+    return None if number is None else max(0.0, min(100.0, number))
+
+
+@dataclass(frozen=True)
+class CodexBarEntry:
+    """One subscription out of CodexBar's snapshot. Numbers and labels only."""
+
+    provider: str
+    updated_at: float | None = None
+    windows: tuple[QuotaWindow, ...] = ()
+    # (title, used percent) per usage row: the plan's windows, or its pools.
+    rows: tuple[tuple[str, float | None], ...] = ()
+    # (name, number) for each of TOKEN_FIELDS, empty when CodexBar has none.
+    tokens: tuple[tuple[str, float | None], ...] = ()
+    currency: str = ""
+    credits_remaining: float | None = None
+
+
+@dataclass(frozen=True)
+class WidgetSnapshot:
+    """What one read of `widget-snapshot.json` found."""
+
+    generated_at: float | None
+    enabled: tuple[str, ...]
+    entries: dict[str, CodexBarEntry]
+
+
+def parse_codexbar_entry(raw: Any) -> CodexBarEntry | None:
+    if not isinstance(raw, dict):
+        return None
+    provider = raw.get("provider")
+    if not isinstance(provider, str) or not CODEXBAR_ID.fullmatch(provider):
+        return None
+    windows = []
+    for slot in CODEXBAR_SLOTS:
+        spec = raw.get(slot)
+        if not isinstance(spec, dict):
+            continue
+        used = _percent(spec.get("usedPercent"))
+        if used is None:
+            continue
+        windows.append(
+            QuotaWindow(
+                name=slot,
+                used_percent=used,
+                window_minutes=_number(spec.get("windowMinutes")),
+                resets_at=parse_timestamp(spec.get("resetsAt")),
+                reset_description=foreign_label(spec.get("resetDescription")),
+            )
+        )
+    rows: list[tuple[str, float | None]] = []
+    for row in raw.get("usageRows") or []:
+        if not isinstance(row, dict) or len(rows) >= MAX_ROWS:
+            continue
+        left = _percent(row.get("percentLeft"))
+        window = row.get("window") if isinstance(row.get("window"), dict) else {}
+        used = 100.0 - left if left is not None else _percent(window.get("usedPercent"))
+        title = foreign_label(row.get("title"))
+        if title or used is not None:
+            rows.append((title, used))
+    usage = raw.get("tokenUsage") if isinstance(raw.get("tokenUsage"), dict) else {}
+    tokens = tuple((name, _number(usage.get(key))) for name, key in TOKEN_FIELDS)
+    currency = usage.get("currencyCode")
+    return CodexBarEntry(
+        provider=provider,
+        updated_at=parse_timestamp(raw.get("updatedAt")),
+        windows=tuple(windows),
+        rows=tuple(rows),
+        tokens=tokens if usage else (),
+        currency=currency if isinstance(currency, str) and _CURRENCY.fullmatch(currency) else "",
+        credits_remaining=_number(raw.get("creditsRemaining")),
+    )
+
+
+def parse_widget_snapshot(data: Any, mtime: float | None = None) -> WidgetSnapshot | None:
+    """The snapshot's subscriptions by id, or None when it is not that file."""
+    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+        return None
+    entries: dict[str, CodexBarEntry] = {}
+    for raw in data["entries"]:
+        entry = parse_codexbar_entry(raw)
+        if entry is not None and entry.provider not in entries:
+            entries[entry.provider] = entry
+    enabled = tuple(
+        dict.fromkeys(
+            p for p in data.get("enabledProviders") or []
+            if isinstance(p, str) and CODEXBAR_ID.fullmatch(p)
+        )
+    )
+    generated = parse_timestamp(data.get("generatedAt"))
+    return WidgetSnapshot(
+        generated_at=generated if generated is not None else mtime,
+        enabled=enabled,
+        entries=entries,
+    )
+
+
+def snapshot_candidates(cfg: CodexBarCfg) -> list[Path]:
+    """Where to look for the snapshot. A configured path is the only place.
+    Without one: CodexBar's default container, then any other CodexBar
+    group container that has the file."""
+    if cfg.snapshot_path:
+        return [Path(os.path.expanduser(cfg.snapshot_path))]
+    first = Path(os.path.expanduser(DEFAULT_SNAPSHOT_PATH))
+    found = [Path(p) for p in sorted(glob.glob(os.path.expanduser(SNAPSHOT_GLOB)))]
+    return [first, *(p for p in found if p != first)]
+
+
+def read_widget_snapshot(cfg: CodexBarCfg) -> tuple[WidgetSnapshot | None, str]:
+    """Read and parse the snapshot. Never raises: a problem comes back as a
+    short reason, `missing` when there is no file to read."""
+    for path in snapshot_candidates(cfg):
+        try:
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            if stat.st_size > MAX_SNAPSHOT_BYTES:
+                return None, "the snapshot is too large"
+            data = json.loads(path.read_bytes().decode("utf-8", "replace"))
+        except (OSError, ValueError):
+            return None, "the snapshot could not be read"
+        parsed = parse_widget_snapshot(data, mtime=stat.st_mtime)
+        if parsed is None:
+            return None, "the snapshot is not a CodexBar widget snapshot"
+        return parsed, ""
+    return None, "missing"
+
+
+def read_codexbar_enabled(cfg: CodexBarCfg) -> tuple[str, ...] | None:
+    """The provider ids CodexBar's own config enables, or None when it cannot
+    be read. Only `id` and `enabled` are looked at; the file can hold keys."""
+    path = Path(os.path.expanduser(cfg.config_path))
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
+            return None
+        data = json.loads(path.read_bytes().decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        return None
+    providers = data.get("providers") if isinstance(data, dict) else None
+    if not isinstance(providers, list):
+        return None
+    out = []
+    for item in providers:
+        if not isinstance(item, dict) or item.get("enabled") is not True:
+            continue
+        pid = item.get("id")
+        if isinstance(pid, str) and CODEXBAR_ID.fullmatch(pid):
+            out.append(pid)
+    return tuple(dict.fromkeys(out))
+
+
+def entry_snapshot(
+    provider: str, entry: CodexBarEntry, widget: WidgetSnapshot, now: float
+) -> QuotaSnapshot:
+    """A CodexBar entry as the snapshot every other source produces.
+
+    `fetched_at` is when CodexBar measured, not when the file was read, so a
+    reading CodexBar has stopped refreshing ages out like any other. An entry
+    with no usage figure is unknown, not an error: nobody measured.
+    """
+    measured = entry.updated_at if entry.updated_at is not None else widget.generated_at
+    fetched_at = now if measured is None else min(measured, now)
+    if not entry.windows:
+        return QuotaSnapshot(provider=provider, fetched_at=fetched_at)
+    return dataclasses.replace(
+        snapshot_from_windows(provider, entry.windows, fetched_at), fetched_at=fetched_at
+    )
+
+
+def cli_windows() -> list[dict[str, str]]:
+    """Where the CodexBar CLI puts each window, as `command` source paths."""
+    return [
+        {
+            "name": slot,
+            "used_percent": f"0.usage.{slot}.usedPercent",
+            "expected_used_percent": f"0.pace.{slot}.expectedUsedPercent",
+            "window_minutes": f"0.usage.{slot}.windowMinutes",
+            "resets_at": f"0.usage.{slot}.resetsAt",
+        }
+        for slot in CODEXBAR_SLOTS
+    ]
+
+
+class CodexBarSource:
+    """One CodexBar subscription: the snapshot file first, the CLI second.
+
+    The CLI runs only when the file is missing, older than
+    `cli_fallback_after_seconds`, or has no entry for this subscription, and
+    at most once per that many seconds. When neither tier has numbers the
+    reading is unknown (nothing to read) or an error (something broke), and
+    both mean pressure 0.
+    """
+
+    name = "codexbar"
+
+    def __init__(
+        self,
+        provider: str,
+        codexbar_provider: str,
+        settings: CodexBarCfg | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self.provider = provider
+        self.codexbar_provider = codexbar_provider
+        self.settings = settings or CodexBarCfg()
+        self.clock = clock
+        # Which tier the last reading came from: `snapshot`, `cli` or None.
+        self.via: str | None = None
+        # The last snapshot entry, for the rows and token rollups a tracked
+        # subscription shows. The CLI does not report those.
+        self.entry: CodexBarEntry | None = None
+        self.cli: CommandSource | None = None
+        binary = self.settings.cli_binary.strip()
+        if binary:
+            self.cli = CommandSource(
+                provider,
+                QuotaSourceCfg(
+                    source="command",
+                    enabled=True,
+                    config={
+                        "argv": [binary, "usage", "--provider", codexbar_provider, "--json-only"],
+                        "timeout_ms": self.settings.cli_timeout_ms,
+                        "windows": cli_windows(),
+                    },
+                ),
+            )
+        self._cli_at: float | None = None
+        self._cli_last: QuotaSnapshot | None = None
+
+    async def fetch(self) -> QuotaSnapshot:
+        widget, why = read_widget_snapshot(self.settings)
+        return await self.fetch_from(widget, why)
+
+    async def fetch_from(self, widget: WidgetSnapshot | None, why: str = "") -> QuotaSnapshot:
+        """One reading, from a snapshot the caller already read."""
+        now = self.clock()
+        entry = widget.entries.get(self.codexbar_provider) if widget else None
+        self.entry = entry
+        tier1 = entry_snapshot(self.provider, entry, widget, now) if entry and widget else None
+        file_age = (
+            None if widget is None or widget.generated_at is None
+            else now - widget.generated_at
+        )
+        current = file_age is not None and file_age <= self.settings.cli_fallback_after_seconds
+        if tier1 is not None and current:
+            self.via = "snapshot"
+            return tier1
+        cli = await self._run_cli(now)
+        if cli is not None and cli.ok:
+            self.via = "cli"
+            return cli
+        if tier1 is not None:
+            # Old, but what CodexBar last saw. Its own age decides whether it
+            # is still fresh enough to count.
+            self.via = "snapshot"
+            return tier1
+        self.via = None
+        if cli is not None:
+            return cli
+        if why and why != "missing":
+            return QuotaSnapshot(provider=self.provider, fetched_at=now, error=why)
+        return QuotaSnapshot(provider=self.provider, fetched_at=now)
+
+    async def _run_cli(self, now: float) -> QuotaSnapshot | None:
+        """The CLI's reading, or None when there is no CLI to run.
+
+        A CLI that is not installed is the same as no CLI: nothing measured,
+        nothing broken. A recent result is reused rather than run again.
+        """
+        if self.cli is None or shutil.which(self.cli.argv[0]) is None:
+            return None
+        if (
+            self._cli_at is not None
+            and now - self._cli_at < self.settings.cli_fallback_after_seconds
+        ):
+            return self._cli_last
+        self._cli_at = now
+        snapshot = await self.cli.fetch()
+        if snapshot.windows:
+            # The CLI names every slot; keep only the windows it filled in.
+            present = tuple(w for w in snapshot.windows if w.percent is not None)
+            snapshot = dataclasses.replace(snapshot, windows=present)
+        self._cli_last = snapshot
+        return snapshot
+
+
+def _make_codexbar(
+    provider: str, cfg: QuotaSourceCfg, root: RouterConfig | None = None
+) -> QuotaSource:
+    return CodexBarSource(
+        provider,
+        cfg.codexbar_provider or "",
+        root.codexbar if root is not None else None,
+    )
+
+
+_make_codexbar.takes_root = True  # type: ignore[attr-defined]
+register_quota_source("codexbar")(_make_codexbar)
+
+
+# --- what a reader is shown ---------------------------------------------
+
+STEERING_LABELS = ("calm", "elevated", "demoting", "exhausted")
+
+
+def steering_label(
+    pressure: float,
+    status: str,
+    exhausted: bool,
+    knobs: QuotaPolicyCfg,
+    enabled: bool = True,
+) -> str | None:
+    """What quota is doing to routing for this provider right now. Pure.
+
+    `exhausted` is a fresh window at or above `exhausted_at`. `demoting` is
+    pressure above `demote_above`, where route entries on this provider move
+    back. `elevated` is any pressure up to that: ahead of pace, not yet
+    acting. `calm` is pressure 0 on a fresh reading. A reading that is not
+    fresh, or quota routing that is off, steers nothing and gets no label:
+    unknown is never shown as calm.
+    """
+    if not knobs.enabled or not enabled or status != FRESH:
+        return None
+    if exhausted:
+        return "exhausted"
+    if pressure > knobs.demote_above:
+        return "demoting"
+    if pressure > 0:
+        return "elevated"
+    return "calm"
+
+
+def _round(value: float | None, digits: int = 2) -> float | None:
+    return None if value is None else round(value, digits)
+
+
+def window_view(window: QuotaWindow, now: float) -> dict[str, Any]:
+    """One window with its pace: where it is, where it should be, and the gap."""
+    used = window.percent
+    expected = window_expected_percent(window, now)
+    return {
+        "name": window.name,
+        "used_percent": _round(used),
+        "expected_percent": _round(expected),
+        "pace_delta": None if used is None or expected is None else round(used - expected, 2),
+        "resets_at": window.resets_at,
+        "window_minutes": window.window_minutes,
+        "reset_description": window.reset_description or None,
+    }
+
+
+def snapshot_windows(snapshot: QuotaSnapshot | None) -> tuple[QuotaWindow, ...]:
+    """The snapshot's windows, or its one summary window when it has no list."""
+    if snapshot is None:
+        return ()
+    if snapshot.windows:
+        return snapshot.windows
+    if snapshot.used_percent is None:
+        return ()
+    return (
+        QuotaWindow(
+            name="usage",
+            used_percent=snapshot.used_percent,
+            expected_used_percent=snapshot.expected_used_percent,
+            window_minutes=snapshot.window_minutes,
+            resets_at=snapshot.resets_at,
+        ),
+    )
+
+
+@dataclass
+class TrackedSubscription:
+    """A CodexBar subscription no provider links to. Shown, never routed."""
+
+    id: str
+    source: CodexBarSource
+    snapshot: QuotaSnapshot | None = None
+    polls: int = 0
+    errors: int = 0
+    last_error: str = ""
+
+
 # --- pressure, a pure function ------------------------------------------
 
 
@@ -649,6 +1096,11 @@ class QuotaMonitor:
     """Polls every enabled source and keeps the last snapshot of each.
 
     `pressures()` is an in-memory read. It is safe to call on a request path.
+    So is `all_snapshots()`, which is what the overview shows.
+
+    With `codexbar.enabled` and `include_external_subscriptions`, it also
+    reads every CodexBar subscription no provider links to. Those are kept
+    apart in `tracked` and never reach `pressures()` or `exhausted()`.
     """
 
     def __init__(self, config: RouterConfig, clock: Callable[[], float] = time.time) -> None:
@@ -666,11 +1118,78 @@ class QuotaMonitor:
                 state.source_name = cfg.source
                 if state.enabled:
                     try:
-                        self.sources[provider] = build_quota_source(provider, cfg)
+                        source = build_quota_source(provider, cfg, config)
+                        if isinstance(source, CodexBarSource):
+                            source.clock = clock
+                        self.sources[provider] = source
                     except Exception as exc:  # noqa: BLE001 - never fail startup
                         state.enabled = False
                         state.last_error = f"could not build the source: {exc}"
             self.states[provider] = state
+        self.codexbar = config.codexbar
+        self.tracked: dict[str, TrackedSubscription] = {}
+
+    # --- CodexBar subscriptions no provider links to -------------------
+
+    @property
+    def tracking(self) -> bool:
+        return self.codexbar.enabled and self.codexbar.include_external_subscriptions
+
+    def linked_codexbar_ids(self) -> set[str]:
+        """CodexBar ids an enabled provider reads. These are routed, not tracked."""
+        out = set()
+        for name, state in self.states.items():
+            cfg = self.config.quota_cfg(name)
+            if state.enabled and cfg is not None and cfg.source == "codexbar":
+                out.add(cfg.codexbar_provider or "")
+        return out
+
+    async def poll_tracked(self) -> dict[str, TrackedSubscription]:
+        """One read of every tracked subscription. Never raises.
+
+        The list is CodexBar's enabled providers, from the snapshot and, when
+        it can be read, CodexBar's own config: both have to agree when both
+        are there. A subscription CodexBar stops watching is dropped.
+        """
+        if not self.tracking:
+            return self.tracked
+        try:
+            widget, why = read_widget_snapshot(self.codexbar)
+            from_config = read_codexbar_enabled(self.codexbar)
+            ids: list[str]
+            if widget is not None and from_config is not None:
+                ids = [i for i in widget.enabled if i in from_config]
+            elif widget is not None:
+                ids = list(widget.enabled)
+            else:
+                ids = list(from_config or ())
+            linked = self.linked_codexbar_ids()
+            wanted = [i for i in ids if i not in linked]
+            self.tracked = {
+                i: self.tracked.get(i)
+                or TrackedSubscription(
+                    id=i,
+                    source=CodexBarSource(i, i, self.codexbar, clock=self.clock),
+                )
+                for i in wanted
+            }
+            for sub in self.tracked.values():
+                try:
+                    snapshot = await sub.source.fetch_from(widget, why)
+                except Exception as exc:  # noqa: BLE001 - a poll may never raise
+                    snapshot = QuotaSnapshot(
+                        provider=sub.id,
+                        fetched_at=self.clock(),
+                        error=f"the source raised {type(exc).__name__}",
+                    )
+                sub.polls += 1
+                sub.snapshot = snapshot
+                if snapshot.error:
+                    sub.errors += 1
+                    sub.last_error = snapshot.error
+        except Exception:  # noqa: BLE001 - observability may never take the router down
+            log.exception("could not read the CodexBar subscriptions")
+        return self.tracked
 
     # --- reading -------------------------------------------------------
 
@@ -736,6 +1255,90 @@ class QuotaMonitor:
             "providers": providers,
         }
 
+    def all_snapshots(self, now: float | None = None) -> dict[str, Any]:
+        """Every routed provider and every tracked subscription, as of now.
+
+        An in-memory read, like `pressures()`: nothing is polled and nothing
+        is run. Each window carries its own pace: used, expected from its own
+        length and reset, and the difference, which is None when either side
+        is unknown. `steering` says what quota is doing to routing, from the
+        monitor's pressure against `quota_policy`; it is None whenever the
+        reading is not fresh.
+        """
+        now = self.clock() if now is None else now
+        knobs = self.knobs
+        models_of: dict[str, list[dict[str, Any]]] = {}
+        for model, mcfg in self.config.models.items():
+            models_of.setdefault(self.config.provider_of(model), []).append(
+                {"model": model, "quota_cost": mcfg.quota_cost}
+            )
+        routed = []
+        for name, state in self.states.items():
+            cfg = self.config.quota_cfg(name)
+            stale_after = cfg.stale_after_seconds if cfg else None
+            snap = state.snapshot
+            status = snapshot_status(snap, now, stale_after)
+            spent = exhausted_window(snap, knobs, now, stale_after) if state.enabled else None
+            source = self.sources.get(name)
+            routed.append({
+                "provider": name,
+                "enabled": state.enabled,
+                "source": state.source_name,
+                "codexbar_provider": cfg.codexbar_provider if cfg else None,
+                "via": getattr(source, "via", None),
+                "pressure": round(state.pressure, 4),
+                "reason": state.reason,
+                "status": status,
+                "stale": status == STALE,
+                "age_seconds": None if snap is None else round(now - snap.fetched_at, 1),
+                "fetched_at": None if snap is None else snap.fetched_at,
+                "used_percent": None if snap is None else snap.used_percent,
+                "windows": [window_view(w, now) for w in snapshot_windows(snap)],
+                "exhausted": spent.to_dict() if spent else None,
+                "steering": steering_label(
+                    state.pressure, status, spent is not None, knobs, state.enabled
+                ),
+                "demote_above": knobs.demote_above,
+                "exhausted_at": knobs.exhausted_at,
+                "models": [
+                    {**m, "pressure": round(state.pressure * m["quota_cost"], 4)}
+                    for m in models_of.get(name, [])
+                ],
+                "polls": state.polls,
+                "errors": state.errors,
+                "last_error": state.last_error,
+            })
+        tracked = []
+        for sub in self.tracked.values():
+            snap = sub.snapshot
+            entry = sub.source.entry
+            tracked.append({
+                "id": sub.id,
+                "via": sub.source.via,
+                "status": snapshot_status(snap, now, self.codexbar.stale_after_seconds),
+                "age_seconds": None if snap is None else round(now - snap.fetched_at, 1),
+                "fetched_at": None if snap is None else snap.fetched_at,
+                "windows": [window_view(w, now) for w in snapshot_windows(snap)],
+                "plans": [
+                    {"title": title or None, "used_percent": _round(used)}
+                    for title, used in (entry.rows if entry else ())
+                ],
+                "tokens": dict(entry.tokens) if entry and entry.tokens else None,
+                "currency": (entry.currency or None) if entry else None,
+                "credits_remaining": entry.credits_remaining if entry else None,
+                "polls": sub.polls,
+                "errors": sub.errors,
+                "last_error": sub.last_error,
+            })
+        return {
+            "as_of": now,
+            "quota_routing": knobs.enabled,
+            "demote_above": knobs.demote_above,
+            "exhausted_at": knobs.exhausted_at,
+            "routed": routed,
+            "tracked": tracked,
+        }
+
     # --- polling -------------------------------------------------------
 
     async def poll_once(self, provider: str) -> ProviderQuota:
@@ -793,11 +1396,19 @@ class QuotaMonitor:
             )
             await asyncio.sleep(interval)
 
+    async def _tracked_loop(self) -> None:
+        interval = max(1.0, self.codexbar.poll_interval_seconds)
+        while True:
+            await self.poll_tracked()
+            await asyncio.sleep(interval)
+
     def start(self) -> None:
-        if self._tasks or not self.sources:
+        if self._tasks or not (self.sources or self.tracking):
             return
         for provider in self.sources:
             self._tasks.append(asyncio.create_task(self._loop(provider)))
+        if self.tracking:
+            self._tasks.append(asyncio.create_task(self._tracked_loop()))
 
     async def stop(self) -> None:
         for task in self._tasks:

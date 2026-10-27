@@ -432,3 +432,68 @@ def test_the_example_overlay_is_valid_yaml_and_stays_out_of_active():
     raw = yaml.safe_load(open("examples/adaptive-effort.yaml").read())
     assert raw["experiments"]["adaptive_effort"]["mode"] == "shadow"
     assert raw["aliases"]["auto-session-adaptive"]["adaptive_effort"] is True
+
+
+# --- the CodexBar quota source -------------------------------------------
+
+
+def codexbar_links(raw, bar=None, **quotas):
+    """Put every model on two providers whose quota blocks are given."""
+    raw["providers"] = {name: {"quota": quota} for name, quota in quotas.items()}
+    names = list(quotas)
+    for i, model in enumerate(("small", "big", "paramy")):
+        raw["models"][model] = {**raw["models"][model], "provider": names[i % len(names)]}
+    if bar is not None:
+        raw["codexbar"] = bar
+
+
+def test_the_shipped_codexbar_block_is_off_and_links_are_examples():
+    cfg = load_config("router.yaml")
+    assert cfg.codexbar.enabled is False
+    for name, cid in (("openai", "codex"), ("ollama", "ollama")):
+        quota = cfg.quota_cfg(name)
+        assert (quota.source, quota.codexbar_provider, quota.enabled) == ("codexbar", cid, False)
+    assert cfg.quota_cfg("xai").source == "command"
+
+
+def test_a_codexbar_source_needs_its_provider_id(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: codexbar_links(r, cloud={"source": "codexbar"}))
+    assert "needs codexbar_provider" in str(exc.value)
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: codexbar_links(
+            r, cloud={"source": "codexbar", "codexbar_provider": "Codex Pro!"}))
+    assert "is not a CodexBar provider id" in str(exc.value)
+
+
+def test_codexbar_provider_belongs_to_the_codexbar_source_only(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: codexbar_links(
+            r, cloud={"source": "static", "codexbar_provider": "codex"}))
+    assert "only read by source 'codexbar'" in str(exc.value)
+
+
+def test_an_enabled_codexbar_link_needs_the_block_on(tmp_path):
+    link = {"source": "codexbar", "codexbar_provider": "codex", "enabled": True}
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: codexbar_links(r, cloud=link))
+    assert "needs codexbar.enabled: true" in str(exc.value)
+    cfg = load_raw(tmp_path, lambda r: codexbar_links(r, bar={"enabled": True}, cloud=link))
+    assert cfg.quota_cfg("cloud").codexbar_provider == "codex"
+    # A disabled link is an example and needs nothing.
+    load_raw(tmp_path, lambda r: codexbar_links(r, cloud={**link, "enabled": False}))
+
+
+def test_one_codexbar_subscription_has_one_owner(tmp_path):
+    link = {"source": "codexbar", "codexbar_provider": "codex", "enabled": True}
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: codexbar_links(
+            r, bar={"enabled": True}, cloud=link, other=link))
+    assert "'codex' is already linked to providers.cloud" in str(exc.value)
+
+
+def test_the_codexbar_block_rejects_unknown_keys_and_bad_numbers(tmp_path):
+    with pytest.raises(ConfigError):
+        load_raw(tmp_path, lambda r: r.update({"codexbar": {"enabled": True, "nope": 1}}))
+    with pytest.raises(ConfigError):
+        load_raw(tmp_path, lambda r: r.update({"codexbar": {"poll_interval_seconds": 0}}))
