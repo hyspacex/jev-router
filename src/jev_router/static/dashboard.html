@@ -15,21 +15,22 @@
   <div class="app">
     <div class="wrap">
       <header class="bar">
-        <button id="home" class="mark" type="button">jev-router</button>
-        <nav id="views" class="views" aria-label="Views" hidden>
-          <a id="v-overview" class="view" href="#overview" title="Overview (o)">Overview</a>
-          <a id="v-sessions" class="view" href="#sessions" title="Sessions (s)">Sessions</a>
-          <a id="v-rules" class="view" href="#rules" title="Rules (r)">Rules</a>
+        <button id="home" class="brand" type="button">jev-router</button>
+        <nav id="views" class="tabs" aria-label="Views" hidden>
+          <a id="v-overview" class="tab" href="#overview" title="Overview (o)">Overview</a>
+          <a id="v-sessions" class="tab" href="#sessions" title="Sessions (s)">Sessions</a>
+          <a id="v-rules" class="tab" href="#rules" title="Rules (r)">Rules</a>
         </nav>
-        <div class="tools">
+        <div class="right">
+          <div id="cfg" class="cfg" role="status"></div>
+          <span id="keys" class="kbd" tabindex="0" role="note" title="Keyboard: o overview, s sessions, r rules, / search sessions, j k next and previous row (or session, on a session page), [ ] previous and next turn, Esc back to the list" aria-label="Keyboard: o overview, s sessions, r rules, / search sessions, j k next and previous row (or session, on a session page), [ ] previous and next turn, Esc back to the list" hidden>?</span>
+          <button id="pause" class="ghost" type="button" hidden>Pause</button>
+          <button id="disconnect" class="ghost" type="button" hidden>Disconnect</button>
           <form id="auth" class="auth" autocomplete="off">
             <label class="sr" for="token">Router admin token</label>
             <input id="token" type="password" autocomplete="off" placeholder="admin token" spellcheck="false">
-            <button id="connect" type="submit">Connect</button>
+            <button id="connect" class="ghost primary" type="submit">Connect</button>
           </form>
-          <div id="cfg" class="cfg" role="status"></div>
-          <button id="pause" class="ghost" type="button" hidden>Pause</button>
-          <button id="disconnect" class="ghost" type="button" hidden>Disconnect</button>
         </div>
       </header>
       <p id="error" class="gaprow" role="alert" hidden></p>

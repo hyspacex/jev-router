@@ -20,14 +20,22 @@ const PROBLEM_SHORT = {unknown: "unknown", rejected: "rejected", stream_failed: 
 // inspector's badge and buttons, the rules legend and the preview marks.
 // The database values (right, too_weak, too_strong, too_slow) never change.
 const VERDICT_WORDS = {right: "✓ good", too_weak: "↑ too weak", too_strong: "↓ too strong", too_slow: "too slow"};
+// The same verdicts as a status dot, for lists and legends: [class, words].
+const VERDICT_DOTS = {right: ["v-good", "good"], too_weak: ["v-weak", "too weak"], too_strong: ["v-strong", "too strong"], too_slow: ["v-slow", "too slow"]};
 const FEEDBACK_OPTIONS = [["right", VERDICT_WORDS.right], ["too_weak", VERDICT_WORDS.too_weak], ["too_strong", VERDICT_WORDS.too_strong],
   ["too_slow", VERDICT_WORDS.too_slow], ["unrated", "unrated"]];
 // Search accepts what the router's `q` filter accepts: up to 80 plain characters.
 const SEARCH_OK = /^[\p{L}\p{N}_ .,:;!?'"()[\]/#@+=&*-]{1,80}$/u;
 
+// Where the browser keeps the admin token between visits. Every read and
+// write is guarded: a blocked store means the form asks each time, as before.
+const TOKEN_KEY = "jev-router.admin-token";
+
 const S = {
   token: "",
   connected: false,
+  connecting: false,  // a stored token is being tried; the form stays out of the way
+  remember: false,    // the form was just submitted: keep the token on the first 2xx
   paused: false,
   view: "overview",   // overview | sessions | session | rules
   win: "24h",
@@ -86,8 +94,14 @@ function add(parent, ...children) {
   return parent;
 }
 function absent(v) { return v === null || v === undefined || (typeof v === "number" && !Number.isFinite(v)); }
-function gap(text) { return el("span", "gapchip", text || "not recorded"); }
-// A value, or a visible amber gap. Never a guess.
+// A value no row recorded: a quiet dash whose title says why. Never blank,
+// never zero, never the colour of a problem.
+function gap(text) {
+  const node = el("span", "gap", "–");
+  node.title = text || "not recorded";
+  return node;
+}
+// A value, or a gap. Never a guess.
 function show(v, format) {
   if (absent(v) || v === "") return gap();
   return document.createTextNode(format ? format(v) : String(v));
@@ -105,13 +119,80 @@ function link(cls, text, hash, label) {
   if (label) a.setAttribute("aria-label", label);
   return a;
 }
-function panel(title, note, cls) {
-  const box = el("section", "panel" + (cls ? " " + cls : ""));
-  const h = el("div", "ph");
-  add(h, el("h2", "pt", title), note ? add(el("span", "note"), note) : null);
-  box.append(h);
+// A band: one surface, a head with its title and a muted note at the right.
+// title null builds a band with no head. note is text or a node.
+function band(title, note, cls) {
+  const box = el("section", "band" + (cls ? " " + cls : ""));
+  if (title !== null && title !== undefined) {
+    const h = el("div", "bh");
+    add(h, el("h2", null, title), note !== null && note !== undefined && note !== "" ? add(el("span", "note"), note) : null);
+    box.append(h);
+  }
   return box;
 }
+// The old name. Also carries the old class names (panel, ph, pt) so the
+// views not yet rewritten keep finding their own selectors.
+function panel(title, note, cls) {
+  const box = band(title, note, cls);
+  box.classList.add("panel");
+  const h = box.querySelector(".bh");
+  if (h) { h.classList.add("ph"); h.firstChild.classList.add("pt"); }
+  return box;
+}
+// A band's footnote line: each argument one item, text or a node.
+function foot(...children) {
+  const line = el("div", "foot");
+  for (const child of children) {
+    if (child === null || child === undefined || child === false) continue;
+    line.append(typeof child === "string" ? el("span", null, child) : child);
+  }
+  return line;
+}
+// The "?" beside a label, its definition on hover and to a screen reader.
+function helpMark(text) {
+  const node = el("span", "help", "?");
+  node.title = text;
+  node.tabIndex = 0;
+  node.setAttribute("role", "img");
+  node.setAttribute("aria-label", text);
+  return node;
+}
+// A status badge: kind is warn, bad, good or plain.
+function badge(kind, text, title) {
+  const node = el("span", "badge" + (kind ? " " + kind : ""), text);
+  if (title) node.title = title;
+  return node;
+}
+// A model as the views show it: the provider prefix quiet, the bare name,
+// then " · effort" (or "no effort", muted). When the effort now differs from
+// the one admitted, an arrow says which way: up mint, down blue.
+function modelNode(model, effort, effortNow) {
+  const node = el("span", "model");
+  if (absent(model) || model === "") { node.append(gap("model not recorded")); return node; }
+  const [prov, name] = splitModel(model);
+  if (prov) node.append(el("span", "pv", prov));
+  node.append(document.createTextNode(name));
+  const from = effort || effortNow || null;
+  const now = effortNow || null;
+  const ef = el("span", "ef", " · ");
+  if (!from) ef.append(el("span", "t3", "no effort"));
+  else if (now && now !== from) {
+    const a = LADDER.indexOf(from);
+    const b = LADDER.indexOf(now);
+    const dir = a < 0 || b < 0 ? "" : b > a ? " up" : " down";
+    add(ef, from + " ", el("span", "arrow" + dir, "→"), " " + now);
+  } else ef.append(document.createTextNode(from));
+  node.append(ef);
+  return node;
+}
+// A verdict as a status dot with its words. Null for no verdict.
+function verdictDot(v) {
+  if (!v || !VERDICT_DOTS[v]) return null;
+  const [cls, words] = VERDICT_DOTS[v];
+  return el("span", "dot " + cls, words);
+}
+// The old name, kept so the views not yet rewritten still run.
+const verdictBadge = verdictDot;
 // The window control: one link per window, the current one lit.
 function windowSeg(current, hashOf) {
   const seg = el("div", "seg");
@@ -124,12 +205,6 @@ function windowSeg(current, hashOf) {
   }
   return seg;
 }
-// The one badge for a verdict, in its colour: mint good, amber too weak,
-// blue too strong. Null for no verdict.
-function verdictBadge(v) {
-  if (!v || !VERDICT_WORDS[v]) return null;
-  return el("span", "vbadge v-" + v, VERDICT_WORDS[v]);
-}
 // "1 call", "2 calls".
 function plural(n, one, many) { return int(n) + " " + (Math.round(Number(n)) === 1 ? one : (many || one + "s")); }
 
@@ -141,8 +216,15 @@ const secs = (ms) => (Number(ms) / 1000).toFixed(2) + " s";
 const size = (b) => (b >= 1e6 ? (b / 1e6).toFixed(2) + " MB" : Math.max(1, Math.round(b / 1000)) + " KB");
 const num1 = (n) => { const v = Number(n); return v > 0 && v < 0.1 ? "<0.1" : v.toFixed(v >= 10 ? 0 : 1); };
 const pct = (r) => { const v = Number(r) * 100; return (v > 0 && v < 1 ? "<1" : v > 99 && v < 100 ? ">99" : Math.round(v)) + "%"; };
+// Milliseconds to two or three significant figures: "613 ms", "3.2 s", "27 s".
+function ms1(v) {
+  const n = Number(v);
+  if (Math.round(n) < 1000) return Math.round(n) + " ms";
+  const s = n / 1000;
+  return (Math.round(s * 10) < 100 ? (Math.round(s * 10) / 10).toFixed(1) : String(Math.round(s))) + " s";
+}
 // Milliseconds as the reader wants them: ms under a second, seconds above.
-const ms = (v) => (Number(v) < 1000 ? Math.round(Number(v)) + " ms" : secs(v));
+const ms = ms1;
 // Pressure is 0 to 1, not a share of the allowance.
 const pressureText = (p) => { const v = Number(p); return v > 0 && v < 0.01 ? "<0.01" : v.toFixed(2); };
 const windowSpan = (m) => (m >= 1440 ? Math.round(m / 1440) + " d" : m >= 60 ? Math.round(m / 60) + " h" : Math.round(m) + " min");
@@ -262,6 +344,18 @@ async function post(path, body) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// The remembered token. A store that throws (blocked, private window) reads
+// as empty and writes nothing: the form asks, as it always did.
+function storedToken() {
+  try { return window.localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
+}
+function storeToken(token) {
+  try { if (token) window.localStorage.setItem(TOKEN_KEY, token); } catch { /* not kept */ }
+}
+function forgetToken() {
+  try { window.localStorage.removeItem(TOKEN_KEY); } catch { /* nothing kept */ }
 }
 
 function stopTimer() {
@@ -384,11 +478,15 @@ async function refresh(kind) {
       }
     }
     S.connected = true;
+    S.connecting = false;
+    // The first 2xx after the form was submitted keeps the token.
+    if (S.remember && refused === null) { storeToken(S.token); S.remember = false; }
     fail(refused);
     chrome();
     if (changed || kind !== "data") render(kind);
   } catch (error) {
     if (gen !== S.gen) return;
+    if (S.connecting) { S.connecting = false; chrome(); }
     fail((error && error.name === "AbortError" ? "Refresh timed out" : "Router unreachable") + " · showing the last data");
   } finally {
     if (gen === S.gen) schedule();
@@ -396,6 +494,10 @@ async function refresh(kind) {
 }
 
 function unauthorized() {
+  // A refused token is forgotten, and the form comes back.
+  forgetToken();
+  S.remember = false;
+  S.connecting = false;
   S.connected = false;
   chrome();
   render("view");
@@ -410,17 +512,24 @@ function plans() { return (S.data && Array.isArray(S.data.plans)) ? S.data.plans
 // --- header and navigation --------------------------------------------------
 
 function chrome() {
-  $("auth").hidden = S.connected;
+  $("auth").hidden = S.connected || S.connecting;
   $("pause").hidden = !S.connected;
   $("disconnect").hidden = !S.connected;
   $("views").hidden = !S.connected;
+  $("keys").hidden = !S.connected;
   $("pause").textContent = S.paused ? "Resume" : "Pause";
   const cfgNode = $("cfg");
   cfgNode.replaceChildren();
-  if (S.connected && S.cfgHash !== null) {
-    const dot = el("span", "dot" + (S.paused ? " off" : ""));
-    dot.title = S.paused ? "paused" : "live · every 5 s";
-    add(cfgNode, dot, show(hash8(S.cfgHash)));
+  if (S.connected) {
+    const live = el("span", "live" + (S.paused ? " off" : ""));
+    live.title = S.paused ? "Paused: not refreshing" : "Refreshing every 5 s";
+    add(live, el("i"), S.paused ? "paused" : "live");
+    cfgNode.append(live);
+    if (S.cfgHash !== null) {
+      const hash = add(el("span", "mono"), show(hash8(S.cfgHash)));
+      hash.title = "Running config hash";
+      cfgNode.append(hash);
+    }
   }
   const tabs = {overview: $("v-overview"), sessions: $("v-sessions"), rules: $("v-rules")};
   tabs.overview.href = overviewHash();
@@ -752,6 +861,7 @@ $("auth").addEventListener("submit", (event) => {
   // An empty token is never sent: the router could only answer 401.
   if (!$("token").value) { fail("Admin token required"); return; }
   S.token = $("token").value;
+  S.remember = true;
   $("token").value = "";
   S.listJson = "";
   S.overviewJson = "";
@@ -763,7 +873,10 @@ $("disconnect").addEventListener("click", () => {
   stopTimer();
   S.gen += 1;
   if (S.controller) S.controller.abort();
+  forgetToken();
   S.token = "";
+  S.remember = false;
+  S.connecting = false;
   S.connected = false;
   S.list = null;
   S.listJson = "";
@@ -838,6 +951,9 @@ document.addEventListener("keydown", (event) => {
   inspectorKey(event);
 });
 
+// A token kept from an earlier visit connects at once, without the form.
+S.token = storedToken();
+S.connecting = !!S.token;
 onHash();
 chrome();
 // Nothing is fetched before a token exists: the form asks for one first.

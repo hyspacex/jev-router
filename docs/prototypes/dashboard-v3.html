@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev-router Inspector v3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout concept: one elevated surface per band, structure by spacing, colour only for status.
+   Four type sizes (24 / 14 / 13 / 12), tabular figures everywhere, mono for identifiers only. */
+:root {
+  color-scheme: dark;
+  --bg: #0E1013; --surface: #14171B; --surface-2: #1A1E24; --line: #22272E; --line-2: #2C323A;
+  --text: #E8EAEE; --text-2: #9AA3AF; --text-3: #6A7280;
+  --fill: #3C434D; --fill-2: #525A66;
+  --good: #78D9BE; --good-bg: rgba(120,217,190,.10);
+  --warn: #E3B566; --warn-bg: rgba(227,181,102,.10);
+  --bad: #E5767A;  --bad-bg: rgba(229,118,122,.10);
+  --down: #8DB4F0; --down-bg: rgba(141,180,240,.10);
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #F4F5F7; --surface: #FFFFFF; --surface-2: #F1F3F6; --line: #E3E6EA; --line-2: #D2D6DC;
+    --text: #15181C; --text-2: #5B6472; --text-3: #8A929E;
+    --fill: #C3C9D2; --fill-2: #A4ACB8;
+    --good: #1E9B74; --good-bg: rgba(30,155,116,.10);
+    --warn: #B5790E; --warn-bg: rgba(181,121,14,.10);
+    --bad: #C73E44;  --bad-bg: rgba(199,62,68,.10);
+    --down: #2F6FD1; --down-bg: rgba(47,111,209,.10);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F4F5F7; --surface: #FFFFFF; --surface-2: #F1F3F6; --line: #E3E6EA; --line-2: #D2D6DC;
+  --text: #15181C; --text-2: #5B6472; --text-3: #8A929E;
+  --fill: #C3C9D2; --fill-2: #A4ACB8;
+  --good: #1E9B74; --good-bg: rgba(30,155,116,.10);
+  --warn: #B5790E; --warn-bg: rgba(181,121,14,.10);
+  --bad: #C73E44;  --bad-bg: rgba(199,62,68,.10);
+  --down: #2F6FD1; --down-bg: rgba(47,111,209,.10);
+}
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.45; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-block: 0 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.t2 { color: var(--text-2); }
+.t3 { color: var(--text-3); }
+.s12 { font-size: 12px; }
+.s13 { font-size: 13px; }
+.num { text-align: right; }
+/* a value no row recorded: quiet, and explained on hover */
+.gap { color: var(--text-3); cursor: help; }
+.gap::before { content: "–"; }
+.note { font-size: 12px; color: var(--text-3); }
+
+/* top bar: the chrome recedes */
+.bar { display: flex; align-items: center; gap: 28px; height: 52px; }
+.brand { font-family: var(--mono); font-size: 13px; color: var(--text-3); }
+.tabs { display: flex; gap: 4px; }
+.tab { padding: 6px 10px; border-radius: 6px; color: var(--text-2); font-size: 14px; }
+.tab:hover { color: var(--text); background: var(--surface-2); }
+.tab[aria-current] { color: var(--text); background: var(--surface-2); font-weight: 500; }
+.bar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-3); }
+.live { display: inline-flex; align-items: center; gap: 6px; }
+.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.kbd { font-family: var(--mono); font-size: 11px; color: var(--text-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; line-height: 1.5; }
+.ghost { font-size: 13px; color: var(--text-2); padding: 5px 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); }
+.ghost:hover { color: var(--text); border-color: var(--fill-2); }
+.ghost.primary { color: var(--bg); background: var(--text); border-color: var(--text); font-weight: 500; }
+
+/* page head */
+.head { display: flex; align-items: center; gap: 16px; margin: 20px 0 16px; flex-wrap: wrap; }
+.head h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+.seg button, .seg a { font-size: 12px; padding: 3px 9px; border-radius: 4px; color: var(--text-2); }
+.seg .on { background: var(--surface-2); color: var(--text); font-weight: 500; }
+.head .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+/* bands: one surface, structure by spacing */
+.band { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; min-width: 0; }
+.band + .band, .grid + .band, .band + .grid { margin-top: 12px; }
+.bh { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.bh h2 { margin: 0; font-size: 14px; font-weight: 500; }
+.bh .note { margin-left: auto; }
+.grid { display: grid; gap: 12px; }
+.grid.two { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+.grid.rules { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; }
+
+/* headline stats */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.stat .v { font-size: 26px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; }
+.stat .v small { font-size: 14px; font-weight: 400; color: var(--text-2); margin-left: 4px; letter-spacing: 0; }
+.stat .l { font-size: 13px; color: var(--text-2); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+.stat .c { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.stat .c b { font-weight: 500; color: var(--text-2); }
+.help { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line-2); color: var(--text-3); font-size: 10px; align-items: center; justify-content: center; cursor: help; }
+.foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3); display: flex; gap: 20px; flex-wrap: wrap; }
+
+/* quota lines */
+.qrow { display: grid; grid-template-columns: 110px 1fr 56px 120px 90px; gap: 14px; align-items: center; padding: 8px 0; font-size: 13px; }
+.qrow + .qrow { border-top: 1px solid var(--line); }
+.qrow .p { font-weight: 500; }
+.qrow .p small { display: block; font-size: 12px; color: var(--text-3); font-weight: 400; }
+.meter { position: relative; height: 6px; background: var(--line-2); border-radius: 3px; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--fill-2); border-radius: 3px; }
+.meter i.warn { background: var(--warn); }
+.meter b { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--text-3); }
+.meter.sm { margin-top: 6px; height: 4px; }
+.qrow .steer { font-size: 12px; color: var(--text-3); text-align: right; }
+.qrow .steer.warn { color: var(--warn); }
+
+/* chart */
+.chart { display: grid; grid-template-columns: 56px 1fr; column-gap: 12px; row-gap: 6px; }
+.chart .y { font-size: 12px; color: var(--text-3); display: flex; flex-direction: column; justify-content: space-between; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 96px; border-bottom: 1px solid var(--line); }
+.bars .b { flex: 1; display: flex; flex-direction: column-reverse; height: 100%; }
+.bars .b i { display: block; background: var(--fill); border-radius: 2px 2px 0 0; }
+.bars .b i.bad { background: var(--bad); }
+.bars .b:hover i { background: var(--fill-2); }
+.line { height: 36px; position: relative; }
+.line svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.line path { fill: none; stroke: var(--text-2); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.line circle { fill: var(--text); }
+.xaxis { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); }
+
+/* tables */
+.tbl { display: flex; flex-direction: column; }
+.tr { display: grid; gap: 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.tr.th { border-top: 0; padding: 0 0 6px; font-size: 12px; color: var(--text-3); }
+.tr > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models .tr { grid-template-columns: minmax(0, 1.6fr) 140px 60px 120px; }
+.share { display: inline-flex; align-items: center; gap: 8px; }
+.share i { display: inline-block; height: 5px; width: 80px; background: var(--line-2); border-radius: 3px; position: relative; overflow: hidden; }
+.share i::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--w); background: var(--fill-2); }
+.p95 { color: var(--text-3); font-size: 12px; margin-left: 6px; }
+.model { font-family: var(--mono); font-size: 13px; }
+.model .pv { color: var(--text-3); }
+.model .ef { color: var(--text-2); }
+details.more { margin-top: 10px; }
+details.more > summary { cursor: pointer; list-style: none; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "▸"; font-size: 10px; color: var(--text-3); }
+details.more[open] > summary::before { content: "▾"; }
+details.more > summary:hover { color: var(--text); }
+.heat { display: grid; gap: 3px; margin-top: 12px; }
+.heat span { font-size: 12px; color: var(--text-3); padding: 4px; }
+.heat .c { height: 30px; border-radius: 4px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.heat .c.n1 { background: rgba(120,217,190,.18); color: var(--text); }
+.heat .c.n2 { background: rgba(120,217,190,.38); color: var(--text); }
+
+/* sessions toolbar */
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.search { flex: 1 1 260px; display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 0; }
+.search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; font: inherit; font-size: 13px; color: var(--text); }
+.search input::placeholder { color: var(--text-3); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--text); background: var(--surface); }
+.chip .k { color: var(--text-3); }
+.chip .x { color: var(--text-3); font-size: 12px; padding: 0 2px; }
+.chip .x:hover { color: var(--text); }
+.chip.add { border-style: dashed; color: var(--text-2); }
+.chip.add:hover { color: var(--text); border-color: var(--fill-2); }
+.views { display: flex; gap: 2px; }
+.views a { font-size: 13px; color: var(--text-2); padding: 5px 10px; border-radius: 6px; }
+.views a:hover { color: var(--text); }
+.views a.on { color: var(--text); background: var(--surface-2); font-weight: 500; }
+.views a small { color: var(--text-3); margin-left: 4px; font-weight: 400; }
+.count { margin-left: auto; font-size: 12px; color: var(--text-3); }
+/* the list: a human title first, everything else secondary */
+.sessions .tr { grid-template-columns: minmax(0, 3fr) 84px minmax(0, 1.5fr) 118px 94px 86px; padding: 10px 8px; margin: 0 -8px; border-radius: 6px; border-top: 0; }
+.sessions .tr.th { padding: 0 8px 8px; }
+.sessions a.tr { border-top: 1px solid var(--line); border-radius: 0; }
+.sessions a.tr:hover { background: var(--surface-2); }
+.sessions .ti { display: flex; flex-direction: column; gap: 1px; }
+.sessions .ti b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.sessions .ti small { font-size: 12px; color: var(--text-3); }
+.sessions .ti .pin { color: var(--text-3); margin-right: 6px; }
+.sessions .rule { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+.arrow { color: var(--text-3); }
+.arrow.up { color: var(--good); }
+.arrow.down { color: var(--down); }
+.dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.v-good { color: var(--good); } .v-weak { color: var(--warn); } .v-strong { color: var(--down); }
+.badge { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 10px; font-weight: 500; }
+.badge.warn { color: var(--warn); background: var(--warn-bg); }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.good { color: var(--good); background: var(--good-bg); }
+.badge.plain { color: var(--text-2); background: var(--surface-2); }
+
+/* inspector */
+.crumbs { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--text-2); }
+.crumbs .right { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-3); }
+.pg { border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 9px; color: var(--text-2); font-size: 12px; }
+.pg:hover { color: var(--text); }
+.shead { margin-top: 10px; }
+.shead h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
+.strip { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--text-2); }
+.strip .model { color: var(--text); }
+.strip .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.fb { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.fb button { font-size: 12px; padding: 5px 10px; color: var(--text-2); }
+.fb button + button { border-left: 1px solid var(--line-2); }
+.fb button:hover { color: var(--text); background: var(--surface-2); }
+.decision { margin-top: 14px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 14px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.decision .lead { color: var(--text-2); }
+.decision b { font-weight: 500; }
+.decision .why { color: var(--text-2); }
+.decision a { color: var(--text-2); font-size: 12px; margin-left: auto; text-decoration: underline dotted; text-underline-offset: 3px; }
+.split { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; margin-top: 12px; align-items: start; }
+/* the turn list on the left */
+.turns { padding: 8px; }
+.turns .bh { padding: 6px 10px 2px; margin: 0; }
+.turn { display: block; width: 100%; text-align: left; padding: 9px 10px; border-radius: 6px; border-left: 2px solid transparent; }
+.turn:hover { background: var(--surface-2); }
+.turn.on { background: var(--surface-2); border-left-color: var(--text); }
+.turn .t { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); }
+.turn .t b { color: var(--text); font-weight: 500; }
+.turn .p { font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn .p .gap { font-style: normal; }
+.turn .m { font-size: 12px; color: var(--text-3); margin-top: 2px; display: flex; gap: 10px; white-space: nowrap; }
+.turn .m .ch { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.turn .m .ch { font-family: var(--mono); color: var(--text-2); }
+.turn.corr { border-left-color: var(--warn); }
+/* the selected turn on the right */
+.detail { padding: 4px 20px 16px; }
+.sec { padding: 14px 0; }
+.sec + .sec { border-top: 1px solid var(--line); }
+.sec > summary, .sec > .sh { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; font-size: 13px; font-weight: 500; }
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before { content: "▾"; font-size: 10px; color: var(--text-3); width: 10px; }
+.sec:not([open]) > summary::before { content: "▸"; }
+.sec > summary .note { margin-left: auto; font-weight: 400; }
+.sec .body { margin-top: 10px; }
+.kv { display: grid; grid-template-columns: 90px 1fr; gap: 6px 14px; font-size: 13px; }
+.kv .k { color: var(--text-3); }
+.step { display: grid; grid-template-columns: 18px 150px 1fr; gap: 10px; align-items: baseline; padding: 5px 0; font-size: 13px; }
+.step .g { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); margin-top: 5px; }
+.step.hit .g { background: var(--good); }
+.step .n { font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+.step.hit .n { color: var(--text); font-weight: 500; }
+.step .w { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step.hit .w { color: var(--text-2); }
+.step.fold { color: var(--text-3); font-size: 12px; grid-template-columns: 18px 1fr; }
+.step.fold button { color: var(--text-2); text-decoration: underline dotted; text-underline-offset: 3px; }
+/* scores: name, value, ruler on one line */
+.score { display: grid; grid-template-columns: 110px 92px 1fr; gap: 14px; align-items: center; padding: 7px 0; font-size: 13px; }
+.score .v { font-weight: 500; text-align: right; }
+.score .v small { font-weight: 400; color: var(--text-3); font-size: 12px; margin-left: 4px; }
+.ruler { position: relative; height: 22px; }
+.ruler .tr { position: absolute; left: 0; right: 0; top: 9px; height: 3px; background: var(--line-2); border-radius: 2px; padding: 0; border: 0; display: block; }
+.ruler .tk { position: absolute; top: 6px; width: 1px; height: 9px; background: var(--text-3); }
+.ruler .tk.on { background: var(--text); width: 2px; }
+.ruler .lb { position: absolute; top: 16px; transform: translateX(-50%); font-size: 11px; color: var(--text-3); white-space: nowrap; font-family: var(--mono); }
+.ruler .lb.on { color: var(--text-2); }
+.ruler .lb.row2 { top: 28px; }
+.rul .ruler .lb.row2 { top: 24px; }
+.ruler .mk { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 2px var(--surface); }
+.stack { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line-2); margin-top: 4px; }
+.stack i { display: block; height: 100%; background: var(--fill-2); }
+.stack i:first-child { background: var(--good); }
+.prompt { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; max-height: 150px; overflow: auto; }
+.facts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--text-3); }
+.facts b { color: var(--text-2); font-weight: 400; }
+.calls .tr { grid-template-columns: 32px 60px 80px 90px 90px 1fr; font-family: var(--mono); font-size: 12px; }
+.calls .tr.th { font-family: var(--sans); }
+.plan { font-size: 13px; }
+.plan .big { font-family: var(--mono); font-size: 16px; }
+.plan .big .up { color: var(--good); } .plan .big .down { color: var(--down); }
+.reason { color: var(--text-2); margin-top: 4px; }
+
+/* rules */
+.ladder .tr { grid-template-columns: 24px 150px minmax(0, 1.5fr) minmax(0, 1.4fr) 110px; }
+.ladder .i { font-size: 12px; color: var(--text-3); }
+.ladder .n { font-family: var(--mono); font-size: 13px; }
+.ladder .when { color: var(--text-2); font-size: 12px; }
+.ladder .when .always { color: var(--text-3); }
+.ladder .to { font-family: var(--mono); font-size: 12px; }
+.ladder .to .lane { color: var(--text-3); font-family: var(--sans); }
+.ladder .tr.quiet .n, .ladder .tr.quiet .when { color: var(--text-3); }
+.ladder .tr.zero .n { color: var(--text-2); }
+.rul { margin: 6px 0 14px; }
+.rul .name { font-size: 12px; color: var(--text-2); margin-bottom: 20px; }
+.rul .ruler { height: 44px; }
+.rul .ruler .tr { top: 4px; }
+.rul .ruler .lb { top: 12px; }
+.rul .ruler .dots { position: absolute; left: 0; right: 0; top: -14px; height: 12px; }
+.rul .dots i { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); margin-left: -3px; }
+.rul .dots i.v-good { background: var(--good); } .rul .dots i.v-weak { background: var(--warn); } .rul .dots i.v-strong { background: var(--down); }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.editor { margin-top: 12px; }
+.editor pre { margin: 10px 0 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 20px; color: var(--text-2); overflow: auto; max-height: 320px; }
+.editor pre b { color: var(--text); font-weight: 400; }
+.editor .acts { display: flex; gap: 8px; margin-left: auto; }
+
+.view { display: none; }
+.view.on { display: block; }
+@media (max-width: 1000px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .grid.two, .grid.rules { grid-template-columns: minmax(0, 1fr); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .sessions .tr { grid-template-columns: minmax(0, 3fr) 84px minmax(0, 1.5fr) 94px; }
+  .sessions .tr > :nth-child(4), .sessions .tr > :nth-child(6) { display: none; }
+  .qrow { grid-template-columns: 100px 1fr 48px; }
+  .qrow > :nth-child(4), .qrow > :nth-child(5) { display: none; }
+  .ladder .tr { grid-template-columns: 24px 130px minmax(0, 1fr) 70px; }
+  .ladder .tr > :nth-child(4) { display: none; }
+}
+@media (max-width: 600px) {
+  .bar { gap: 10px; }
+  .brand { display: none; }
+  .bar .right .ghost, .bar .right .kbd, .bar .right .mono { display: none; }
+  .ruler { height: 34px; }
+  .score { grid-template-columns: 90px 70px 1fr; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  .sessions .tr { grid-template-columns: minmax(0, 1fr) 70px; }
+  .sessions .tr > :nth-child(3), .sessions .tr > :nth-child(5) { display: none; }
+  .models .tr { grid-template-columns: minmax(0, 1fr) 60px 90px; }
+  .models .tr > :nth-child(2) { display: none; }
+  .score { gap: 8px; }
+  .step { grid-template-columns: 18px 1fr; }
+  .step .w { grid-column: 2; white-space: normal; }
+  .calls .tr { grid-template-columns: 32px 60px 80px 1fr; }
+  .calls .tr > :nth-child(5), .calls .tr > :nth-child(6) { display: none; }
+  .ladder .tr { grid-template-columns: 24px minmax(0, 1fr) 50px; }
+  .ladder .tr > :nth-child(3) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <span class="brand">jev-router</span>
+    <nav class="tabs" aria-label="Views">
+      <a class="tab" href="#overview" data-view="overview">Overview</a>
+      <a class="tab" href="#sessions" data-view="sessions">Sessions</a>
+      <a class="tab" href="#rules" data-view="rules">Rules</a>
+    </nav>
+    <div class="right">
+      <span class="live" title="Refreshing every 5 s"><i></i>live</span>
+      <span class="mono" title="Running config hash">4b3e4e7c</span>
+      <span class="kbd" title="Keyboard: o s r, / to search, j k in lists">?</span>
+      <button class="ghost">Pause</button>
+    </div>
+  </header>
+
+  <!-- ===================== OVERVIEW ===================== -->
+  <section class="view" id="v-overview">
+    <div class="head">
+      <h1>Overview</h1>
+      <div class="right">
+        <div class="seg" role="group" aria-label="Window"><button>1h</button><button class="on">24h</button><button>7d</button><button>30d</button></div>
+      </div>
+    </div>
+
+    <div class="band">
+      <div class="stats">
+        <div class="stat">
+          <div class="v">67%</div>
+          <div class="l">Frontier quota saved <span class="help" title="Calls that did not go to gpt-6-astra, weighted by each model's quota cost. A comparison, not a measured subscription delta.">?</span></div>
+          <div class="c"><b>49 of 61</b> calls priced · 12 unknown</div>
+        </div>
+        <div class="stat">
+          <div class="v">90<small>ms</small></div>
+          <div class="l">Router overhead per admission <span class="help" title="Jev call plus policy, p50. Amortised over every execution call: 20 ms.">?</span></div>
+          <div class="c">p95 <b>146 ms</b> · 20 ms per call amortised</div>
+        </div>
+        <div class="stat">
+          <div class="v">100%</div>
+          <div class="l">Clean turns <span class="help" title="Planned turns whose next prompt was not a correction (corrective_followup below 0.6).">?</span></div>
+          <div class="c"><b>5 of 5</b> planned turns · 1 adaptive session</div>
+        </div>
+        <div class="stat">
+          <div class="v">61</div>
+          <div class="l">Calls completed</div>
+          <div class="c"><b>0</b> problems · fallback 0 of 8 · low confidence <b>1 of 8</b></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span>Cache hit and tokens per second: <span class="gap" title="The upstream reported usage on 0 of 61 calls"></span> not reported by the upstream on any call this window.</span>
+        <span>Breakers closed on all three providers.</span>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div class="band">
+        <div class="bh"><h2>Requests</h2><span class="note">per hour · 0 problems</span></div>
+        <div class="chart">
+          <div class="y"><span>31</span><span>0</span></div>
+          <div class="bars" id="bars"></div>
+          <div class="y"><span>first byte</span><span class="s12">1.9 s</span></div>
+          <div class="line"><svg viewBox="0 0 100 36" preserveAspectRatio="none" id="fbline"></svg></div>
+          <div></div>
+          <div class="xaxis"><span>09:00</span><span>15:00</span><span>21:00</span><span>03:00</span><span>08:00</span></div>
+        </div>
+      </div>
+
+      <div class="band">
+        <div class="bh"><h2>Quota</h2><span class="note">steering on · demote above 60%</span></div>
+        <div class="qrow">
+          <div class="p">openai<small>4 models</small></div>
+          <div class="meter" title="3% used, 14% expected by now"><i style="width:3%"></i><b style="left:14%"></b></div>
+          <div class="num">3%</div>
+          <div class="t3 s12">resets in 6 d</div>
+          <div class="steer">calm</div>
+        </div>
+        <div class="qrow">
+          <div class="p">ollama<small>3 models</small></div>
+          <div>
+            <div class="meter" title="5 h window · 3% used, 51% expected"><i style="width:3%"></i><b style="left:51%"></b></div>
+            <div class="meter sm" title="7 d window · 2% used, 24% expected"><i style="width:2%"></i><b style="left:24%"></b></div>
+          </div>
+          <div class="num">3%</div>
+          <div class="t3 s12">resets in 2 h</div>
+          <div class="steer">calm</div>
+        </div>
+        <div class="qrow">
+          <div class="p">xai<small>1 model</small></div>
+          <div class="meter" title="1% used, 25% expected"><i style="width:1%"></i><b style="left:25%"></b></div>
+          <div class="num">1%</div>
+          <div class="t3 s12">resets in 5 d</div>
+          <div class="steer">calm</div>
+        </div>
+        <div class="foot"><span>Quota changed the choice on <b>0 of 8</b> admissions.</span><span>Tick marks show expected use at this point in the window.</span></div>
+      </div>
+    </div>
+
+    <div class="band">
+      <div class="bh"><h2>By model</h2><span class="note">8 admissions · 61 calls</span></div>
+      <div class="tbl models">
+        <div class="tr th"><span>Model · effort</span><span>Admissions</span><span class="num">Calls</span><span class="num">First byte p50 <span class="p95">p95</span></span></div>
+        <div class="tr"><span class="model"><span class="pv">ollama/</span>glm-5.3 <span class="ef">· high</span></span><span class="share"><i style="--w:25%"></i>2</span><span class="num">27</span><span class="num">613 ms<span class="p95">1.7 s</span></span></div>
+        <div class="tr"><span class="model">gpt-6-astra <span class="ef">· high</span></span><span class="share"><i style="--w:25%"></i>2</span><span class="num">12</span><span class="num">3.2 s<span class="p95">27 s</span></span></div>
+        <div class="tr"><span class="model">gpt-6-astra-responses <span class="ef">· low</span></span><span class="share"><i style="--w:12.5%"></i>1</span><span class="num">12</span><span class="num">882 ms<span class="p95">1.3 s</span></span></div>
+        <div class="tr"><span class="model"><span class="pv">ollama/</span>glm-5.3-flash <span class="ef">· none</span></span><span class="share"><i style="--w:12.5%"></i>1</span><span class="num">5</span><span class="num">969 ms<span class="p95">1.5 s</span></span></div>
+        <div class="tr"><span class="model">gpt-6-astra <span class="ef">· medium</span></span><span class="share"><i style="--w:12.5%"></i>1</span><span class="num">4</span><span class="num">2.3 s<span class="p95">3.8 s</span></span></div>
+        <div class="tr"><span class="model"><span class="pv">ollama/</span>gemma4-31b <span class="ef">· no effort</span></span><span class="share"><i style="--w:12.5%"></i>1</span><span class="num">1</span><span class="num">459 ms<span class="p95">459 ms</span></span></div>
+      </div>
+      <details class="more">
+        <summary>Admissions by task</summary>
+        <div class="heat" style="grid-template-columns: 150px repeat(6, minmax(0, 1fr))">
+          <span></span><span class="mono">astra · high</span><span class="mono">glm-5.3 · high</span><span class="mono">astra · medium</span><span class="mono">astra-resp · low</span><span class="mono">gemma4</span><span class="mono">flash · none</span>
+          <span>debugging</span><div class="c n1">1</div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c n1">1</div><div class="c"></div>
+          <span>agentic tool task</span><div class="c"></div><div class="c n2">2</div><div class="c n1">1</div><div class="c"></div><div class="c"></div><div class="c"></div>
+          <span>design or review</span><div class="c n1">1</div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div>
+          <span>quick question</span><div class="c"></div><div class="c"></div><div class="c"></div><div class="c n1">1</div><div class="c"></div><div class="c"></div>
+          <span>other</span><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c n1">1</div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== SESSIONS ===================== -->
+  <section class="view" id="v-sessions">
+    <div class="head">
+      <h1>Sessions</h1>
+      <div class="views">
+        <a class="on" href="#sessions">All <small>47</small></a>
+        <a href="#sessions">Problems <small>9</small></a>
+        <a href="#sessions">Unrated <small>47</small></a>
+        <a href="#sessions">Pinned <small>8</small></a>
+      </div>
+      <div class="right">
+        <div class="seg" role="group" aria-label="Last seen"><button class="on">any</button><button>24h</button><button>7d</button><button>30d</button></div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label class="search"><span class="t3">⌕</span><input id="q" placeholder="Search titles and prompts, or filter: rule:hard model:glm-5.3 problem:any" autocomplete="off"></label>
+      <span class="chip"><span class="k">client</span> pi <button class="x" title="Remove filter">✕</button></span>
+      <button class="chip add">+ Filter</button>
+      <span class="count">43 of 47 sessions</span>
+    </div>
+    <div class="band" style="padding-top:14px">
+      <div class="tbl sessions" id="rows">
+        <div class="tr th"><span>Session</span><span>Last seen</span><span>Model · effort</span><span>Rule</span><span>Verdict</span><span class="num">Problems</span></div>
+      </div>
+      <div class="foot"><span>Sessions before 27 Oct have no stored prompt, title or turn count; the router did not log them yet.</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== SESSION ===================== -->
+  <section class="view" id="v-session">
+    <div class="crumbs">
+      <a href="#sessions">← Sessions</a><span class="t3">client is pi</span>
+      <div class="right"><span>21 of 47</span><a class="pg" href="#session">Newer</a><a class="pg" href="#session">Older</a></div>
+    </div>
+    <div class="shead">
+      <h1>Our deploy script started failing with 401 after I rotated keys</h1>
+      <div class="strip">
+        <span class="model"><span class="pv">ollama/</span>glm-5.3 <span class="ef">· high</span></span>
+        <span>pi</span><span class="mono t2">jev-router</span><span>Thu 24 Sep 10:34</span><span>1 turn</span><span>37 calls</span>
+        <span class="t3">unrated</span>
+        <div class="acts">
+          <div class="fb" role="group" aria-label="Feedback"><button>✓ good</button><button>↑ too weak</button><button>↓ too strong</button></div>
+          <button class="ghost">⋯</button>
+        </div>
+      </div>
+    </div>
+    <div class="decision">
+      <span class="lead">Admitted by</span><b class="mono">moderate_tools</b>
+      <span class="why">difficulty 2.33 ≥ 1.4 with tools · route mid_tools · quota kept the primary · lane moderate-tools, qualified</span>
+      <a href="#session">replay</a>
+    </div>
+
+    <div class="split">
+      <div class="band turns">
+        <div class="bh"><h2>Turns</h2><span class="note">calls joined by log order</span></div>
+        <button class="turn on">
+          <div class="t"><b>Turn 1 · admission</b><span>10:34</span></div>
+          <div class="p">Our deploy script started failing with 401 after I rotated keys…</div>
+          <div class="m"><span class="ch">moderate_tools → glm-5.3 · high</span><span>37 calls</span></div>
+        </button>
+        <button class="turn">
+          <div class="t"><b>Turn 2</b><span>10:41</span></div>
+          <div class="p">it still fails, the key is definitely in the env</div>
+          <div class="m"><span class="ch">held high</span><span>12 calls</span></div>
+        </button>
+        <button class="turn corr">
+          <div class="t"><b>Turn 3</b><span>10:52</span><span class="badge warn">corrective</span></div>
+          <div class="p">no, that's the wrong file. look at deploy/ci.sh</div>
+          <div class="m"><span class="ch">high → xhigh <span class="arrow up">▲</span></span><span>9 calls</span></div>
+        </button>
+        <button class="turn">
+          <div class="t"><b>Turn 4</b><span>11:03</span></div>
+          <div class="p"><span class="gap" title="Prompt not recorded"></span></div>
+          <div class="m"><span class="ch">held xhigh</span><span>3 calls</span></div>
+        </button>
+      </div>
+
+      <div class="band detail">
+        <details class="sec" open>
+          <summary>Why this rule<span class="note">Jev 183 ms · 1,651 tokens · config 908c9c86 from snapshot</span></summary>
+          <div class="body">
+            <div class="step"><i class="g" style="background:var(--good)"></i><span class="n">confidence gate</span><span class="w">passed · task 0.98, difficulty 0.67, both above 0.4</span></div>
+            <div class="step fold"><i class="g"></i><span>6 rules missed before it · <button type="button" id="showmiss">show them</button></span></div>
+            <div id="missed" hidden>
+              <div class="step"><i class="g"></i><span class="n">images_easy</span><span class="w">no images</span></div>
+              <div class="step"><i class="g"></i><span class="n">images_need_vision</span><span class="w">no images</span></div>
+              <div class="step"><i class="g"></i><span class="n">very_hard</span><span class="w">difficulty 2.33 &lt; 3</span></div>
+              <div class="step"><i class="g"></i><span class="n">hard</span><span class="w">difficulty 2.33 &lt; 2.4</span></div>
+              <div class="step"><i class="g"></i><span class="n">high_harm</span><span class="w">harm 0.27 &lt; 0.8</span></div>
+              <div class="step"><i class="g"></i><span class="n">moderate_careful</span><span class="w">harm 0.27 &lt; 0.45</span></div>
+            </div>
+            <div class="step hit"><i class="g"></i><span class="n">7 · moderate_tools</span><span class="w">tools yes · difficulty 2.33 ≥ 1.4 → mid_tools → ollama/glm-5.3 · high</span></div>
+            <div class="step fold"><i class="g"></i><span>moderate, easy, default not reached</span></div>
+            <div class="kv" style="margin-top:10px">
+              <span class="k">Quota</span><span>kept the primary · openai pressure &lt;0.01, xai 0.00, <span class="badge warn">ollama reading failed</span> (read as 0)</span>
+              <span class="k">Lane</span><span>moderate-tools · qualified <span class="t3">evals/reports/2026-09-20-glm-effort/summary.md</span></span>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Jev scores</summary>
+          <div class="body">
+            <div class="score"><span class="t2">Task</span><span class="v">debugging<small>0.98</small></span><div><div class="stack"><i style="width:99%"></i><i style="width:1%"></i></div><div class="note" style="margin-top:3px">debugging 99% · agentic tool task 1%</div></div></div>
+            <div class="score"><span class="t2">Difficulty</span><span class="v">2.33<small>0.67</small></span>
+              <div class="ruler" title="0 to 3">
+                <div class="tr"></div>
+                <i class="tk on" style="left:46.7%"></i><span class="lb on" style="left:46.7%">1.4 moderate_tools</span>
+                <i class="tk" style="left:80%"></i><span class="lb row2" style="left:80%">2.4 hard</span>
+                <i class="mk" style="left:77.7%" title="2.33"></i>
+              </div>
+            </div>
+            <div class="score"><span class="t2">Harm if wrong</span><span class="v">0.27</span>
+              <div class="ruler" title="0 to 1">
+                <div class="tr"></div>
+                <i class="tk" style="left:45%"></i><span class="lb" style="left:45%">0.45 moderate_careful</span>
+                <i class="tk" style="left:80%"></i><span class="lb row2" style="left:80%">0.8 high_harm</span>
+                <i class="mk" style="left:27%" title="0.27"></i>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Request<span class="note">26,453 tokens in · headroom 961k of 1M</span></summary>
+          <div class="body">
+            <div class="prompt">Our deploy script started failing with 401 after I rotated keys. I exported DEPLOY_TOKEN=[redacted] in my shell and re-ran it, same error. The CI run from this morning is green though. What am I missing?</div>
+            <div class="facts"><span>tools <b>33</b></span><span>images <b>none</b></span><span>reserve <b>12,288</b></span><span>languages <b>sh</b></span><span>pasted material <b>none</b></span></div>
+          </div>
+        </details>
+
+        <details class="sec">
+          <summary>Calls<span class="note">37 · first byte p50 1.1 s · usage not reported</span></summary>
+          <div class="body tbl calls">
+            <div class="tr th"><span>#</span><span>status</span><span class="num">first byte</span><span class="num">total</span><span class="num">bytes</span><span>request</span></div>
+            <div class="tr"><span>1</span><span>200</span><span class="num">1.66 s</span><span class="num">2.25 s</span><span class="num">14.7k</span><span class="t3">c70a0a31…</span></div>
+            <div class="tr"><span>2</span><span>200</span><span class="num">803 ms</span><span class="num">2.12 s</span><span class="num">33.8k</span><span class="t3">79f61bbe…</span></div>
+            <div class="tr"><span>3</span><span>200</span><span class="num">899 ms</span><span class="num">2.16 s</span><span class="num">36.7k</span><span class="t3">448a703f…</span></div>
+            <div class="tr"><span>4</span><span>200</span><span class="num">948 ms</span><span class="num">997 ms</span><span class="num">1.1k</span><span class="t3">b35f7ec7…</span></div>
+            <div class="tr"><span class="t3">…</span><span class="t3">33 more</span><span></span><span></span><span></span><span></span></div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RULES ===================== -->
+  <section class="view" id="v-rules">
+    <div class="head">
+      <h1>Rules</h1>
+      <div class="seg" role="group" aria-label="Ruleset"><button class="on">policy</button><button>astra_adaptive</button></div>
+      <div class="right">
+        <div class="seg" role="group" aria-label="Window"><button>1h</button><button>24h</button><button class="on">7d</button><button>30d</button></div>
+        <button class="ghost" id="edit">Edit router.yaml</button>
+      </div>
+    </div>
+    <div class="grid rules">
+      <div class="band">
+        <div class="bh"><h2>Ladder</h2><span class="note">first match wins · 7 of 8 admissions this week</span></div>
+        <div class="tbl ladder">
+          <div class="tr th"><span></span><span>Rule</span><span>When</span><span>Sends to</span><span class="num">Hits</span></div>
+          <div class="tr quiet"><span class="i"></span><span class="n">confidence gate</span><span class="when">task or difficulty confidence &lt; 0.4</span><span class="to">frontier_medium → gpt-6-astra · medium</span><span class="num share"><i style="--w:14%"></i>1</span></div>
+          <div class="tr"><span class="i">1</span><span class="n">images_easy</span><span class="when">images · difficulty ≤ 1.4 · harm ≤ 0.8</span><span class="to">fast_vision → gemma4-31b <span class="lane">· simple-vision</span></span><span class="num share"><i style="--w:14%"></i>1</span></div>
+          <div class="tr zero"><span class="i">2</span><span class="n">images_need_vision</span><span class="when">images</span><span class="to">frontier_medium → gpt-6-astra · medium <span class="lane">· vision-work</span></span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+          <div class="tr zero"><span class="i">3</span><span class="n">very_hard</span><span class="when">difficulty ≥ 3</span><span class="to">frontier_xhigh → gpt-6-astra · xhigh <span class="lane">· hardest-work</span></span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+          <div class="tr"><span class="i">4</span><span class="n">hard</span><span class="when">difficulty ≥ 2.4</span><span class="to">frontier_high → gpt-6-astra · high <span class="lane">· hard-work</span></span><span class="num share"><i style="--w:28%"></i>2</span></div>
+          <div class="tr zero"><span class="i">5</span><span class="n">high_harm</span><span class="when">harm ≥ 0.8</span><span class="to">frontier_medium → gpt-6-astra · medium <span class="lane">· high-consequence</span></span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+          <div class="tr zero"><span class="i">6</span><span class="n">moderate_careful</span><span class="when">task ∉ code-edit · difficulty ≥ 1.4 · harm ≥ 0.45</span><span class="to">careful → gpt-6-astra · medium <span class="lane">· careful-moderate</span></span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+          <div class="tr"><span class="i">7</span><span class="n">moderate_tools</span><span class="when">tools · difficulty ≥ 1.4</span><span class="to">mid_tools → glm-5.3 · high <span class="lane">· moderate-tools</span></span><span class="num share"><i style="--w:28%"></i>2</span></div>
+          <div class="tr zero"><span class="i">8</span><span class="n">moderate</span><span class="when">difficulty ≥ 1.4</span><span class="to">mid → glm-5.3 · none <span class="lane">· moderate-work</span></span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+          <div class="tr"><span class="i">9</span><span class="n">easy</span><span class="when"><span class="always">always</span></span><span class="to">fast → glm-5.3-flash · none <span class="lane">· simple-work</span></span><span class="num share"><i style="--w:14%"></i>1</span></div>
+          <div class="tr quiet"><span class="i"></span><span class="n">default</span><span class="when"><span class="always">always</span></span><span class="to">frontier_medium → gpt-6-astra · medium</span><span class="num share"><i style="--w:0%"></i><span class="t3">0</span></span></div>
+        </div>
+      </div>
+      <div>
+        <div class="band">
+          <div class="bh"><h2>Where admissions landed</h2><span class="note">8 this week</span></div>
+          <div class="rul">
+            <div class="name">Difficulty</div>
+            <div class="ruler">
+              <div class="dots"><i style="left:4%"></i><i style="left:16%"></i><i style="left:40%"></i><i style="left:46%"></i><i style="left:76%"></i><i style="left:78%"></i><i style="left:94%"></i><i style="left:96%"></i></div>
+              <div class="tr"></div>
+              <i class="tk" style="left:46.6%"></i><span class="lb" style="left:46.6%">1.4 moderate</span>
+              <i class="tk" style="left:80%"></i><span class="lb" style="left:80%">2.4 hard</span>
+              <i class="tk" style="left:100%"></i><span class="lb row2" style="left:100%;transform:translateX(-100%)">3 very_hard</span>
+            </div>
+          </div>
+          <div class="rul">
+            <div class="name">Harm if wrong</div>
+            <div class="ruler">
+              <div class="dots"><i style="left:8%"></i><i style="left:12%"></i><i style="left:13%"></i><i style="left:19%"></i><i style="left:27%"></i><i style="left:37%"></i><i style="left:91%"></i><i style="left:92%"></i></div>
+              <div class="tr"></div>
+              <i class="tk" style="left:45%"></i><span class="lb" style="left:45%">0.45 moderate_careful</span>
+              <i class="tk" style="left:80%"></i><span class="lb" style="left:80%">0.8 high_harm</span>
+            </div>
+          </div>
+          <div class="legend"><span class="dot v-good">good</span><span class="dot v-weak">too weak</span><span class="dot v-strong">too strong</span><span class="dot t3">unrated</span><span style="margin-left:auto">0 of 2 within 0.10 of a threshold</span></div>
+        </div>
+        <div class="band">
+          <div class="bh"><h2>Settings</h2></div>
+          <div class="kv" style="grid-template-columns:110px 1fr">
+            <span class="k">Quota</span><span>demote above 0.6 · exhausted at 100%</span>
+            <span class="k">Adaptive effort</span><span>active · low → medium → high · raise at difficulty 1.8, harm 0.6, corrective 0.6 · lower after 2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="band editor" id="editor" hidden>
+      <div class="bh"><h2>router.yaml</h2><span class="mono t3">4b3e4e7c</span><div class="acts"><button class="ghost">Check</button><button class="ghost">Preview on 8 admissions</button><button class="ghost primary" disabled>Apply</button></div></div>
+      <pre>settings:
+  host: 100.82.7.89
+  port: 8318
+  upstream_base_url: http://127.0.0.1:8317
+  jev_model: jev-1.13.0
+  jev_timeout_ms: 1500
+  mode: active
+  log_state: true
+policy:
+  low_confidence: {min_confidence: 0.4, questions: [task, difficulty], use: {route: frontier_medium}}
+  rules:
+    - name: images_easy
+      when: {has_images: true, difficulty: {lte: 1.399}, harm_if_wrong: {lte: 0.799}}
+      use: {route: fast_vision}
+    <b>- name: hard
+      when: {difficulty: {gte: 2.4}}
+      use: {route: frontier_high}</b>
+    - name: moderate_tools
+      when: {has_tools: true, difficulty: {gte: 1.4}}
+      use: {route: mid_tools}</pre>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  // Sample rows, modelled on the live /router/audit/sessions payload. Titles are invented.
+  const ROWS = [
+    {t: "read the documentation in this repo, do you think we can reorganize them?", c: "pi", ws: "project-specific", n: 1, when: "08:29", m: "ollama/glm-5.3", e: "high", r: "moderate_tools", v: null, p: []},
+    {t: "hello", c: "pi", ws: "project-specific", n: 2, when: "08:28", m: "ollama/glm-5.3-flash", e: "none", r: "easy", v: null, p: []},
+    {t: "Adaptive effort", pin: true, c: "codex-adapter", ws: null, n: 6, when: "26 Oct", m: "gpt-6-astra-responses", e: "low", e2: "medium", r: "astra_session", v: null, p: []},
+    {t: "Our deploy script started failing with 401 after I rotated keys", pin: true, c: "pi", ws: "jev-router", n: 4, when: "24 Sep", m: "ollama/glm-5.3", e: "high", e2: "xhigh", r: "moderate_tools", v: "weak", p: []},
+    {t: "Write a migration that adds a nullable archived_at column to invoices", c: "pi", ws: "billing", n: 3, when: "26 Oct", m: "gpt-6-astra", e: "high", r: "hard", v: "good", p: []},
+    {t: "Refactor the chart tooltip into its own component", c: "pi", ws: "dash", n: 5, when: "26 Oct", m: "gpt-6-astra", e: "high", r: "hard", v: "strong", p: []},
+    {t: "What does this screenshot say the error is?", pin: true, c: "pi", ws: "dash", n: 1, when: "26 Oct", m: "ollama/gemma4-31b", e: null, r: "images_easy", v: null, p: []},
+    {t: "is it safe to run this on prod?", pin: true, c: "pi", ws: null, n: 1, when: "26 Oct", m: "gpt-6-astra", e: "medium", r: "low_confidence", v: null, p: ["low confidence"]},
+    {t: null, id: "f1aa…", c: "pi", ws: null, n: null, when: "16 Oct", m: "gpt-6-astra", e: "medium", r: "low_confidence", v: null, p: ["low confidence"]},
+    {t: null, id: "191b…", c: "pi", ws: null, n: null, when: "27 Sep", m: "ollama/glm-5.3-flash", e: "none", r: "easy", v: null, p: ["1 unknown"]},
+    {t: null, id: "77b6…", c: "pi", ws: null, n: null, when: "21 Sep", m: "gpt-6-astra", e: "medium", r: "low_confidence", v: null, p: ["1 unknown", "low confidence"], bad: true},
+    {t: null, id: "7412…", c: "pi", ws: null, n: null, when: "20 Sep", m: "ollama/glm-5.3", e: "high", r: "moderate_tools", v: null, p: []},
+    {t: null, id: "d5fc…", c: "pi", ws: null, n: null, when: "19 Sep", m: "ollama/glm-5.3-flash", e: "none", r: "easy", v: null, p: [], closed: true},
+  ];
+  const VERD = {good: ["v-good", "good"], weak: ["v-weak", "too weak"], strong: ["v-strong", "too strong"]};
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  function model(m, e, e2) {
+    const i = m.lastIndexOf("/");
+    const pv = i < 0 ? "" : '<span class="pv">' + esc(m.slice(0, i + 1)) + "</span>";
+    const name = i < 0 ? m : m.slice(i + 1);
+    let ef = e ? " · " + e : ' · <span class="t3">no effort</span>';
+    if (e2 && e2 !== e) ef = " · " + e + ' <span class="arrow up">→</span> ' + e2;
+    return '<span class="model">' + pv + esc(name) + '<span class="ef">' + ef + "</span></span>";
+  }
+  const list = document.getElementById("rows");
+  for (const r of ROWS) {
+    const sub = [r.c, r.ws, r.n === null ? null : r.n + (r.n === 1 ? " turn" : " turns"), r.closed ? "closed" : null].filter(Boolean).join(" · ");
+    const title = r.t ? "<b>" + (r.pin ? '<span class="pin">◆</span>' : "") + esc(r.t) + "</b>" : '<b class="mono t2">' + esc(r.id) + ' <span class="gap s12" title="Prompt not recorded before 27 Oct"></span></b>';
+    const v = r.v ? '<span class="dot ' + VERD[r.v][0] + '">' + VERD[r.v][1] + "</span>" : "";
+    const p = r.p.length ? '<span class="badge ' + (r.bad ? "bad" : "warn") + '" title="' + esc(r.p.join(", ")) + '">' + r.p.length + "</span>" : "";
+    const a = document.createElement("a");
+    a.className = "tr"; a.href = "#session";
+    a.innerHTML = '<span class="ti">' + title + "<small>" + esc(sub) + "</small></span>"
+      + '<span class="t2 s13">' + esc(r.when) + "</span>" + model(r.m, r.e, r.e2)
+      + '<span class="rule">' + esc(r.r) + "</span><span>" + v + '</span><span class="num">' + p + "</span>";
+    list.append(a);
+  }
+
+  // Requests per hour, 24 buckets: the live window had three busy hours.
+  const REQ = [0,0,0,0,0,0,0,0,0,31,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+  REQ[14] = 9; REQ[23] = 17; REQ[16] = 4;
+  const FB = [null,null,null,null,null,null,null,null,null,1.91,null,null,null,null,1.2,null,.9,null,null,null,null,null,null,1.4];
+  const bars = document.getElementById("bars");
+  REQ.forEach((n, i) => {
+    const b = document.createElement("div"); b.className = "b";
+    b.title = (9 + i) % 24 + ":00 · " + n + " calls" + (FB[i] ? " · first byte " + FB[i] + " s" : "");
+    const g = document.createElement("i"); g.style.height = (n / 31 * 100) + "%"; b.append(g); bars.append(b);
+  });
+  const svg = document.getElementById("fbline");
+  const pts = FB.map((v, i) => v === null ? null : [i / 23 * 100, 34 - v / 2 * 30]).filter(Boolean);
+  svg.innerHTML = '<path d="' + pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ") + '"/>'
+    + pts.map((p) => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2"/>').join("");
+
+  // Routing on the hash: overview, sessions, session, rules.
+  function show() {
+    const name = (location.hash || "#overview").slice(1);
+    const view = ["overview", "sessions", "session", "rules"].includes(name) ? name : "overview";
+    for (const s of document.querySelectorAll(".view")) s.classList.toggle("on", s.id === "v-" + view);
+    for (const t of document.querySelectorAll(".tab")) {
+      const on = t.dataset.view === view || (view === "session" && t.dataset.view === "sessions");
+      if (on) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+    }
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", show);
+  show();
+
+  // Small interactions: turn selection, the missed rules, the editor.
+  for (const t of document.querySelectorAll(".turn")) t.addEventListener("click", () => {
+    for (const o of document.querySelectorAll(".turn")) o.classList.remove("on");
+    t.classList.add("on");
+  });
+  document.getElementById("showmiss").addEventListener("click", (e) => {
+    const box = document.getElementById("missed");
+    box.hidden = !box.hidden; e.target.textContent = box.hidden ? "show them" : "hide them";
+  });
+  document.getElementById("edit").addEventListener("click", () => {
+    const ed = document.getElementById("editor");
+    ed.hidden = !ed.hidden; if (!ed.hidden) ed.scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  for (const seg of document.querySelectorAll(".seg")) seg.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const o of seg.querySelectorAll("button")) o.classList.remove("on"); b.classList.add("on");
+  });
+  for (const v of document.querySelectorAll(".views a")) v.addEventListener("click", () => {
+    for (const o of document.querySelectorAll(".views a")) o.classList.remove("on"); v.classList.add("on");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.metaKey || e.ctrlKey) return;
+    if (e.key === "o") location.hash = "#overview";
+    if (e.key === "s") location.hash = "#sessions";
+    if (e.key === "r") location.hash = "#rules";
+    if (e.key === "/") { e.preventDefault(); location.hash = "#sessions"; setTimeout(() => document.getElementById("q").focus(), 30); }
+  });
+})();
+</script>
+</body>
+</html>
