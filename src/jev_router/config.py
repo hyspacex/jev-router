@@ -670,6 +670,9 @@ class RouterConfig(Base):
     # knows which router.yaml produced it.
     _config_hash: str = PrivateAttr(default="")
     _config_path: str = PrivateAttr(default="")
+    # The exact text that was hashed, kept so the startup snapshot records
+    # the file this process loaded rather than whatever is on disk later.
+    _config_text: str = PrivateAttr(default="")
 
     @property
     def config_hash(self) -> str:
@@ -1333,32 +1336,98 @@ class RouterConfig(Base):
         return problems
 
 
+def config_text_hash(text: str) -> str:
+    """The hash `load_config` stores with every decision: sha256 of the text."""
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
 def load_config(path: str | Path, check_registries: bool = True) -> RouterConfig:
     """Read and validate router.yaml, raising ConfigError with readable text."""
     path = Path(os.path.expanduser(str(path)))
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
     text = path.read_text()
+    return config_from_text(
+        text, str(path), check_registries=check_registries, path=str(path)
+    )
+
+
+def config_from_text(
+    text: str,
+    source: str = "<text>",
+    check_registries: bool = True,
+    path: str = "",
+) -> RouterConfig:
+    """Validate config text exactly as `load_config` validates a file.
+
+    The hash is the hash of `text`. `path`, when given, is where relative
+    references resolve from. A caller loading a stored snapshot sets the hash
+    back to the key the snapshot was stored under.
+    """
     try:
         raw = yaml.safe_load(text) or {}
     except yaml.YAMLError as exc:
-        raise ConfigError(f"{path}: invalid YAML: {exc}") from exc
+        raise ConfigError(f"{source}: invalid YAML: {exc}") from exc
     if not isinstance(raw, dict):
-        raise ConfigError(f"{path}: top level must be a mapping")
+        raise ConfigError(f"{source}: top level must be a mapping")
     try:
         cfg = RouterConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigError(f"{path} is invalid:\n{_format_errors(exc)}") from exc
-    cfg._config_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
-    cfg._config_path = str(path)
+        raise ConfigError(f"{source} is invalid:\n{_format_errors(exc)}") from exc
+    cfg._config_hash = config_text_hash(text)
+    cfg._config_text = text
+    cfg._config_path = path
 
     if check_registries:
         problems = check_registry_names(cfg)
         if problems:
             raise ConfigError(
-                f"{path} is invalid:\n" + "\n".join(f"- {p}" for p in problems)
+                f"{source} is invalid:\n" + "\n".join(f"- {p}" for p in problems)
             )
     return cfg
+
+
+# What a stored config snapshot never keeps. A quota command can carry an
+# inline credential and is never needed to replay a decision, so every key
+# that names one is replaced before the text is written anywhere.
+SCRUBBED = "<scrubbed>"
+QUOTA_COMMAND_KEYS = ("argv", "command", "cmd", "args", "env")
+
+
+def scrub_config_text(text: str) -> str:
+    """The config text with every quota command, and any URL credential, removed.
+
+    The text is parsed and dumped again, so comments go too; a comment is not
+    needed to replay a decision and may hold anything. Raises ConfigError when
+    the text is not a YAML mapping.
+    """
+    try:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"invalid YAML: {type(exc).__name__}") from exc
+    if not isinstance(raw, dict):
+        raise ConfigError("top level must be a mapping")
+    providers = raw.get("providers")
+    if isinstance(providers, dict):
+        for provider in providers.values():
+            quota = provider.get("quota") if isinstance(provider, dict) else None
+            if not isinstance(quota, dict):
+                continue
+            for holder in (quota, quota.get("config")):
+                if not isinstance(holder, dict):
+                    continue
+                for key in list(holder):
+                    if key in QUOTA_COMMAND_KEYS:
+                        holder[key] = [SCRUBBED] if isinstance(holder[key], list) else SCRUBBED
+    settings = raw.get("settings")
+    if isinstance(settings, dict):
+        for key, value in list(settings.items()):
+            if isinstance(value, str) and "://" in value and "@" in value.split("://", 1)[1].split("/", 1)[0]:
+                scheme, rest = value.split("://", 1)
+                host = rest.split("/", 1)
+                host[0] = host[0].rsplit("@", 1)[1]
+                settings[key] = f"{scheme}://{'/'.join(host)}"
+    return yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
 
 
 def check_registry_names(cfg: RouterConfig) -> list[str]:

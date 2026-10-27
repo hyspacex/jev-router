@@ -39,6 +39,63 @@ def build_state(name: str, features: Features, config: Any) -> Any:
     return builder(features, config)
 
 
+# --- what was shown, without what it said --------------------------------
+
+# A fact string longer than this is dropped from the shape: the short ones are
+# labels (a client name, a schema version), and a long one could be text.
+SHAPE_FACT_MAX_CHARS = 40
+
+
+def state_shape(builder: str, state: Any) -> dict[str, Any] | None:
+    """The outline of a Jev state: field names and sizes, never their text.
+
+    `parts` maps each top-level field to its character count. A string counts
+    its own characters; a list or mapping (quoted material, observations)
+    counts the characters of every string inside it. `facts` copies the
+    state's `facts` with each list replaced by its length, each string longer
+    than SHAPE_FACT_MAX_CHARS dropped, and anything nested dropped.
+
+    Pure, and safe on any input: an unknown shape returns None.
+    """
+    if state is None:
+        return None
+    parts: dict[str, int] = {}
+    facts: dict[str, Any] = {}
+    if isinstance(state, str):
+        parts["state"] = len(state)
+    elif isinstance(state, dict):
+        for key, value in state.items():
+            if key == "facts":
+                continue
+            if isinstance(value, str):
+                parts[str(key)] = len(value)
+            elif isinstance(value, (list, tuple, dict)):
+                parts[str(key)] = _text_chars(value)
+        raw = state.get("facts")
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                if value is None or isinstance(value, (bool, int, float)):
+                    facts[str(key)] = value
+                elif isinstance(value, str):
+                    if len(value) <= SHAPE_FACT_MAX_CHARS:
+                        facts[str(key)] = value
+                elif isinstance(value, (list, tuple)):
+                    facts[str(key)] = len(value)
+    else:
+        return None
+    return {"builder": builder, "parts": parts, "facts": facts}
+
+
+def _text_chars(value: Any) -> int:
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, dict):
+        return sum(_text_chars(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_text_chars(v) for v in value)
+    return 0
+
+
 def squeeze(text: str, limit: int) -> tuple[str, dict[str, int]]:
     """Cut text to `limit` characters, keeping the head and the tail.
 

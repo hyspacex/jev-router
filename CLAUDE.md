@@ -20,7 +20,13 @@ uv run jev-router sessions show <id>
 uv run jev-router sessions close <id>
 uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
 uv run jev-router decisions -n 20             # active vs shadow answers, lane, quota
-uv run jev-router decisions replay <id>       # re-run the selection from the row
+uv run jev-router decisions replay <id>       # the deciding row: admission, else first unpinned
+uv run jev-router decisions replay '#730'     # one exact row; also --row 730
+uv run jev-router config-snapshots list       # stored configs, scrubbed, and whether each loads
+uv run jev-router config-snapshots import old.yaml   # only a hash some decision carries
+uv run jev-router bookmarks add <session-id> --label "Debugging" [--slug debugging]
+uv run jev-router bookmarks list
+uv run jev-router bookmarks remove <slug>
 uv run jev-router feedback last too_weak --model gpt-6-astra --effort high
 uv run jev-router prune --older-than-days 30  # irreversible
 uv run jev-router adapter --alias <strict-alias> --port 18320   # Codex client shim
@@ -84,13 +90,16 @@ the offline comparison until a qualified deployment and live arm are available.
 - `config.py` — pydantic models for `router.yaml`, cross-field validation, the
   `JEV_ROUTER_UPSTREAM` override, the config hash stored with every decision.
 - `features.py` — turns a chat-completions body into counts and flags. Pure.
-- `state.py` — state builders, the registry, the paste/continuation split, and
-  `turn_state_v1`, which bounds a client-supplied turn packet.
+- `state.py` — state builders, the registry, the paste/continuation split,
+  `turn_state_v1`, which bounds a client-supplied turn packet, and
+  `state_shape`: a built state's field names and character counts, never text.
 - `policy.py` — confidence gate, rule matching, route resolution, quota
   threshold shifts, route reordering, caps, floors, capability filters, effort
   clamping. Also `select`, the one admission function of spec 8.1, the quality
   lane guard, the distribution helpers (`p_hard`, `p_nontrivial`) and the
-  action-equivalence gate. Pure: no network, no clock, no database.
+  action-equivalence gate. Also `trace`, the gate and every rule of one
+  `select` call, collected from the same pass so it agrees by construction.
+  Pure: no network, no clock, no database.
 - `semantic.py` — packet versions, the active/shadow split, `SemanticResult`,
   and `replay_decision`, which re-runs a stored decision from its own row.
 - `providers.py` — one circuit breaker per provider, in memory, plus the
@@ -103,15 +112,19 @@ the offline comparison until a qualified deployment and live arm are available.
   answers; `decide` runs the cross-model policy over them. Falls back on any
   error.
 - `deciders/rules.py` — no-network decider that guesses from counts.
-- `pins.py` — sqlite: pins, decision log, feedback, conversation key, and the
-  forward-only column migration.
+- `pins.py` — sqlite: pins, decision log, feedback, conversation key, the
+  forward-only column migration, and `config_snapshots`: each config's text
+  once per hash, quota commands scrubbed, loaded back by `load_config_snapshot`.
 - `sessions.py` — strict session bindings and the bounded request-ID history,
   on the connection `pins.py` owns. Conditional version writes, the in-process
   execution claim, the startup guard, the binding digest, the resolve request
   schema and the 14 error codes. Legacy pins are never read or written here.
   Also the decision-log columns the semantic packet and the quality guard add,
   in a map of their own, and the `turn_plans` ledger with the session columns
-  the effort experiment adds, in another.
+  the effort experiment adds, in another. The inspector's map (`state_shape`),
+  the `audit_bookmarks` table, and its read helpers (`audit_sessions`,
+  `admission_row`, `request_rows`, `all_plans`), none of which return an owner
+  or a fingerprint.
 - `effort.py` — the between-turn turn-plan policy and the ledger's status
   transitions. Pure: a ladder in, a rung out. It never chooses a model.
 - `protocols.py` — the experimental Responses contract: the
@@ -122,12 +135,16 @@ the offline comparison until a qualified deployment and live arm are available.
   not policy: it resolves a binding, asks for turn plans, inserts the items
   the plans hand it, and chooses nothing. In memory only.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
+- `dashboard.py` — the read-only audit UI and its JSON: `/router/audit`
+  (recent rows), `/router/audit/sessions` (sessions, bookmarks) and
+  `/router/audit/sessions/{id}` (binding, admission, requests, plans, and the
+  admission's trace). Every field is projected by name.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
 - `security.py` — router-endpoint authentication, request-size and concurrency limits.
 - `deciders/validation.py` — validates provider answer shape and numeric bounds.
 - `cli.py` — serve, check-config, explain, quota, sessions, decisions,
-  `decisions replay`, feedback, prune.
+  `decisions replay`, feedback, prune, config-snapshots, bookmarks.
 
 Request flow: `app.chat_completions` → `features.extract_features` →
 `pins.conversation_key` and a pin lookup → `deciders.jev` → `state.build_state`
@@ -344,6 +361,16 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   request facts and the pressure it was taken under, with no prompt. Replay at
   the recorded pressure, and say so when the config hash has moved rather than
   claiming a match.
+- A config snapshot is written once per hash at startup, never on the request
+  path, with every quota `command` scrubbed; `config-snapshots import` takes
+  only a file whose hash a decision carries. Snapshots are never pruned and
+  never served: an endpoint returns what one explains, never its text.
+- The inspector traces the admission row only, at its recorded pressure,
+  under the config it was taken under: the running config when the hash
+  matches, else its snapshot, else `available: false` with the reason. Never
+  under another config, and never a fallback admission, where no rule ran.
+  Its endpoints write nothing and project by allowlist: no conversation key,
+  owner, fingerprint, tool or language names, state text or usage contents.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
   on non-streamed replies, and must yield chunks unchanged. An upstream
   fallback is chosen on the response status, before anything is streamed;
