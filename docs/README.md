@@ -17,9 +17,9 @@ on its fixed model. Legacy aliases and adaptive effort have separate guides.
 
 | Guide | What it covers |
 | --- | --- |
-| [Operations and privacy](guides/operations.md) | Dashboard, decision logs, feedback, stored data, transport, and retention. |
+| [Operations and privacy](guides/operations.md) | The dashboard (Overview, Sessions, the session page, Rules), feedback, the Jev sandbox, decision logs, stored and scrubbed text, transport, and retention. |
 | [Deployment](DEPLOYMENT.md) | launchd example, upgrades, additive migrations, backups, and rollback. |
-| [Quota-aware routing](guides/quota.md) | Sources, pressure, thresholds, and route ordering for new work. |
+| [Quota-aware routing](guides/quota.md) | Sources (CodexBar included), pressure, thresholds, route ordering for new work, and tracked subscriptions. |
 | [Legacy conversation routing](guides/legacy-routing.md) | Custom non-strict aliases, TTL pins, fallback plans, and shadow mode. Not the shipped default. |
 
 ## Reference
@@ -39,7 +39,7 @@ on its fixed model. Legacy aliases and adaptive effort have separate guides.
 | [Development and tests](development/testing.md) | Offline checks and regression coverage. |
 | [Evaluation guide](development/evaluation.md) | Classification, controls, live outcomes, isolation, and tuning. |
 | [Design](../DESIGN.md) | Architecture, trade-offs, and rejected alternatives. |
-| [Observability v2 design](OBSERVABILITY_V2_DESIGN.md) | Next-iteration design for CodexBar quota, session/turn text capture, causal turn inspector, rules & config tab, and system-level metrics. |
+| [Observability v2 design](OBSERVABILITY_V2_DESIGN.md) | Implemented 2026-10-27: CodexBar quota, scrubbed session and turn text, the turn inspector, the Rules view, and system-level metrics. Its implementation notes list where the code differs. |
 | [Test plan](../TESTPLAN.md) | Measurement methodology and acceptance-case mapping. |
 | [Session and effort specification](R2_SPEC.md) | C01–C34 and F01–F20 contracts, with later owner decisions marked in place. |
 | [Experiment log](../evals/EXPERIMENTS.md) | Changes tried and their before/after evidence. |
