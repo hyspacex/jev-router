@@ -1249,41 +1249,84 @@ class Sessions:
                 ]
         return out
 
+    def table_columns(self, table: str) -> set[str]:
+        """The columns this file's `table` has. A later release may add some."""
+        with self._lock:
+            rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return {row[1] for row in rows}
+
     def audit_overview(self, since: float) -> dict[str, list[dict[str, Any]]]:
         """The rows the overview is computed from, every one since `since`.
 
-        Named columns only: numbers, router-made labels and timestamps. No
-        conversation key, no owner, no fingerprint, no answers, no facts.
+        Named columns only: numbers, router-made labels, ids and timestamps.
+        No conversation key, no owner, no fingerprint, no facts. Answers,
+        shadow answers, usage blocks and plan facts are read here and reduced
+        to numbers and labels before anything leaves this method.
         """
+        session_extra = (
+            ", feedback_verdict" if "feedback_verdict" in self.table_columns("sessions") else ""
+        )
         queries = {
             "sessions": (
-                "SELECT created, state, adaptation_mode, decision_source,"
-                " decision_rule, quota_changed_choice FROM sessions WHERE created >= ?"
+                "SELECT session_id, created, state, adaptation_mode, decision_source,"
+                " decision_rule, quota_changed_choice" + session_extra
+                + " FROM sessions WHERE created >= ?"
             ),
             "requests": (
                 "SELECT created, status FROM session_requests WHERE created >= ?"
             ),
             "decisions": (
-                "SELECT ts, event_type, model, effort, rule, fallback, pinned, jev_ms,"
+                "SELECT id, decision_id, ts, event_type, session_id, alias, config_hash,"
+                " model, effort, rule, fallback, pinned, jev_ms,"
                 " first_byte_ms, response_ms, stream_state, upstream_status,"
-                " upstream_usage IS NOT NULL AS usage_reported"
+                " upstream_usage IS NOT NULL AS usage_reported, upstream_usage,"
+                " answers, shadow_answers"
                 " FROM decisions WHERE ts >= ?"
             ),
             "plans": (
-                "SELECT created, mode, action, status, from_effort, to_effort,"
-                " recommendation, jev_ms FROM turn_plans WHERE created >= ?"
+                "SELECT session_id, created, mode, action, status, from_effort, to_effort,"
+                " recommendation, jev_ms, plan_ms, facts FROM turn_plans WHERE created >= ?"
             ),
         }
+        feedback_sql = (
+            "SELECT decision_id, ts, verdict{extra} FROM feedback"
+            " WHERE decision_id IN (SELECT decision_id FROM decisions"
+            " WHERE ts >= ? AND event_type = ?){also} ORDER BY ts ASC, id ASC"
+        )
+        by_session = "session_id" in self.table_columns("feedback")
+        feedback_sql = feedback_sql.format(
+            extra=", session_id" if by_session else "",
+            also=(
+                " OR session_id IN (SELECT session_id FROM decisions"
+                " WHERE ts >= ? AND event_type = ? AND session_id IS NOT NULL)"
+                if by_session else ""
+            ),
+        )
+        feedback_args: tuple[Any, ...] = (since, EVENT_ADMISSION)
+        if by_session:
+            feedback_args += (since, EVENT_ADMISSION)
         with self._lock:
             out = {
                 name: [dict(row) for row in self._conn.execute(sql, (since,)).fetchall()]
                 for name, sql in queries.items()
             }
+            out["feedback"] = [
+                dict(row) for row in self._conn.execute(feedback_sql, feedback_args).fetchall()
+            ]
             # The newest quota reading any decision carried, whenever it was.
             row = self._conn.execute(
                 "SELECT ts, quota_snapshot FROM decisions"
                 " WHERE quota_snapshot IS NOT NULL ORDER BY id DESC LIMIT 1"
             ).fetchone()
+        for item in out["decisions"]:
+            item["values"] = answer_values(_loads(item.pop("answers")))
+            item["shadow_values"] = answer_values(_loads(item.pop("shadow_answers")))
+            item["usage"] = usage_counts(_loads(item.pop("upstream_usage")))
+        for item in out["plans"]:
+            item.update(plan_signals(_loads(item.pop("facts"))))
+        for item in out["feedback"]:
+            verdict = item.get("verdict")
+            item["verdict"] = verdict if isinstance(verdict, str) and _LABEL.fullmatch(verdict) else None
         quota = None
         if row is not None:
             try:
@@ -1292,6 +1335,71 @@ class Sessions:
                 quota = {"ts": row["ts"], "snapshot": None}
         out["quota"] = [quota] if quota else []
         return out
+
+    # --- what the config workbench reads -------------------------------
+    #
+    # Whole rows, for a replay that needs answers, facts and pressure. The
+    # workbench projects what it returns by name; nothing here is served as is.
+
+    def admissions_since(self, since: float, limit: int) -> list[dict[str, Any]]:
+        """The newest admission rows since `since`, newest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM decisions WHERE event_type = ? AND ts >= ?"
+                " ORDER BY id DESC LIMIT ?",
+                (EVENT_ADMISSION, since, int(limit)),
+            ).fetchall()
+        return [_decision_row(row) for row in rows]
+
+    def admission_rule_counts(self, since: float) -> list[tuple[Any, Any, int]]:
+        """(alias, rule, admissions) since `since`."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT alias, rule, COUNT(*) FROM decisions"
+                " WHERE event_type = ? AND ts >= ? GROUP BY alias, rule",
+                (EVENT_ADMISSION, since),
+            ).fetchall()
+        return [(row[0], row[1], int(row[2])) for row in rows]
+
+    def admission_feedback(self, since: float) -> list[dict[str, Any]]:
+        """Verdicts about the admissions since `since`, oldest first.
+
+        By the admission's decision id, and by its session id when the
+        feedback table has that column. Verdicts only: never a note.
+        """
+        by_session = "session_id" in self.table_columns("feedback")
+        sql = (
+            "SELECT decision_id, ts, verdict{extra} FROM feedback"
+            " WHERE decision_id IN (SELECT decision_id FROM decisions"
+            " WHERE ts >= ? AND event_type = ?){also} ORDER BY ts ASC, id ASC"
+        ).format(
+            extra=", session_id" if by_session else "",
+            also=(
+                " OR session_id IN (SELECT session_id FROM decisions"
+                " WHERE ts >= ? AND event_type = ? AND session_id IS NOT NULL)"
+                if by_session else ""
+            ),
+        )
+        args: tuple[Any, ...] = (since, EVENT_ADMISSION) * (2 if by_session else 1)
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [dict(row) for row in rows]
+
+    def session_labels(self, since: float) -> dict[str, dict[str, Any]]:
+        """Title and verdict of each session admitted since `since`, when the
+        sessions table has those columns. Empty when it has neither."""
+        present = self.table_columns("sessions")
+        wanted = [c for c in ("title", "feedback_verdict") if c in present]
+        if not wanted:
+            return {}
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT session_id, " + ", ".join(wanted) + " FROM sessions"
+                " WHERE session_id IN (SELECT session_id FROM decisions"
+                " WHERE event_type = ? AND ts >= ? AND session_id IS NOT NULL)",
+                (EVENT_ADMISSION, since),
+            ).fetchall()
+        return {row["session_id"]: dict(row) for row in rows}
 
     def audit_session(self, session_id: str) -> dict[str, Any] | None:
         """One session row, tombstones included, without owner or fingerprint."""
@@ -1477,6 +1585,102 @@ ADMISSION_PROBLEMS = {
     "low_confidence": "s.decision_rule = 'low_confidence'",
 }
 AUDIT_PROBLEMS = (*REQUEST_PROBLEMS, *ADMISSION_PROBLEMS)
+
+
+# --- reducing stored JSON to numbers and labels ---------------------------
+#
+# The overview reads answers, usage blocks and plan facts, and keeps only the
+# numbers and router-made labels in them. These helpers are that reduction.
+
+_LABEL = re.compile(r"[A-Za-z0-9_.:/()+-]{1,64}")
+
+
+def _loads(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def answer_values(raw: Any) -> dict[str, dict[str, Any]]:
+    """Each answer as `{type, value, confidence}`: a number, or a label.
+
+    Works on stored answers (`{type, score|noul|choice, confidence}`) and on
+    stored shadow values (`{type, value, confidence}`). A choice whose value
+    is not a plain label is dropped rather than copied.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for qid, answer in raw.items():
+        if not isinstance(qid, str) or not _LABEL.fullmatch(qid) or not isinstance(answer, dict):
+            continue
+        kind = answer.get("type")
+        value = answer.get(kind) if kind in ("score", "noul", "choice") else None
+        if value is None:
+            value = answer.get("value")
+        confidence = _number(answer.get("confidence"))
+        if kind in ("score", "noul") and _number(value) is not None:
+            out[qid] = {"type": kind, "value": float(value), "confidence": confidence}
+        elif kind == "choice" and isinstance(value, str) and _LABEL.fullmatch(value):
+            out[qid] = {"type": kind, "value": value, "confidence": confidence}
+    return out
+
+
+def _whole(value: Any) -> int | None:
+    number = _number(value)
+    return int(number) if number is not None and number >= 0 else None
+
+
+def usage_counts(usage: Any) -> dict[str, int | None]:
+    """Input, output and cached-input tokens from a usage block, or None each.
+
+    Chat completions say `prompt_tokens`, `completion_tokens` and
+    `prompt_tokens_details.cached_tokens`; Responses say `input_tokens`,
+    `output_tokens` and `input_tokens_details.cached_tokens`. Both are read.
+    A count the block did not carry is None, never zero.
+    """
+    out: dict[str, int | None] = {"input": None, "output": None, "cached": None}
+    if not isinstance(usage, dict):
+        return out
+    for key, names in (
+        ("input", ("input_tokens", "prompt_tokens")),
+        ("output", ("output_tokens", "completion_tokens")),
+    ):
+        for name in names:
+            value = _whole(usage.get(name))
+            if value is not None:
+                out[key] = value
+                break
+    for name in ("input_tokens_details", "prompt_tokens_details"):
+        details = usage.get(name)
+        if isinstance(details, dict):
+            value = _whole(details.get("cached_tokens"))
+            if value is not None:
+                out["cached"] = value
+                break
+    return out
+
+
+def plan_signals(facts: Any) -> dict[str, Any]:
+    """What the overview reads from a plan's facts: two numbers and a word."""
+    facts = facts if isinstance(facts, dict) else {}
+    evidence = facts.get("evidence") if isinstance(facts.get("evidence"), dict) else {}
+    thresholds = facts.get("thresholds") if isinstance(facts.get("thresholds"), dict) else {}
+    direction = facts.get("direction")
+    return {
+        "corrective_followup": _number(evidence.get("corrective_followup")),
+        "corrective_threshold": _number(thresholds.get("corrective_followup")),
+        "direction": direction if direction in ("up", "down", "hold") else None,
+    }
 
 
 def audit_where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
