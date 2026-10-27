@@ -855,3 +855,229 @@ async def test_overview_and_quota_carry_live_subscriptions(tmp_path, monkeypatch
     # Tracked subscriptions are shown, never routed: no pressure, no steering.
     assert "pressure" not in json.dumps(live["tracked"])
     assert "steering" not in json.dumps(live["tracked"])
+
+# --- the overview, v2 --------------------------------------------------------
+
+
+def overview_rows(since: float) -> dict:
+    """Hand-built rows, already reduced the way `Sessions.audit_overview` reduces them."""
+
+    def score(value):
+        return {"type": "score", "value": value, "confidence": 0.9}
+
+    def admission(row, decision, session, rule, model, effort, jev_ms, values, **extra):
+        return {"id": row, "decision_id": decision, "session_id": session, "ts": since + row,
+                "event_type": "admission", "alias": "auto", "config_hash": "testhash",
+                "rule": rule, "model": model, "effort": effort, "jev_ms": jev_ms,
+                "fallback": 0, "values": values, **extra}
+
+    def execution(ts, model, effort, first, total, usage):
+        return {"ts": since + ts, "event_type": "execution", "model": model, "effort": effort,
+                "first_byte_ms": first, "response_ms": total, "usage_reported": int(bool(usage)),
+                "usage": usage or {"input": None, "output": None, "cached": None}}
+
+    return {
+        "sessions": [{"session_id": f"s{i}", "created": since + i} for i in (1, 2, 3, 4)],
+        "requests": [{"created": since + 10 + i, "status": "completed"} for i in range(4)],
+        "decisions": [
+            admission(1, "d1", "s1", "hard", "big", "high", 200.0,
+                      {"difficulty": score(1.55), "task": {"type": "choice", "value": "code"}}),
+            admission(2, "d2", "s2", "easy", "small", "none", 100.0,
+                      {"difficulty": score(0.1), "task": {"type": "choice", "value": "quick_question"}}),
+            admission(3, "d3", "s3", "admission_fallback", "big", "medium", 1500.0, {}, fallback=1),
+            admission(4, "d4", "s4", "low_confidence", "big", "medium", 300.0,
+                      {"difficulty": score(1.5)}, config_hash="old"),
+            execution(10, "big", "high", 100.0, 1100.0, {"input": 1000, "output": 500, "cached": 800}),
+            execution(11, "big", "high", 300.0, 2300.0, {"input": 1000, "output": 1000, "cached": None}),
+            execution(12, "small", "none", None, 400.0, None),
+            execution(13, "paramy", "low", 50.0, 60.0, None),
+            {"ts": since + 21, "event_type": "effort_plan", "model": "big", "effort": "high",
+             "shadow_values": {"failure_mode": {"type": "choice", "value": "reasoning_problem"},
+                               "ignored": {"type": "noul", "value": 0.4}}},
+        ],
+        "plans": [
+            {"session_id": "s1", "created": since + 20, "mode": "shadow", "direction": "up",
+             "corrective_followup": 0.7, "jev_ms": 50.0, "plan_ms": 60.0},
+            {"session_id": "s1", "created": since + 30, "mode": "shadow", "direction": "hold",
+             "corrective_followup": 0.1, "jev_ms": 70.0, "plan_ms": 80.0},
+            {"session_id": "s2", "created": since + 25, "mode": "shadow", "direction": "hold",
+             "corrective_followup": None, "jev_ms": None, "plan_ms": 40.0},
+        ],
+        "feedback": [
+            {"decision_id": "d1", "ts": 1.0, "verdict": "too_weak"},
+            {"decision_id": "d1", "ts": 2.0, "verdict": "right"},
+            {"decision_id": "elsewhere", "session_id": "s2", "ts": 3.0, "verdict": "too_strong"},
+            {"decision_id": "d3", "ts": 4.0, "verdict": "<b>bad</b>"},
+        ],
+        "quota": [],
+    }
+
+
+def overview_config():
+    return make_config(models={"big": {"quota_cost": 1.0}, "small": {"quota_cost": 0.25}})
+
+
+def test_overview_v2_router_tax_and_upstream():
+    from jev_router.dashboard import build_overview
+
+    since = 1_000_000.0
+    body = build_overview(overview_rows(since), "1h", since, config=overview_config())
+    tax = body["router_tax"]
+    # Fallback time is router tax but not Jev's answer time.
+    assert tax["admission_ms"] == {"n": 3, "p50": 200.0, "p95": 300.0}
+    assert tax["plan_ms"] == {"n": 3, "p50": 60.0, "p95": 80.0}
+    assert tax["plan_jev_ms"]["n"] == 2
+    assert tax["jev_calls_timed"] == 6 and tax["jev_ms_total"] == 2220.0
+    assert tax["execution_requests"] == 4 and tax["amortized_ms_per_request"] == 555.0
+
+    pairs = {(p["model"], p["effort"]): p for p in body["upstream"]["pairs"]}
+    big = pairs[("big", "high")]
+    assert big["n"] == 2
+    assert big["first_byte_ms"] == {"n": 2, "p50": 100.0, "p95": 300.0}
+    # 500 tokens over 1000 ms of streaming, and 1000 over 2000 ms.
+    assert big["tps"] == {"n": 2, "p50": 500.0}
+    assert big["response_ms"] == {"n": 2, "p50": 1100.0}
+    small = pairs[("small", "none")]
+    assert small["tps"] == {"n": 0, "p50": None}
+    assert small["first_byte_ms"]["p50"] is None
+    # The series carries time to first byte beside the response time.
+    assert body["series"][0]["first_byte_p50_ms"] == 100.0
+    assert body["series"][1]["first_byte_p50_ms"] is None
+
+
+def test_overview_v2_quality():
+    from jev_router.dashboard import build_overview
+
+    since = 1_000_000.0
+    quality = build_overview(overview_rows(since), "1h", since, config=overview_config())["quality"]
+    corrective = quality["corrective_followup"]
+    assert corrective["threshold"] == 0.6
+    assert (corrective["numerator"], corrective["denominator"], corrective["rate"]) == (1, 2, 0.5)
+    assert corrective["by_rule"] == [{"rule": "hard", "numerator": 1, "denominator": 2, "rate": 0.5}]
+    early = quality["early_escalation"]
+    assert (early["numerator"], early["denominator"]) == (1, 2)
+    assert {r["rule"]: r["rate"] for r in early["by_rule"]} == {"hard": 1.0, "easy": 0.0}
+    edge = quality["knife_edge"]
+    # 1.55 is within 0.10 of `hard`'s 1.5; 0.1 is nowhere near `easy`'s 0.5.
+    assert (edge["numerator"], edge["denominator"]) == (1, 2)
+    assert edge["unassessed"] == 2
+    assert edge["unassessed_by_reason"] == {"no_ladder_rule": 1, "config_changed": 1}
+    # The newest verdict wins; a session-level verdict joins by session; junk is dropped.
+    assert quality["feedback"] == {
+        "admissions": 4,
+        "counts": {"right": 1, "too_weak": 0, "too_strong": 1, "too_slow": 0, "unrated": 2},
+    }
+    shadow = quality["shadow"]
+    assert set(shadow) == {"failure_mode"}
+    assert shadow["failure_mode"]["counts"] == {"reasoning_problem": 1}
+    assert shadow["failure_mode"]["by_pair"][0]["model"] == "big"
+
+
+def test_overview_v2_efficiency_matrix_and_reliability():
+    from jev_router.dashboard import build_overview
+
+    since = 1_000_000.0
+    breakers = {"default": {"state": "open", "healthy": False, "consecutive_failures": 3,
+                            "retry_in_seconds": 12.5, "last_error": f"upstream {MARKER}",
+                            "models": ["big"]}}
+    body = build_overview(overview_rows(since), "1h", since, config=overview_config(),
+                          breakers=breakers)
+    assert MARKER not in str(body)
+    efficiency = body["efficiency"]
+    # big, big and small are priced (1 + 1 + 0.25); paramy has no quota_cost.
+    assert efficiency["quota_saved"] == {
+        "saved_rate": 0.25, "quota_cost_sum": 2.25, "priced": 3, "unpriced": 1,
+    }
+    cache = efficiency["cache"]
+    assert (cache["rows"], cache["cached_tokens"], cache["input_tokens"], cache["rate"]) == (
+        1, 800, 1000, 0.8)
+    by_model = {m["model"]: m for m in cache["by_model"]}
+    assert by_model["small"]["rate"] is None and by_model["small"]["rows"] == 0
+    assert efficiency["usage_reported"] == {
+        "executions": 4, "reported": 2, "input": 2, "output": 2, "cached": 1,
+    }
+
+    matrix = body["matrix"]
+    assert matrix["question"] == "task" and matrix["tasks"] == ["code", "quick_question"]
+    cells = {(c["task"], c["model"], c["effort"]): c for c in matrix["cells"]}
+    assert cells[("code", "big", "high")]["corrective"]["rate"] == 0.5
+    assert cells[("quick_question", "small", "none")]["corrective"] == {
+        "numerator": 0, "denominator": 0, "rate": None}
+    assert cells[(None, "big", "medium")]["n"] == 2
+
+    reliability = body["reliability"]
+    assert reliability["fallback"] == {"numerator": 1, "denominator": 4, "rate": 0.25}
+    assert reliability["low_confidence"]["numerator"] == 1
+    breaker = reliability["breakers"]["default"]
+    assert breaker["state"] == "open" and breaker["consecutive_failures"] == 3
+    assert "last_error" not in breaker and "models" not in breaker
+
+
+def test_overview_v2_without_config_reports_gaps():
+    from jev_router.dashboard import build_overview
+
+    since = 1_000_000.0
+    body = build_overview({"sessions": [], "requests": [], "decisions": [], "plans": []}, "1h", since)
+    assert body["router_tax"]["amortized_ms_per_request"] is None
+    assert body["efficiency"]["quota_saved"]["saved_rate"] is None
+    assert body["efficiency"]["cache"]["rate"] is None
+    assert body["quality"]["corrective_followup"]["rate"] is None
+    assert body["quality"]["knife_edge"]["rate"] is None
+    assert body["reliability"]["breakers"] is None
+    body = build_overview(overview_rows(since), "1h", since)
+    # Without the running config nothing can be compared with a cutoff or a price.
+    assert body["quality"]["knife_edge"]["unassessed"] == 4
+    assert body["efficiency"]["quota_saved"]["unpriced"] == 4
+
+
+def test_usage_and_answers_reduce_to_numbers_and_labels():
+    from jev_router.sessions import answer_values, plan_signals, usage_counts
+
+    chat = {"prompt_tokens": 120, "completion_tokens": 30,
+            "prompt_tokens_details": {"cached_tokens": 100}, "note": MARKER}
+    responses = {"input_tokens": 90, "output_tokens": 10,
+                 "input_tokens_details": {"cached_tokens": 0}}
+    assert usage_counts(chat) == {"input": 120, "output": 30, "cached": 100}
+    assert usage_counts(responses) == {"input": 90, "output": 10, "cached": 0}
+    assert usage_counts({"total_tokens": 42}) == {"input": None, "output": None, "cached": None}
+    assert usage_counts("nonsense") == {"input": None, "output": None, "cached": None}
+    stored = {
+        "difficulty": {"type": "score", "score": 1.2, "confidence": 0.8},
+        "harm_if_wrong": {"type": "noul", "noul": 0.3},
+        "task": {"type": "choice", "choice": "code", "confidence": 0.9},
+        "odd": {"type": "choice", "choice": f"free text {MARKER}"},
+    }
+    assert answer_values(stored) == {
+        "difficulty": {"type": "score", "value": 1.2, "confidence": 0.8},
+        "harm_if_wrong": {"type": "noul", "value": 0.3, "confidence": None},
+        "task": {"type": "choice", "value": "code", "confidence": 0.9},
+    }
+    shadow = {"failure_mode": {"type": "choice", "value": "unclear", "confidence": 0.5}}
+    assert answer_values(shadow)["failure_mode"]["value"] == "unclear"
+    facts = {"direction": "up", "evidence": {"corrective_followup": 0.7, "difficulty": 2.0},
+             "thresholds": {"corrective_followup": 0.6}, "reason": MARKER}
+    assert plan_signals(facts) == {
+        "corrective_followup": 0.7, "corrective_threshold": 0.6, "direction": "up",
+    }
+    assert plan_signals(None)["direction"] is None
+
+
+@respx.mock
+async def test_overview_endpoint_reads_usage_and_breakers(tmp_path, strict_env):
+    svc = Service(tmp_path, config=file_config(tmp_path))
+    try:
+        caller = await run_session(svc, executions=1)
+        row = svc.sessions.request_rows(caller.session_id)[0]["decision"]
+        svc.router.store.update_decision(
+            row["id"], upstream_usage={"input_tokens": 10, "output_tokens": 4,
+                                       "input_tokens_details": {"cached_tokens": 6}})
+        before = svc.router.store.conn.total_changes
+        body = (await audit_get(svc, "/router/audit/overview?window=1h", token=ADMIN)).json()
+        assert svc.router.store.conn.total_changes == before
+    finally:
+        await svc.close()
+    assert body["efficiency"]["cache"]["rate"] == 0.6
+    assert body["efficiency"]["usage_reported"]["output"] == 1
+    assert body["matrix"]["cells"][0]["task"] == "code"
+    assert set(body["reliability"]["breakers"]) == {"default"}
+    assert body["quality"]["knife_edge"]["denominator"] == 1
