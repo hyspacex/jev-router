@@ -112,7 +112,7 @@ read (`sessions`, `executions`, `latency`, `series`, `decisions`, `quota`,
 | `quality.knife_edge` | admissions within `margin` (0.10) of a numeric cutoff in the rule they matched or its two neighbours, under the running config only; `unassessed` and `unassessed_by_reason` (`config_changed`, `alias_not_in_config`, `no_ladder_rule`) are counted apart |
 | `quality.feedback` | `admissions` and `counts` of the newest verdict per admission: `right`, `too_weak`, `too_strong`, `too_slow`, `unrated` |
 | `quality.shadow` | per shadow choice question: `n`, `counts` by label, `by_pair[]` |
-| `efficiency.quota_saved` | `saved_rate` = 1 - mean `quota_cost` over executions of models router.yaml prices; `quota_cost_sum`, `priced`, and `unpriced` (a model with no `quota_cost` written down) |
+| `efficiency.quota_saved` | frontier quota saved. `baseline_model` is the priced model with the highest `quota_cost` (the first named on a tie) and `provider` its provider. An execution on that provider costs its model's `quota_cost` over the baseline's; one on another provider costs 0; one on that provider whose model has no `quota_cost` written down, or that the config does not know, is `unknown`. `saved_rate` = 1 - `quota_cost_sum` / `counted`, `null` when nothing is counted or nothing is priced |
 | `efficiency.cache` | cached over input tokens, from rows that reported both: `rows`, `cached_tokens`, `input_tokens`, `rate`, and `by_model[]` |
 | `efficiency.usage_reported` | `executions`, `reported`, and how many carried `input`, `output`, `cached` counts |
 | `matrix` | admissions by the first choice question's label (`question`, `tasks`) and the chosen pair: `pairs[]`, `cells[]` each with `n` and a `corrective` rate from its sessions' plans |
@@ -137,8 +137,13 @@ is there), `yaml_source` (`loaded`, `file` or `null`), `window`, `since`,
 written down, `efforts`, `default_effort`, capabilities, `line`),
 `quota_policy`, `adaptive_effort` (mode, ladder, thresholds, targets,
 `downgrade_confirmations`, ...), `questions` (type, choices or levels, `line`),
-`thresholds` (every numeric `gte`/`lte` cutoff per question, sorted) and
-`effort_order`. An unknown parameter is a 400.
+`thresholds` (every numeric `gte`/`lte` cutoff per question, sorted),
+`effort_order`, `rated[]` (each admission in the window with numeric answers:
+`session_id`, `title`, `alias`, `rule`, `verdict`, `scores`, and `knife_edge`,
+`true`/`false` under the running config or `null` when it cannot be judged),
+`knife_edge` (the overview's `quality.knife_edge` over those admissions) and
+`quota_sources` (the providers whose quota source is on). An unknown parameter
+is a 400.
 
 `POST /router/config/preview` takes `{yaml, window?, limit?}` (limit 1-500,
 default 200). A draft that does not load returns 422 with
@@ -153,7 +158,9 @@ recorded pressure, and returns `evaluated`, `changed`, `unreplayable`,
 `before`/`after` as `{rule, route, model, effort, lane}`, `direction`,
 `feedback_verdict`, `feedback_effect`). `direction` compares effort on one
 model, and two models only by `quota_cost` on the same provider; anything
-else is `unranked`.
+else is `unranked`. `draft_thresholds` has the shape of `thresholds`, for the
+draft; `draft_rules` maps each ladder, named as under `rulesets`, to its rules
+as `{index, name, when, line}`, the line in the draft's own text.
 
 `POST /router/config/apply` takes `{yaml, base_hash?, force?}`. It refuses with
 409 when the running config came from no file, when `base_hash` is not the

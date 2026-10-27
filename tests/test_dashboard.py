@@ -249,6 +249,24 @@ async def test_unknown_session_is_404(dashboard_app):
 
 
 @respx.mock
+async def test_session_list_keeps_the_admitted_effort_after_a_step(tmp_path, strict_env):
+    """A feedback step rewrites the session's base effort; the list still says
+    what the admission chose, so the page can draw high -> medium."""
+    svc = Service(tmp_path, config=file_config(tmp_path))
+    try:
+        caller = await run_session(svc)
+        row = svc.sessions.get(caller.session_id)
+        assert svc.sessions.update(row["session_id"], row["version"], base_effort="medium",
+                                   effective_effort="medium")
+        body = (await inspect(svc, token=ADMIN)).json()
+    finally:
+        await svc.close()
+    [listed] = body["sessions"]
+    assert (listed["admitted_effort"], listed["effort"], listed["effective_effort"]) == (
+        "high", "medium", "medium")
+
+
+@respx.mock
 async def test_allowlist_holds_and_reads_write_nothing(tmp_path, strict_env):
     svc = Service(tmp_path, config=file_config(tmp_path))
     try:
@@ -288,6 +306,7 @@ async def test_allowlist_holds_and_reads_write_nothing(tmp_path, strict_env):
     [row] = body["sessions"]
     assert row["session_id"] == sid and row["requests"] == {"completed": 2}
     assert row["rule"] == "hard" and row["model"] == "big" and row["effort"] == "high"
+    assert row["admitted_effort"] == "high"
     assert row["config_matches"] is True
 
     body = detail.json()
@@ -1011,9 +1030,11 @@ def test_overview_v2_efficiency_matrix_and_reliability():
                           breakers=breakers)
     assert MARKER not in str(body)
     efficiency = body["efficiency"]
-    # big, big and small are priced (1 + 1 + 0.25); paramy has no quota_cost.
+    # big is the baseline; big, big and small cost 1 + 1 + 0.25 of it, and
+    # paramy, on the same provider with no quota_cost, is unknown.
     assert efficiency["quota_saved"] == {
-        "saved_rate": 0.25, "quota_cost_sum": 2.25, "priced": 3, "unpriced": 1,
+        "saved_rate": 0.25, "baseline_model": "big", "provider": "default",
+        "counted": 3, "unknown": 1, "quota_cost_sum": 2.25,
     }
     cache = efficiency["cache"]
     assert (cache["rows"], cache["cached_tokens"], cache["input_tokens"], cache["rate"]) == (
@@ -1054,7 +1075,73 @@ def test_overview_v2_without_config_reports_gaps():
     body = build_overview(overview_rows(since), "1h", since)
     # Without the running config nothing can be compared with a cutoff or a price.
     assert body["quality"]["knife_edge"]["unassessed"] == 4
-    assert body["efficiency"]["quota_saved"]["unpriced"] == 4
+    assert body["efficiency"]["quota_saved"]["unknown"] == 4
+    assert body["efficiency"]["quota_saved"]["baseline_model"] is None
+
+
+def frontier_config():
+    """Two subscriptions: astra and sol priced on openai, two ollama models
+    unpriced, and an openai model nobody priced."""
+    return make_config(providers={"openai": {}, "ollama": {}}, models={
+        **{m: {"provider": "ollama"} for m in ("small", "big", "paramy")},
+        "astra": {"upstream_id": "astra", "provider": "openai", "quota_cost": 1.0},
+        "astra-twin": {"upstream_id": "astra-twin", "provider": "openai", "quota_cost": 1.0},
+        "sol": {"upstream_id": "sol", "provider": "openai", "quota_cost": 0.2},
+        "unpriced": {"upstream_id": "unpriced", "provider": "openai"},
+        "glm": {"upstream_id": "glm", "provider": "ollama"},
+        "flash": {"upstream_id": "flash", "provider": "ollama"},
+    })
+
+
+def test_frontier_quota_saved_counts_other_providers_as_free():
+    from jev_router.dashboard import frontier_baseline, quota_saved
+
+    config = frontier_config()
+    # The dearest priced model, the first named on a tie, and its provider.
+    assert frontier_baseline(config) == ("astra", "openai", 1.0)
+    calls = ["astra", "sol", "glm", "flash", "glm", "unpriced", None, "gone"]
+    body = quota_saved(calls, config)
+    # astra 1 + sol 0.2 + three ollama calls at 0, over five counted calls;
+    # the unpriced openai model, the missing model and the unknown one are apart.
+    assert body == {
+        "saved_rate": pytest.approx(1 - 1.2 / 5), "baseline_model": "astra",
+        "provider": "openai", "counted": 5, "unknown": 3,
+        "quota_cost_sum": pytest.approx(1.2),
+    }
+    # Every call on the baseline saves nothing; every call elsewhere saves all.
+    assert quota_saved(["astra", "astra-twin"], config)["saved_rate"] == 0
+    assert quota_saved(["glm", "flash"], config)["saved_rate"] == 1
+    # Nothing counted is a gap, never 0%.
+    gap = quota_saved(["unpriced"], config)
+    assert (gap["saved_rate"], gap["counted"], gap["unknown"]) == (None, 0, 1)
+    assert quota_saved([], config)["saved_rate"] is None
+
+
+def test_frontier_quota_saved_without_a_price_is_a_gap():
+    from jev_router.dashboard import frontier_baseline, quota_saved
+
+    config = make_config(providers={"ollama": {}}, models={
+        m: {"upstream_id": m, "provider": "ollama"} for m in ("glm", "small", "big", "paramy")})
+    assert frontier_baseline(config) is None
+    assert quota_saved(["glm", "glm"], config) == {
+        "saved_rate": None, "baseline_model": None, "provider": None,
+        "counted": 0, "unknown": 2, "quota_cost_sum": None,
+    }
+
+
+def test_frontier_quota_saved_in_the_overview_from_rows():
+    from jev_router.dashboard import build_overview
+
+    since = 1_000_000.0
+    rows = [
+        {"ts": since + 10 + i, "event_type": "execution", "model": model}
+        for i, model in enumerate(["astra", "glm", "glm", "sol", "unpriced"])
+    ]
+    body = build_overview({"decisions": rows}, "1h", since, config=frontier_config())
+    saved = body["efficiency"]["quota_saved"]
+    assert (saved["baseline_model"], saved["provider"]) == ("astra", "openai")
+    assert (saved["counted"], saved["unknown"]) == (4, 1)
+    assert saved["saved_rate"] == pytest.approx(1 - 1.2 / 4)
 
 
 def test_usage_and_answers_reduce_to_numbers_and_labels():
