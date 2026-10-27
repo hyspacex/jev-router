@@ -653,6 +653,7 @@ function sessionRow(s, i) {
   const who = el("span", "c1");
   const title = el("span", "stitle");
   if (s.pinned) title.append(el("span", "pin", "◆"));
+  if (s.client) title.append(el("span", "scli", s.client + " ·")); // shown on narrow screens only
   title.append(s.title ? el("span", "stt", s.title) : el("span", "stt sid mono", short(s.session_id, s.client)));
   if (s.pinned) title.append(el("span", "plabel", s.pinned.label));
   if (s.tombstone) title.append(el("span", "faint", "pruned"));

@@ -290,6 +290,18 @@ TOOLS = [
 ]
 
 
+# Codex sends its tools in the Responses shape: the name at the top level.
+CODEX_TOOLS = [
+    {"type": "function", "name": name, "description": text, "strict": False,
+     "parameters": {"type": "object", "properties": {}}}
+    for name, text in (
+        ("shell", "Runs a shell command and returns its output."),
+        ("apply_patch", "Edit files by applying a patch."),
+        ("update_plan", "Updates the task plan."),
+    )
+]
+
+
 def pi_system(workspace: str) -> str:
     return (
         "You are an expert coding assistant operating inside pi, a coding agent harness.\n"
@@ -668,7 +680,8 @@ class Seeder:
             "client_contract": {"dynamic_metadata": True, "protocols": ["openai-responses"],
                                 "fresh_execution_context": True, "turn_boundary_reporting": True},
             "request": {"instructions": "You are Codex, a coding agent.",
-                        "input": [env, H.user_item(opening)], "max_output_tokens": 4096},
+                        "input": [env, H.user_item(opening)], "tools": CODEX_TOOLS,
+                        "max_output_tokens": 4096},
             "limits": {"max_output_tokens": 4096},
         })
         if response.status_code != 200:
@@ -692,7 +705,8 @@ class Seeder:
             self.script.reply = {"call": step} if step else {"text": answer}
             self.script.clock.advance(self.script.rng.uniform(0.3, 2.0))
             sent = await caller.send(plan if n == 0 else None,
-                                     turn_id="" if plan is None else plan["turn_id"])
+                                     turn_id="" if plan is None else plan["turn_id"],
+                                     tools=CODEX_TOOLS)
             if sent.status_code != 200:
                 raise RuntimeError(f"responses execution failed: {sent.status_code} {sent.text}")
             if step:

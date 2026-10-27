@@ -64,6 +64,22 @@ def test_tools_and_languages():
     assert f.stream is True
 
 
+def test_responses_tools_name_their_function_at_the_top_level():
+    # Codex sends tools in the Responses shape. The seeded dashboard once
+    # showed them as none because the seed sent no tools at all, not because
+    # this shape was missed; this pins that it is read.
+    body = {
+        "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fix it"}]}],
+        "tools": [
+            {"type": "function", "name": "shell", "parameters": {}},
+            {"type": "function", "name": "apply_patch", "parameters": {}},
+        ],
+    }
+    f = extract_features(body)
+    assert f.has_tools is True
+    assert f.tool_names == ("shell", "apply_patch")
+
+
 def test_image_parts_and_multipart_text():
     body = {
         "model": "auto",
