@@ -122,7 +122,8 @@ the offline comparison until a qualified deployment and live arm are available.
   Also the decision-log columns the semantic packet and the quality guard add,
   in a map of their own, and the `turn_plans` ledger with the session columns
   the effort experiment adds, in another. The inspector's map (`state_shape`),
-  the `audit_bookmarks` table, and its read helpers (`audit_sessions`,
+  the `audit_bookmarks` table, and its read helpers (`audit_sessions` with
+  `audit_where`'s filters, `audit_count`, `audit_facets`, `audit_overview`,
   `admission_row`, `request_rows`, `all_plans`), none of which return an owner
   or a fingerprint.
 - `effort.py` — the between-turn turn-plan policy and the ledger's status
@@ -136,9 +137,15 @@ the offline comparison until a qualified deployment and live arm are available.
   the plans hand it, and chooses nothing. In memory only.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
 - `dashboard.py` — the read-only audit UI and its JSON: `/router/audit`
-  (recent rows), `/router/audit/sessions` (sessions, bookmarks) and
+  (recent rows), `/router/audit/overview?window=1h|24h|7d|30d` (counts, rates,
+  percentiles and buckets from the tables, legacy rows counted apart),
+  `/router/audit/sessions` (sessions with per-session aggregates, filtered by
+  allowlisted `client`, `model`, `rule`, `state`, `adaptive`, `problem`,
+  `pinned`, `q` and `window`; facets; bookmarks) and
   `/router/audit/sessions/{id}` (binding, admission, requests, plans, and the
-  admission's trace). Every field is projected by name.
+  admission's trace). Every field is projected by name. The page
+  (`static/dashboard.*`) has two views, Overview and Sessions, and the
+  session inspector; hashes `#overview?w=`, `#sessions?…`, `#s=<id>`, `#<slug>`.
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
 - `security.py` — router-endpoint authentication, request-size and concurrency limits.
@@ -371,6 +378,9 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   under another config, and never a fallback admission, where no rule ran.
   Its endpoints write nothing and project by allowlist: no conversation key,
   owner, fingerprint, tool or language names, state text or usage contents.
+  Every query parameter is allowlisted and bounded, and an unknown one is a
+  400. The overview returns numbers and router-made labels only; a value no
+  row recorded is null and shown as a gap, never as zero.
   An execution row's `turn_id` is the turn the ledger already holds (the plan
   it carries, or an `X-Router-Turn` that names a plan of that session), never
   raw client text, and nothing reads it back to route or plan. Rows written
