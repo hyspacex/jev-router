@@ -38,7 +38,8 @@ def client_for(app, *, local=False, token=None):
 
 async def test_public_shell_has_no_data_but_data_needs_token(dashboard_app):
     async with client_for(dashboard_app) as client:
-        for path in ("/dashboard", "/dashboard/", "/dashboard/assets/dashboard.js", "/dashboard/assets/dashboard.css"):
+        for path in ("/dashboard", "/dashboard/", "/dashboard/assets/dashboard.js",
+                     "/dashboard/assets/inspector.js", "/dashboard/assets/dashboard.css"):
             response = await client.get(path)
             assert response.status_code == 200
             assert response.headers["cache-control"] == "no-store"
@@ -321,7 +322,8 @@ async def test_rejected_and_unknown_requests_appear_with_null_metrics(tmp_path, 
     ]
     for entry in body["requests"][1:]:
         for key in ("row", "ts", "model", "effort", "stream_state", "accepted",
-                    "first_byte_ms", "response_ms", "response_bytes", "usage_reported", "facts"):
+                    "first_byte_ms", "response_ms", "response_bytes", "usage_reported",
+                    "input_tokens", "output_tokens", "cached_input_tokens", "facts"):
             assert entry[key] is None, key
     assert body["requests"][0]["row"] is not None
 

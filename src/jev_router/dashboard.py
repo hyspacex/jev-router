@@ -72,6 +72,7 @@ async def dashboard(request: Request) -> Response:
 # request can never name a path: nothing outside it is served.
 ASSETS = {
     "dashboard.js": ("dashboard.js", "text/javascript"),
+    "inspector.js": ("inspector.js", "text/javascript"),
     "dashboard.css": ("dashboard.css", "text/css"),
     "Geist-Variable.woff2": ("fonts/Geist-Variable.woff2", "font/woff2"),
     "GeistMono-Variable.woff2": ("fonts/GeistMono-Variable.woff2", "font/woff2"),
@@ -426,6 +427,10 @@ def _project_evidence(facts: dict[str, Any]) -> dict[str, Any] | None:
         if _label(key) is not None and _is_number(value)
     }
     out["ladder"] = [rung for rung in facts.get("ladder") or [] if _label(rung) is not None]
+    # How many consecutive turns have asked for this step down, and how many
+    # the policy needs before it moves. Both None on plans written before.
+    for key in ("confirmations", "needed_confirmations"):
+        out[key] = facts.get(key) if _is_number(facts.get(key)) else None
     out["floor"] = _label(facts.get("floor"))
     out["target"] = _label(facts.get("target"))
     out["direction"] = _label(facts.get("direction"))
@@ -459,6 +464,8 @@ def _project_plan(
 def _project_request(seq: int, row: dict[str, Any]) -> dict[str, Any]:
     decision = row.get("decision") or {}
     usage = decision.get("upstream_usage")
+    # What the provider reported for this call; None when it reported nothing.
+    input_tokens, output_tokens, cached_tokens = _usage_numbers(usage)
     return {
         "seq": seq,
         "request_id": row.get("request_id"),
@@ -485,6 +492,9 @@ def _project_request(seq: int, row: dict[str, Any]) -> dict[str, Any]:
         "response_bytes": decision.get("response_bytes"),
         "fallback_index": decision.get("fallback_index"),
         "usage_reported": bool(usage) if decision else None,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cached_input_tokens": cached_tokens,
         "facts": project_facts(decision.get("features")) if decision else None,
     }
 

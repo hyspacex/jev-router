@@ -427,7 +427,12 @@ def describe_config(
             "line": node_line(root, ["experiments", "adaptive_effort"]),
         },
         "questions": {
-            qid: {**_question_shape(q), "line": node_line(root, ["questions", qid])}
+            qid: {
+                **_question_shape(q),
+                # The running wording, so the Jev sandbox can start from it.
+                "instructions": q.get("instructions") if isinstance(q.get("instructions"), str) else None,
+                "line": node_line(root, ["questions", qid]),
+            }
             for qid, q in config.questions.items()
         },
         "thresholds": config_thresholds(config),

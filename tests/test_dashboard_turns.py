@@ -11,7 +11,13 @@ import session_harness as H
 from session_harness import ADMIN, Client, Service
 from test_app import mock_jev
 
-from jev_router.dashboard import build_turns, execution_rollup, project_turn_state
+from jev_router.dashboard import (
+    _project_evidence,
+    _project_request,
+    build_turns,
+    execution_rollup,
+    project_turn_state,
+)
 from jev_router.scrub import SECRET
 
 SK = "sk-" + "dash-" + "P0o9I8u7Y6t5R4e3W2q1A2s3"
@@ -199,3 +205,23 @@ def test_the_state_projection_keeps_the_named_text_fields_only():
         "facts": {"has_tools": True, "tool_names": ["bash"], "client": "pi"},
     }
     assert project_turn_state("text") is None
+
+
+def test_a_request_carries_the_usage_its_provider_reported():
+    decision = {"id": 7, "upstream_usage": {"input_tokens": 120, "output_tokens": 30,
+                                            "input_tokens_details": {"cached_tokens": 100}}}
+    out = _project_request(1, {"request_id": "r", "status": "completed", "decision": decision})
+    assert (out["input_tokens"], out["output_tokens"], out["cached_input_tokens"]) == (120, 30, 100)
+    # Reported nothing, or never reached the provider: gaps, never zeros.
+    quiet = _project_request(2, {"request_id": "q", "status": "completed", "decision": {"id": 8}})
+    assert quiet["input_tokens"] is None and quiet["cached_input_tokens"] is None
+    rejected = _project_request(3, {"request_id": "x", "status": "rejected"})
+    assert rejected["output_tokens"] is None and rejected["row"] is None
+
+
+def test_plan_evidence_keeps_the_step_down_count():
+    facts = {"evidence": {"difficulty": 0.3}, "confirmations": 1, "needed_confirmations": 2}
+    out = _project_evidence(facts)
+    assert out["confirmations"] == 1 and out["needed_confirmations"] == 2
+    older = _project_evidence({"evidence": {"difficulty": 0.3}, "confirmations": "two"})
+    assert older["confirmations"] is None and older["needed_confirmations"] is None
