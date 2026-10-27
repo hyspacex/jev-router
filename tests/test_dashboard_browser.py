@@ -11,6 +11,7 @@ data only. Set DASHBOARD_SHOTS=<dir> to also write screenshots.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import os
@@ -90,6 +91,8 @@ def _requests(prefix, start, rows, window, model, effort, first_row):
             "row": first_row + seq, "ts": start + t, "model": model, "effort": effort,
             "stream_state": "completed", "accepted": True, "first_byte_ms": float(first_byte),
             "response_ms": float(total), "response_bytes": size, "usage_reported": False,
+            "turn_index": None, "turn_id": None, "event_type": "execution",
+            "input_tokens": None, "output_tokens": None, "cached_input_tokens": None,
             "facts": _facts(messages, tokens, headroom, window),
         })
     return out
@@ -187,11 +190,11 @@ def session_a():
             "ollama": {"status": "error", "pressure": None, "age_seconds": None},
         },
     }
-    return {
+    return with_turns_a({
         "config_hash": RUNNING, "session": session, "admission": admission,
         "requests": _requests("a", A_START, A_ROWS, window, "glm-5.3", "high", 730),
         "plans": [], "trace": _trace_a(),
-    }
+    })
 
 
 def session_b():
@@ -240,7 +243,9 @@ def session_b():
         "seq": 12, "request_id": "b-request-012", "status": "rejected", "created": B_START + 248.0,
         "updated": B_START + 248.0, "upstream_status": None, "row": None, "ts": None, "model": None,
         "effort": None, "stream_state": None, "accepted": None, "first_byte_ms": None,
-        "response_ms": None, "response_bytes": None, "usage_reported": None, "facts": {},
+        "response_ms": None, "response_bytes": None, "usage_reported": None,
+        "turn_index": None, "turn_id": None, "event_type": None,
+        "input_tokens": None, "output_tokens": None, "cached_input_tokens": None, "facts": {},
     })
 
     def plan(seq, request, action, status, from_, to, rec, expected, confirmed, created):
@@ -250,7 +255,14 @@ def session_b():
             "base_effort": "high", "recommendation": rec, "expected_effort": expected,
             "confirmed_effort": confirmed, "reconciled": None, "compaction_epoch": 0,
             "reason": "upward_jump" if to != from_ else "steady", "created": created,
-            "updated": created + 5, "shadow_counterfactual": None,
+            "updated": created + 5, "shadow_counterfactual": None, "judgment": None,
+            "evidence": {
+                "difficulty": None, "p_hard": None, "harm_if_wrong": None, "corrective_followup": None,
+                "failure_mode": None, "short_continuation": False, "missing": [], "error": False,
+                "thresholds": dict(PLAN_THRESHOLDS), "ladder": ["medium", "high", "xhigh"],
+                "floor": "medium", "target": to, "direction": "up" if to == "xhigh" and from_ != to else "down" if to != from_ else "hold",
+                "confirmations": None, "needed_confirmations": 2,
+            },
         }
 
     plans = [
@@ -260,30 +272,181 @@ def session_b():
         plan(4, None, "keep", "planned", "high", "high", "medium", None, None, B_START + 220.0),
     ]
     plans[3]["shadow_counterfactual"] = {"failure_mode": "reasoning", "would": "keep"}
-    return {
+    return with_turns_b({
         "config_hash": RUNNING, "session": session, "admission": admission, "requests": reqs,
         "plans": plans, "trace": {"available": False, "reason": "not_on_file"},
-    }
+    })
 
 
 def session_c():
     """A session where almost nothing was recorded: every gap must show as one."""
     session = {key: None for key in session_a()["session"]}
-    session.update(session_id=C_ID, client="pi", state="closed", created=A_START - 86400, model="xai/grok-5")
+    session.update(session_id=C_ID, client="pi", state="closed", created=A_START - 86400, model="xai/grok-5",
+                   tombstone=False, config_matches=False, turn_count=0, request_count=2)
     return {
         "config_hash": RUNNING, "session": session, "admission": None,
         "requests": [
             {"seq": 1, "request_id": "c-request-001", "status": "completed", "created": None, "updated": None,
              "upstream_status": None, "row": None, "ts": None, "model": None, "effort": None,
              "stream_state": None, "accepted": None, "first_byte_ms": None, "response_ms": None,
-             "response_bytes": None, "usage_reported": None, "facts": None},
+             "response_bytes": None, "usage_reported": None, "turn_index": None, "turn_id": None,
+             "event_type": None, "input_tokens": None, "output_tokens": None,
+             "cached_input_tokens": None, "facts": None},
             {"seq": 2, "request_id": "c-request-002", "status": "rejected", "created": None, "updated": None,
              "upstream_status": None, "row": None, "ts": None, "model": None, "effort": None,
              "stream_state": None, "accepted": None, "first_byte_ms": None, "response_ms": None,
-             "response_bytes": None, "usage_reported": None, "facts": {}},
+             "response_bytes": None, "usage_reported": None, "turn_index": None, "turn_id": None,
+             "event_type": None, "input_tokens": None, "output_tokens": None,
+             "cached_input_tokens": None, "facts": {}},
         ],
         "plans": None, "trace": {"available": False, "reason": "no_admission_row"},
+        # No turn rows at all: the page falls back to one admission turn.
+        "turns": [], "turn_join": "by_index",
     }
+
+
+PLAN_THRESHOLDS = {
+    "upgrade_difficulty": 1.8, "upgrade_harm": 0.6, "upgrade_p_hard": 0.4, "corrective_followup": 0.6,
+    "downgrade_difficulty": 0.8, "downgrade_harm": 0.2, "quota_pressure_at": 0.6, "context_safety_fraction": 0.8,
+}
+A_PROMPTS = [
+    "The importer hangs after the first batch when the queue is full. Find out why and fix it.",
+    "Good. Now add a test that fills the queue and checks the importer drains it.",
+    "Run the whole suite and fix whatever lint complains about.",
+]
+B_PROMPTS = [
+    "Review the plan for splitting the auth module into its own service.",
+    "No, that misses the token refresh path entirely. Look again at refresh.py.",
+    "Write the migration order down as a checklist.",
+    "Rename the checklist headings to match the RFC.",
+    "Thanks, that's all.",
+]
+FEEDBACK_FIELDS = ("verdict", "note", "source", "ts", "turn_index")
+
+
+def _median(values):
+    values = sorted(v for v in values if v is not None)
+    return values[(len(values) + 1) // 2 - 1] if values else None
+
+
+def _sum(values):
+    values = [v for v in values if v is not None]
+    return sum(values) if values else None
+
+
+def _rollup(calls, tools=(), summary=None):
+    """execution_rollup's shape, from the fixture calls. Gaps stay None."""
+    tps = [r["output_tokens"] * 1000 / max(r["response_ms"] - r["first_byte_ms"], 1)
+           for r in calls if r["output_tokens"] is not None and r["response_ms"] and r["first_byte_ms"]]
+    return {
+        "http_requests": len(calls), "usage_reported": sum(1 for r in calls if r["usage_reported"]),
+        "input_tokens": _sum(r["input_tokens"] for r in calls),
+        "output_tokens": _sum(r["output_tokens"] for r in calls),
+        "cached_input_tokens": _sum(r["cached_input_tokens"] for r in calls),
+        "first_byte_ms_p50": _median(r["first_byte_ms"] for r in calls), "tps_p50": _median(tps),
+        "tool_calls": [{"name": n, "count": c} for n, c in tools], "assistant_summary": summary,
+        "files_touched": [],
+    }
+
+
+def _jev(row):
+    return {"latency_ms": row["jev_ms"], "tokens": row["jev_tokens"], "answers": row["answers"],
+            "shadow_answers": row["shadow_answers"], "packet_version": row["packet_version"],
+            "shadow_packet_version": row["shadow_packet_version"]}
+
+
+def _turn(index, kind, ts, row, prompt, calls, decision, *, state=None, shape=None, jev=None, plan=None,
+          rollup=None, feedback=()):
+    for r in calls:
+        r["turn_index"] = index
+    return {
+        "turn_index": index, "kind": kind, "ts": ts, "decision_row": row, "user_prompt": prompt,
+        "state": state, "state_shape": shape, "jev": jev,
+        "decision": {"model": None, "effort": None, "rule": None, "route": None, "quality_lane": None,
+                     "fallback": False, **decision},
+        "plan": plan, "execution_rollup": rollup or _rollup(calls), "requests": [r["seq"] for r in calls],
+        "feedback": [dict(f) for f in feedback],
+    }
+
+
+def _session_v2(session, turns, title, workspace, feedback=None, escalations=0, corrective=0):
+    """The fields the turn-capture branch added to the session, shaped like the seeded JSON."""
+    session.update(
+        tombstone=False, state_builder="continuation_aware_v1", title=title, prompt_preview=title,
+        workspace_hint=workspace, turn_count=len(turns), escalation_count=escalations,
+        corrective_count=corrective, feedback_verdict=feedback["verdict"] if feedback else None,
+        config_matches=session["config_hash"] == RUNNING,
+        request_count=sum(len(t["requests"]) for t in turns), cache_hit_ratio=None,
+        feedback={k: feedback[k] for k in FEEDBACK_FIELDS} if feedback else None,
+    )
+
+
+def with_turns_a(item):
+    """A Pi session: an admission and two user turns with no plan; feedback stepped the effort."""
+    reqs, adm = item["requests"], item["admission"]
+    for r in reqs[:27]:  # the last turn's calls reported no usage: gaps
+        r.update(usage_reported=True, input_tokens=r["facts"]["input_tokens"], output_tokens=900,
+                 cached_input_tokens=int(r["facts"]["input_tokens"] * 0.8))
+    for r in reqs[27:]:
+        r["effort"] = "xhigh"
+    weak = {"verdict": "too_weak", "note": "missed the second queue", "source": "pi",
+            "ts": A_START + 140.0, "turn_index": 2}
+    state = {
+        "latest_user_request": A_PROMPTS[0],
+        "material_the_user_pasted": "Traceback (most recent call last):\n  File \"importer.py\", line 88, in drain\nqueue.Full",
+        "facts": {"message_count": 2, "estimated_prompt_tokens": 26399, "contains_code_blocks": True,
+                  "request_has_tools": True, "client": "pi", "pasted_material_characters": 92},
+    }
+    base = {"model": "ollama/glm-5.3", "quality_lane": "moderate-tools"}
+    turns = [
+        _turn(1, "admission", adm["ts"], adm["id"], A_PROMPTS[0], reqs[:12],
+              {**base, "effort": "high", "rule": "moderate_tools", "route": "mid_tools"},
+              state=state, shape=adm["state_shape"], jev=_jev(adm),
+              rollup=_rollup(reqs[:12], [("bash", 5), ("read_file", 3)], "The importer blocked on a full queue; it now drains before it refills.")),
+        _turn(2, "user_turn", A_START + 25.0, 750, A_PROMPTS[1], reqs[12:27],
+              {**base, "effort": "high", "rule": "user_turn"}, feedback=[weak]),
+        _turn(3, "user_turn", A_START + 223.0, 770, A_PROMPTS[2], reqs[27:],
+              {**base, "effort": "xhigh", "rule": "user_turn"}),
+    ]
+    _session_v2(item["session"], turns, A_PROMPTS[0], "importer", feedback=weak)
+    item["session"]["effective_effort"] = "xhigh"
+    item.update(turns=turns, turn_join="by_index")
+    return item
+
+
+def with_turns_b(item):
+    """A Codex session on adaptive effort: an admission and four plan turns. Joined by log order."""
+    reqs, adm, plans = item["requests"], item["admission"], item["plans"]
+    answers = [  # difficulty, harm, corrective: one per plan turn
+        (2.1, 0.4, 0.82), (1.9, 0.3, 0.1), (0.5, 0.1, 0.05), (0.4, 0.1, 0.02),
+    ]
+    plans[2]["evidence"].update(confirmations=2, direction="down")
+    plans[3]["evidence"].update(confirmations=1, direction="down")
+    groups = [reqs[0:2], reqs[2:5], reqs[5:8], reqs[8:11], []]
+    base = {"model": "gpt-6-astra", "quality_lane": "hard-work"}
+    turns = [_turn(1, "admission", adm["ts"], adm["id"], B_PROMPTS[0], groups[0],
+                   {**base, "effort": "high", "rule": "hard", "route": "frontier_high"},
+                   jev=_jev(adm))]
+    for k, plan in enumerate(plans):
+        d, h, c = answers[k]
+        plan["evidence"].update(difficulty=d, harm_if_wrong=h, corrective_followup=c)
+        jev = {"latency_ms": 90.0 + k, "tokens": 1200, "packet_version": "turn_v1", "shadow_packet_version": None,
+               "shadow_answers": None, "answers": {
+                   "difficulty": {"type": "score", "score": d, "confidence": 0.8},
+                   "harm_if_wrong": {"type": "noul", "noul": h},
+                   "corrective_followup": {"type": "noul", "noul": c}}}
+        state = {"task_request": B_PROMPTS[0], "current_user_request": B_PROMPTS[k + 1],
+                 "user_constraints": ["keep the public API"] if k == 0 else [], "quoted_material": [],
+                 "observations": [], "facts": {"turn_history_available": True}}
+        effort = plan["confirmed_effort"] or plan["expected_effort"] or plan["from_effort"]
+        turns.append(_turn(k + 2, "plan", plan["created"], 903 + k, B_PROMPTS[k + 1], groups[k + 1],
+                           {**base, "effort": effort, "rule": "effort_" + plan["action"]},
+                           state=state, jev=jev, plan=plan))
+    for r in reqs:  # rows from before the turn column: the turn is inferred
+        r["turn_index"] = None
+    _session_v2(item["session"], turns, B_PROMPTS[0], "auth-service", escalations=1, corrective=1)
+    item.update(turns=turns, turn_join="by_order")
+    return item
 
 
 BOOKMARKS = [
@@ -395,8 +558,60 @@ def overview(window, now):
     return body
 
 
-def fixture_routes(details):
+SANDBOX_OK = {
+    "row": 730, "decision_id": "25d58e7563e0", "event_type": "admission", "config_matches": True,
+    "questions": ["task", "difficulty", "harm_if_wrong"], "overridden": [], "jev_ms": 241.0,
+    "original_answers": {"task": {"type": "choice", "choice": "debugging", "confidence": 0.98},
+                         "difficulty": {"type": "score", "score": 2.33, "confidence": 0.67},
+                         "harm_if_wrong": {"type": "noul", "noul": 0.27}},
+    "sandbox_answers": {"task": {"type": "choice", "choice": "debugging", "confidence": 0.97},
+                        "difficulty": {"type": "score", "score": 2.98, "confidence": 0.7},
+                        "harm_if_wrong": {"type": "noul", "noul": 0.27}},
+    "original_route": {"rule": "moderate_tools", "route": "mid_tools", "model": "ollama/glm-5.3", "effort": "high", "lane": "moderate-tools"},
+    "sandbox_route": {"rule": "very_hard", "route": "frontier_xhigh", "model": "gpt-6-astra", "effort": "xhigh", "lane": "hardest-work"},
+}
+CONFIG = {
+    "config_hash": RUNNING,
+    "questions": {
+        "task": {"type": "choice", "choices": ["debugging", "code-edit"], "instructions": "Which kind of request is this?", "line": 10},
+        "difficulty": {"type": "score", "levels": 4, "max": 3, "instructions": "How hard is this request?", "line": 20},
+        "harm_if_wrong": {"type": "noul", "max": 1, "instructions": "Would a mistake cause real harm?", "line": 30},
+        "corrective_followup": {"type": "noul", "max": 1, "instructions": "Does the follow-up name a defect?", "line": 40},
+    },
+}
+
+
+def fixture_routes(details, posted=None):
     now = time.time()  # one clock, so an unchanged overview stays unchanged
+    posted = posted if posted is not None else []
+
+    async def feedback(request: Request):
+        body = json.loads(await request.body())
+        sid = request.path_params["session_id"]
+        posted.append(("feedback", sid, body))
+        item = details[sid]
+        mark = {"verdict": body["verdict"], "note": None, "source": body.get("source"),
+                "ts": time.time(), "turn_index": item["turns"][-1]["turn_index"] if item["turns"] else None}
+        item["session"]["feedback"] = mark
+        item["session"]["feedback_verdict"] = body["verdict"]
+        return JSONResponse({"ok": True, "feedback_id": len(posted), "session_id": sid, "verdict": body["verdict"],
+                             "effort_changed": False, "reason_code": None, "reason": None})
+
+    async def eval_case(request: Request):
+        body = json.loads(await request.body())
+        posted.append(("eval", None, body))
+        return JSONResponse({"saved": True, "path": "/data/golden_cases.jsonl", "total_cases": 3}, headers=HEADERS)
+
+    async def sandbox(request: Request):
+        body = json.loads(await request.body())
+        posted.append(("sandbox", None, body))
+        await asyncio.sleep(0.4)
+        if isinstance(body.get("state"), dict) and body["state"].get("fail"):
+            return JSONResponse({"error": "jev call failed: jev error: ConnectError", "jev_ms": 31.0}, status_code=502, headers=HEADERS)
+        return JSONResponse(SANDBOX_OK, headers=HEADERS)
+
+    async def config(_request: Request):
+        return JSONResponse(CONFIG, headers=HEADERS)
     async def sessions(request: Request):
         return JSONResponse(listing(details, request.query_params), headers=HEADERS)
 
@@ -413,6 +628,10 @@ def fixture_routes(details):
         Route("/router/audit/overview", overview_route, methods=["GET"]),
         Route("/router/audit/sessions", sessions, methods=["GET"]),
         Route("/router/audit/sessions/{session_id}", one, methods=["GET"]),
+        Route("/router/sessions/{session_id}/feedback", feedback, methods=["POST"]),
+        Route("/router/eval-cases", eval_case, methods=["POST"]),
+        Route("/router/sandbox/jev", sandbox, methods=["POST"]),
+        Route("/router/config", config, methods=["GET"]),
     ]
 
 
@@ -425,7 +644,8 @@ def test_browser_session_inspector(monkeypatch):
     monkeypatch.setenv("AUDIT_BROWSER_TOKEN", credential)
     app = create_app(make_config(settings={"admin_token_env": "AUDIT_BROWSER_TOKEN"}))
     details = {A_ID: session_a(), B_ID: session_b(), C_ID: session_c()}
-    for route in reversed(fixture_routes(details)):
+    posted = []
+    for route in reversed(fixture_routes(details, posted)):
         app.router.routes.insert(0, route)
     shots = os.environ.get("DASHBOARD_SHOTS")
     sock = socket.socket()
@@ -452,13 +672,20 @@ def test_browser_session_inspector(monkeypatch):
                     Path(shots).mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=str(Path(shots) / f"{name}-{width}.png"), full_page=True)
 
-                def stage(name):
-                    page.locator(".card").filter(has_text=name).first.click()
+                def turn(k):
+                    page.locator(".tcard").nth(k).click()
+                    page.wait_for_function(f"() => document.querySelectorAll('.tcard')[{k}].classList.contains('sel')")
 
                 def open_book(slug):
                     page.evaluate(f"location.hash = '{slug}'")
-                    page.wait_for_function("() => document.querySelector('.card')")
+                    page.wait_for_function("() => document.querySelector('.tcard')")
                     page.wait_for_timeout(250)
+
+                def heads():
+                    return [h.lower() for h in page.locator(".tcolh h2").all_inner_texts()]
+
+                def no_sideways():
+                    return page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
                 page.goto(f"http://127.0.0.1:{port}/dashboard")
                 page.wait_for_function("() => !document.getElementById('error').hidden")
@@ -529,10 +756,10 @@ def test_browser_session_inspector(monkeypatch):
                 page.keyboard.press("j")
                 assert page.evaluate("document.activeElement.dataset.sid") == A_ID
                 page.keyboard.press("Enter")
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
+                page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('glm-5.3')")
                 assert page.locator(".pager .note").inner_text() == "2 of 3"
                 page.keyboard.press("k")
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('gpt-6-astra')")
+                page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('gpt-6-astra')")
                 page.keyboard.press("Escape")
                 page.wait_for_function("() => location.hash === '#sessions'")
 
@@ -540,7 +767,7 @@ def test_browser_session_inspector(monkeypatch):
                 page.evaluate("location.hash = 'sessions?client=pi'")
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 2")
                 page.locator(".srow[href]").first.click()
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
+                page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('glm-5.3')")
                 assert page.locator(".pager .note").inner_text() == "1 of 2"
                 assert page.locator(".back").get_attribute("href") == "#sessions?client=pi"
                 assert page.locator(".fsum").inner_text() == "pi"
@@ -549,197 +776,231 @@ def test_browser_session_inspector(monkeypatch):
                 page.locator("#clear").click()
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
 
-                # A pinned session's deep link: the admission-only session.
+                # A pinned session's deep link: a Pi session, admission first.
                 page.evaluate("location.hash = 'debugging'")
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('glm-5.3')")
+                page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('glm-5.3')")
                 assert page.url.endswith("#debugging")
-                assert page.locator(".card").count() == 5
-                assert page.locator(".tick").count() == 37
-                assert page.locator(".mkr").count() == 0
-                assert page.evaluate("getComputedStyle(document.querySelector('.card')).animationName") == "rise"
+                assert page.locator(".tcard").count() == 3
+                assert page.locator(".tcard.sel .tn").inner_text() == "Admission"
+                assert page.evaluate("getComputedStyle(document.querySelector('.tcard')).animationName") == "rise"
+                cards = page.locator(".tcard").all_inner_texts()
+                assert "moderate_tools → glm-5.3 · high" in cards[0] and "12 calls" in cards[0]
+                assert "↑ more" in cards[1] and "15 calls" in cards[1]
+                assert "high → xhigh ▲" in cards[2] and "tokens" in cards[2]  # no usage reported: a gap
+                assert page.locator(".tcard").nth(2).locator(".gapchip").count() == 1
+                assert page.locator(".tjoin").count() == 0
+                head = page.locator(".ihead").inner_text()
+                assert A_PROMPTS[0] in head and "importer" in head and "3 turns" in head and "37 calls" in head
+                assert "missed the second queue" in head
+                assert page.locator(".ifacts .vb.v-too_weak").count() == 1
+                assert page.locator(".fbb.on").inner_text() == "Too weak"
+                assert heads() == ["request", "jev", "rule"]
                 text = body_text(page)
-                assert "Shown to Jev" in text and "text not stored" in text and "names withheld" in text
-                assert "Debugging" in text and "jev-1.13.0" in text and "none asked" in text
+                assert "Traceback" not in text  # pasted material starts closed
                 assert "routing_v3" not in text
-                assert page.locator(".answers .row").count() == 2  # 0% labels hidden
-                assert "session 32a7…" in text
-                shot("a-jev")
-                page.keyboard.press("ArrowRight")
-                assert "1,000,000 token window" in body_text(page)
-                # Constraints headline eligibility; the lane belongs to the rule.
-                assert page.locator(".card").nth(1).locator(".cv").inner_text() == "1 excluded"
-                assert "Quality lane" not in body_text(page)
-                shot("a-constraints")
-                page.keyboard.press("ArrowRight")
-                text = body_text(page)
-                assert "Replayed under 908c9c86" in text and "reproduces moderate_tools" in text
+                page.locator(".paste summary").click()
+                assert "queue.Full" in body_text(page)
+                # Hard facts, from the admission.
+                facts = page.locator(".hfacts").inner_text()
+                assert "33" in facts and "26,453" in facts and "961,259" in facts and "none" in facts
+                # Jev: each numeric answer on a ruler, thresholds named by their rule.
+                assert page.locator(".tcolh .note").first.inner_text() == "183 ms"
+                assert page.locator(".qb").count() == 3
+                diff = page.locator(".qb").nth(1)
+                assert diff.locator(".qval").inner_text() == "2.33"
+                assert diff.locator(".rlabels span:not(.end)").all_inner_texts() == ["1.4 moderate_tools +3", "2.4 hard", "3 very_hard"]
+                assert diff.locator(".rlabels span.on").count() == 3
+                assert diff.locator(".rdist i").count() == 4
+                assert page.locator(".rmark").count() == 2
+                assert page.locator(".cbar i").count() == 2
+                for q in range(3):
+                    rects = page.locator(".qb").nth(q).evaluate_all(
+                        "els => els.length ? [...els[0].querySelectorAll('.rlabels span')].map(e => e.getBoundingClientRect()).map(r => [r.left, r.right, r.top]) : []")
+                    for i, a in enumerate(rects):
+                        for b in rects[i + 1:]:
+                            assert a[2] != b[2] or a[1] <= b[0] or b[1] <= a[0], rects
+                # Rule: the ladder as replayed, then quota and lane.
                 assert page.locator(".r.hit").inner_text().split("\n")[-1] == "tools yes · difficulty 2.33 ≥ 1.4"
                 assert "difficulty 2.33 < 2.4" in page.locator(".r.miss").nth(4).inner_text()
                 assert "images no" in page.locator(".r.miss").nth(1).inner_text()
                 assert page.locator(".r.skip").count() == 2
-                assert "unreadable · counted as 0" in text
-                assert "0.07 below hard" in text
-                assert "No threshold moved" in text and "· chosen" not in text
-                assert "quota no effect" in page.locator(".card").nth(2).inner_text()
+                text = body_text(page)
+                assert "mid_tools → ollama/glm-5.3 · high" in text
+                assert "kept primary" in text and "openai <0.01" in text and "ollama error" in text
                 assert "evals/reports/2026-09-20-glm-effort/summary.md" in text
-                # Only thresholds that decided a rule, named after it.
-                assert page.locator(".ticksx span").all_inner_texts() == ["1.4 moderate_tools", "2.4 hard", "3 very_hard"]
-                tops = page.evaluate("[...document.querySelectorAll('.ticksx span')].map(e => e.getBoundingClientRect())"
-                                     ".map(r => [r.left, r.right, r.top])")
-                for a, b in zip(tops, tops[1:]):
-                    assert a[1] <= b[0] or a[2] != b[2], tops  # no two labels collide on one row
-                shot("a-rule")
-                page.keyboard.press("ArrowRight")
-                assert "adaptive effort off" in body_text(page)
-                shot("a-binding")
-                page.keyboard.press("ArrowRight")
-                assert "usage not reported · 37 of 37" in body_text(page)
-                shot("a-outcome")
+                # Under the columns: how the turn ran; the calls start closed.
+                roll = page.locator(".roll").inner_text()
+                assert "12 calls" in roll and "first byte" in roll and "cache" in roll
+                assert page.locator(".chip").all_inner_texts() == ["bash × 5", "read_file × 3"]
+                assert "drains before it refills" in page.locator(".asum").inner_text()
+                assert page.locator(".crow:not(.chead)").first.is_visible() is False
+                page.locator(".calls summary").click()
+                assert page.locator(".crow:not(.chead)").count() == 12
+                shot("a-admission")
 
-                # A reused request: Jev and Rule are the admission's.
-                page.keyboard.press("]")
-                page.wait_for_function("() => document.querySelectorAll('.card.inh').length === 2")
-                assert page.locator(".tick.on").count() == 1
-                assert "Request 1 of 37" in body_text(page)
-                assert page.evaluate("getComputedStyle(document.querySelector('.card')).animationName") == "none"
-                page.keyboard.press("]")
-                page.keyboard.press("ArrowLeft")
-                page.keyboard.press("ArrowLeft")
-                assert "No rule ran on this request" in body_text(page)
-                assert "A strict binding skips the decider" in body_text(page)
-                assert page.locator(".inhv").all_inner_texts() == ["Rule\nmoderate_tools", "Route\nmid_tools"]
-                shot("a-request2-rule")
-                page.keyboard.press("ArrowLeft")
-                assert "Within budget" in body_text(page)
-                page.keyboard.press("ArrowLeft")
-                assert "Judged once, at admission." in body_text(page)
-                assert page.locator(".inhv").all_inner_texts() == ["Task\nDebugging", "Difficulty\n2.33"]
-                page.keyboard.press("ArrowRight")
-                shot("a-request2-constraints")
-                page.keyboard.press("Escape")
-                assert page.locator(".card.inh").count() == 0
-
-                # Bookmark 2: adaptive effort, gaps, unknown and rejected requests.
-                open_book("design-review")
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('gpt-6-astra')")
-                assert page.locator(".mkr").count() == 4
-                assert page.locator(".mkr.g-confirmed").count() == 2
-                assert page.locator(".mkr.g-expected").count() == 1
-                assert page.locator(".mkr.g-recommended").count() == 1
-                assert page.locator(".tick.unknown").count() == 1
-                assert page.locator(".tick.rejected").count() == 1
-                lane = page.evaluate("[...document.querySelectorAll('.slot')].map(s => Math.round(s.getBoundingClientRect().left))")
-                ticks = page.evaluate("[...document.querySelectorAll('.tick')].map(s => Math.round(s.getBoundingClientRect().left))")
-                assert lane == ticks
-                stage("Jev")
+                # A user turn with no plan: Jev was not asked; the effort is the admission's.
+                turn(1)
+                assert heads() == ["request", "jev", "effort"]
                 text = body_text(page)
-                assert "not recorded for this decision" in text
-                assert "Shadow" in text and "reasoning" in text
-                assert "distribution not recorded" in text
-                shot("b-jev")
-                stage("Rule & quota")
-                text = body_text(page)
-                assert "config not on file" in text and "hard" in text and "frontier_high" in text
-                assert "stale · unreadable · counted as 0" in text
-                assert "without quota gpt-6-luna(high) · chosen gpt-6-astra(high)" in text
-                assert "No threshold moved" not in text
-                shot("b-rule")
-                stage("Constraints")
-                assert page.locator(".bl .gapchip").count() == 1  # reserve not recorded
-                excluded = page.locator(".ck").filter(has_text="Excluded")
-                assert excluded.locator(".v").inner_text() == "none"
-                shot("b-constraints")
-                stage("Binding")
-                assert page.locator(".plan").count() == 4
-                assert page.locator(".rung.base").inner_text() == "high"
-                shot("b-binding")
-                stage("Outcome")
-                page.locator(".cb.unknown").click()
-                assert page.locator(".tick.on.unknown").count() == 1
-                shot("b-unknown-outcome")
-                page.keyboard.press("ArrowLeft")
-                # Every request belongs to the turn its plan opened.
-                assert page.locator(".plan.on").count() == 1
-                page.locator(".tick").nth(8).click()
-                assert page.locator(".plan.on").count() == 1
-                assert page.locator(".rung > i.g-expected").count() == 1
-                shot("b-request9-binding")
-                page.locator(".tick.rejected").click()
+                assert "Not asked" in text and "Fixed effort · no plan" in text
+                assert "moderate_tools" in page.locator(".tcol").nth(2).inner_text()
+                assert page.locator(".crow:not(.chead)").count() == 15  # the calls table stays open
+                assert page.evaluate("getComputedStyle(document.querySelector('.tcard')).animationName") == "none"
                 page.keyboard.press("ArrowRight")
-                assert "not recorded" in body_text(page)
-                page.keyboard.press("Escape")
+                page.wait_for_function("() => document.querySelectorAll('.tcard')[2].classList.contains('sel')")
+                why = page.locator(".tcol").nth(2).inner_text()
+                assert "high → xhigh ▲" in page.locator(".effbig").inner_text()
+                assert "Changed by" in why and "↑ more" in why
+                assert "usage not reported" in page.locator(".roll").inner_text()
+                assert page.locator(".roll .gapchip").count() == 1
+                shot("a-turn3")
+                page.keyboard.press("ArrowLeft")
+                page.wait_for_function("() => document.querySelectorAll('.tcard')[1].classList.contains('sel')")
+                page.keyboard.press("ArrowRight")
 
-                # A session with almost nothing recorded never shows blanks.
-                page.evaluate(f"location.hash = 's={C_ID}'")
-                page.wait_for_function("() => document.querySelector('.model') && document.querySelector('.model').textContent.includes('grok-5')")
-                for name in ("Jev", "Constraints", "Rule & quota", "Binding", "Outcome"):
-                    stage(name)
-                    assert page.locator(".gapchip, .gaprow").count() >= 1, name
-                shot("c-outcome")
-
-                # Unchanged data does not replay the entrance; changed data re-renders still.
-                open_book("design-review")
-                page.wait_for_function("() => document.querySelector('.model').textContent.includes('gpt-6-astra')")
+                # The selected turn survives the live refresh; unchanged data does not re-render.
                 page.evaluate("document.querySelector('.pane').dataset.mark = 'kept'")
                 page.wait_for_timeout(5600)
                 assert page.evaluate("document.querySelector('.pane').dataset.mark") == "kept"
-                details[B_ID]["session"]["last_seen"] += 10
+                details[A_ID]["session"]["last_seen"] += 10
                 page.wait_for_function("() => !document.querySelector('.pane').dataset.mark", timeout=8000)
-                assert page.locator(".pane.still").count() == 1
-                assert page.locator(".spine.still").count() == 1
+                assert page.locator(".tcard.sel .tn").inner_text() == "Turn 3"
+                assert page.locator(".pane.still").count() == 1 and page.locator(".turns.still").count() == 1
 
-                # Pause holds the view; resume picks up the change.
-                page.get_by_role("button", name="Pause", exact=True).click()
-                details[B_ID]["requests"][0]["response_ms"] = 3999.0
-                page.evaluate("document.querySelector('.pane').dataset.mark = 'paused'")
+                # Feedback posts the verdict, nothing else, and the page shows it.
+                page.locator(".fbb.v-too_strong").click()
+                page.wait_for_function("() => document.querySelector('.ifacts .vb.v-too_strong')", timeout=8000)
+                assert posted[-1] == ("feedback", A_ID, {"verdict": "too_strong", "source": "dashboard"})
+                assert page.locator(".fbb.on").inner_text() == "Too strong"
+                # Save as eval case: the session and the verdict now on it.
+                page.get_by_role("button", name="Save as eval case").click()
+                page.wait_for_function("() => document.querySelector('.isaved')")
+                assert posted[-1] == ("eval", None, {"session_id": A_ID, "verdict": "too_strong"})
+                saved = page.locator(".isaved").inner_text()
+                assert "/data/golden_cases.jsonl" in saved and "3 cases" in saved
+                shot("a-saved")
+
+                # Jev sandbox: the admission's stored state, the running wording, one probe per Run.
+                page.get_by_role("button", name="Jev sandbox").click()
+                assert page.locator(".drawer").is_visible()
+                assert page.locator(".dtarget").inner_text() == "Admission"
+                assert A_PROMPTS[0] in page.locator(".dstate").input_value()
+                assert page.locator(".dq").count() == 3
+                assert page.locator(".dq").nth(1).input_value() == "How hard is this request?"
+                runs = sum(1 for p in posted if p[0] == "sandbox")
+                page.wait_for_timeout(300)
+                assert sum(1 for p in posted if p[0] == "sandbox") == runs  # never runs by itself
+                page.locator(".drun").click()
+                assert page.locator(".drun").is_disabled()
+                page.wait_for_function("() => document.querySelector('.dgrid')")
+                assert posted[-1] == ("sandbox", None, {"decision_row": 730})
+                result = page.locator(".dres").inner_text()
+                assert "+0.65" in result and "very_hard → gpt-6-astra · xhigh" in result
+                assert page.locator(".dgrid .chg").count() == 2  # difficulty and the route
+                assert page.locator(".dms").inner_text() == "Jev 241 ms"
+                assert page.locator(".drun").is_enabled()
+                shot("a-sandbox")
+                # An edited state and wording are sent; a failed probe says so.
+                page.locator(".dq").nth(1).fill("Rate it harder.")
+                page.locator(".dstate").fill('{"latest_user_request": "x", "fail": true}')
+                page.locator(".drun").click()
+                page.wait_for_function("() => document.querySelector('.dres .gaprow')")
+                assert posted[-1][2] == {"decision_row": 730, "state": {"latest_user_request": "x", "fail": True},
+                                         "questions": {"difficulty": {"instructions": "Rate it harder."}}}
+                assert "jev call failed" in page.locator(".dres").inner_text()
+                assert page.locator(".dms").inner_text() == "Jev 31 ms"
+                page.locator(".dstate").fill("not json")
+                page.locator(".drun").click()
+                assert "not a JSON object" in page.locator(".dres").inner_text()
+                # The drawer and its edits outlive a refresh of the page under it.
+                details[A_ID]["session"]["last_seen"] += 10
                 page.wait_for_timeout(5600)
-                assert page.evaluate("document.querySelector('.pane').dataset.mark") == "paused"
-                page.get_by_role("button", name="Resume", exact=True).click()
-                page.wait_for_function("() => !document.querySelector('.pane').dataset.mark", timeout=8000)
+                assert page.locator(".dstate").input_value() == "not json"
+                page.get_by_role("button", name="Close").click()
+                assert page.locator(".drawer").is_hidden()
+                # Opened again, it starts from the stored state and the running wording.
+                page.get_by_role("button", name="Jev sandbox").click()
+                assert page.locator(".dq").nth(1).input_value() == "How hard is this request?"
+                assert A_PROMPTS[0] in page.locator(".dstate").input_value()
+                page.get_by_role("button", name="Close").click()
 
-                # NULL exclusions on a row the packet code never annotated are a gap.
-                details[B_ID]["admission"]["packet_version"] = None
-                stage("Constraints")
-                page.wait_for_function(
-                    "() => [...document.querySelectorAll('.ck')].some(e => e.textContent === 'Excludednot recorded')",
-                    timeout=8000)
-                # With no state shape, the facts the replayed rules read are shown instead.
-                details[A_ID]["admission"]["state_shape"] = None
-                open_book("debugging")
-                page.wait_for_function("() => document.querySelector('.model').textContent.includes('glm-5.3')")
-                stage("Jev")
-                page.wait_for_function("() => document.body.innerText.includes('Read by the rules')", timeout=8000)
+                # Bookmark 2: adaptive effort, plan turns, an inferred join and a rejected call.
+                open_book("design-review")
+                page.wait_for_function("() => document.querySelector('.imodel').textContent.includes('gpt-6-astra')")
+                assert page.locator(".tcard").count() == 5
+                cards = page.locator(".tcard").all_inner_texts()
+                assert "high → xhigh ▲" in cards[1] and "effort held" in cards[2] and "xhigh → high ▼" in cards[3]
+                assert page.locator(".tcard.corr").count() == 1 and "corrective" in cards[1]
+                assert "1 call" in cards[4] and "1 rejected" in cards[4]
+                assert page.locator(".tjoin").inner_text() == "Calls matched to turns by log order"
+                assert "1 escalation" in page.locator(".ihead").inner_text()
+                assert page.locator(".ifacts .vb").count() == 0
+                assert page.get_by_role("button", name="Save as eval case").is_disabled()
+                # The admission: no replay, quota steered, shadow answers apart.
                 text = body_text(page)
-                assert "not recorded for this decision" in text and "has_tools" in text and "has_images" in text
+                assert "not replayed · config not on file" in text
+                assert "steered" in text and "without quota gpt-6-luna(high)" in text
+                assert "reasoning" in page.locator(".shadowq").inner_text()
+                assert page.locator(".r.hit .nm").inner_text() == "hard"
+                shot("b-admission")
+                # The escalating plan turn.
+                turn(1)
+                assert heads() == ["request", "jev", "effort"]
+                assert page.locator(".effbig").inner_text() == "high → xhigh ▲"
+                assert "confirmed" in page.locator(".effst").inner_text()
+                assert page.locator(".rung").count() == 3
+                assert "keep the public API" in page.locator(".tcol").first.inner_text()
+                assert "Earlier request" in page.locator(".tcol").first.inner_text()
+                corr = page.locator(".qb").nth(2)
+                assert corr.locator(".rlabels span.on").all_inner_texts() == ["0.6 raise"]
+                assert "0.82 ≥ 0.60" in page.locator(".limits").inner_text()
+                shot("b-escalation")
+                # The step down, sent but not confirmed, with its confirmations.
+                turn(3)
+                assert page.locator(".effbig").inner_text() == "xhigh → high ▼"
+                assert "sent, not confirmed" in page.locator(".effst").inner_text()
+                assert "2 of 2" in page.locator(".tcol").nth(2).inner_text()
+                # The call no turn claimed sits with the turn it followed.
+                turn(4)
+                page.locator(".calls summary").click()
+                assert page.locator(".crow:not(.chead)").count() == 1
+                assert "rejected" in page.locator(".crow:not(.chead)").inner_text()
+                shot("b-last")
 
-                # Phone width: no horizontal scroll on any stage of any session.
+                # A session with almost nothing recorded never shows blanks.
+                page.evaluate(f"location.hash = 's={C_ID}'")
+                page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('grok-5')")
+                assert page.locator(".tcard").count() == 1
+                assert page.locator(".gapchip, .gaprow").count() >= 4
+                shot("c-gaps")
+
+                # Phone width: no sideways scroll on any turn; the columns stack in order.
                 page.set_viewport_size({"width": 390, "height": 844})
                 for key in ("debugging", "design-review"):
                     open_book(key)
-                    page.wait_for_timeout(300)
-                    for name in ("Jev", "Constraints", "Rule & quota", "Binding", "Outcome"):
-                        stage(name)
-                        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (key, name)
-                    page.keyboard.press("]")
-                    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), key
-                    page.keyboard.press("Escape")
+                    for k in range(page.locator(".tcard").count()):
+                        turn(k)
+                        assert no_sideways(), (key, k)
+                        tops = page.evaluate("[...document.querySelectorAll('.tcol')].map(c => Math.round(c.getBoundingClientRect().top))")
+                        assert tops == sorted(tops) and len(set(tops)) == 3, tops
                 open_book("debugging")
-                stage("Rule & quota")
-                shot("a-rule", 390, 844)
-                stage("Jev")
-                shot("a-jev", 390, 844)
+                shot("a-admission", 390, 844)
+                turn(2)
+                shot("a-turn3", 390, 844)
+                page.get_by_role("button", name="Jev sandbox").click()
+                assert no_sideways()
+                shot("a-sandbox", 390, 844)
+                page.keyboard.press("Escape")
                 open_book("design-review")
-                stage("Binding")
-                shot("b-binding", 390, 844)
-                stage("Outcome")
-                shot("b-outcome", 390, 844)
+                turn(1)
+                shot("b-escalation", 390, 844)
                 page.keyboard.press("s")
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
-                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                assert no_sideways()
                 shot("sessions", 390, 844)
                 page.keyboard.press("o")
                 page.wait_for_function("() => document.querySelectorAll('.kpi').length === 6")
-                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                assert no_sideways()
                 shot("overview", 390, 844)
                 page.set_viewport_size({"width": 1440, "height": 900})
                 assert page.evaluate("getComputedStyle(document.documentElement).fontSize") == "16px"
@@ -748,15 +1009,15 @@ def test_browser_session_inspector(monkeypatch):
                 # Reduced motion turns every animation off.
                 page.emulate_media(reduced_motion="reduce")
                 open_book("debugging")
-                page.wait_for_function("() => document.querySelector('.card')")
-                assert page.evaluate("getComputedStyle(document.querySelector('.card')).animationName") == "none"
+                assert page.evaluate("getComputedStyle(document.querySelector('.tcard')).animationName") == "none"
 
                 # Privacy: truncated session ids only, request ids never.
                 for item in details.values():
                     page.evaluate(f"location.hash = 's={item['session']['session_id']}'")
                     page.wait_for_timeout(400)
-                    for k in range(1, 6):
-                        page.locator(".card").nth(k - 1).click()
+                    page.wait_for_function("() => document.querySelector('.tcard')")
+                    for k in range(page.locator(".tcard").count()):
+                        page.locator(".tcard").nth(k).click()
                         html = page.content()
                         text = body_text(page)
                         assert item["session"]["session_id"] not in text
@@ -787,18 +1048,39 @@ def test_fixtures_match_the_contract_shape():
         "effort_mode", "adaptation_mode", "effort_lineage", "decision_id", "decision_rule",
         "decision_source", "quality_lane", "quota_changed_choice", "config_hash", "jev_model",
         "compaction_epoch", "compaction_state", "last_input_tokens", "last_output_tokens",
+        "tombstone", "state_builder", "title", "prompt_preview", "workspace_hint", "turn_count",
+        "escalation_count", "corrective_count", "feedback_verdict", "config_matches", "request_count",
+        "cache_hit_ratio", "feedback",
     }
     plan_keys = set(session_b()["plans"][0])
     assert plan_keys == {
         "plan_id", "turn_id", "sequence", "request_id", "mode", "action", "status", "from_effort",
         "to_effort", "base_effort", "recommendation", "expected_effort", "confirmed_effort", "reconciled",
-        "compaction_epoch", "reason", "created", "updated", "shadow_counterfactual",
+        "compaction_epoch", "reason", "created", "updated", "shadow_counterfactual", "evidence", "judgment",
     }
+    assert set(session_b()["plans"][0]["evidence"]) == {
+        "difficulty", "p_hard", "harm_if_wrong", "corrective_followup", "failure_mode", "short_continuation",
+        "missing", "error", "thresholds", "ladder", "floor", "target", "direction", "confirmations",
+        "needed_confirmations",
+    }
+    for item in (session_a(), session_b()):
+        assert set(item) == {"config_hash", "session", "admission", "requests", "plans", "trace", "turns", "turn_join"}
+        for t in item["turns"]:
+            assert set(t) == {
+                "turn_index", "kind", "ts", "decision_row", "user_prompt", "state", "state_shape", "jev",
+                "decision", "plan", "execution_rollup", "requests", "feedback",
+            }
+            assert set(t["decision"]) == {"model", "effort", "rule", "route", "quality_lane", "fallback"}
+            assert set(t["execution_rollup"]) == {
+                "http_requests", "usage_reported", "input_tokens", "output_tokens", "cached_input_tokens",
+                "first_byte_ms_p50", "tps_p50", "tool_calls", "assistant_summary", "files_touched",
+            }
     request_keys = set(session_a()["requests"][0])
     assert request_keys == {
         "seq", "request_id", "status", "created", "updated", "upstream_status", "row", "ts", "model",
         "effort", "stream_state", "accepted", "first_byte_ms", "response_ms", "response_bytes",
-        "usage_reported", "facts",
+        "usage_reported", "turn_index", "turn_id", "event_type", "input_tokens", "output_tokens",
+        "cached_input_tokens", "facts",
     }
     allow = {"message_count", "est_tokens", "input_tokens", "output_tokens", "reserve_tokens", "headroom",
              "context_window", "max_tokens", "has_tools", "tool_count", "has_images", "has_code", "stream",
