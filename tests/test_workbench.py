@@ -100,6 +100,44 @@ async def test_config_lists_rules_with_lines_and_hits(svc):
         await svc.close()
 
 
+@respx.mock
+async def test_config_lists_rated_admissions_as_numbers_and_labels(svc):
+    try:
+        weak = await admit(svc, "session-cccc0001", task="code", difficulty=2.0)
+        await admit(svc, "session-cccc0002", task="quick_question", difficulty=0.1)
+        store = svc.router.store
+        store.add_feedback(decision_id=admission(svc, weak.session_id)["decision_id"], verdict="too_weak")
+        before = store.conn.total_changes
+        body = (await call(svc, "GET", "/router/config?window=24h")).json()
+        assert store.conn.total_changes == before
+    finally:
+        await svc.close()
+    rated = {r["session_id"]: r for r in body["rated"]}
+    assert set(rated) == {"session-cccc0001", "session-cccc0002"}
+    assert rated["session-cccc0001"] == {
+        "session_id": "session-cccc0001", "alias": "auto-session", "rule": "hard",
+        "verdict": "too_weak", "scores": {"difficulty": 2.0, "harm_if_wrong": 0.1},
+    }
+    assert rated["session-cccc0002"]["verdict"] is None
+    # Choices and text never ride along: scores are numbers.
+    for item in body["rated"]:
+        assert all(isinstance(v, float) for v in item["scores"].values())
+
+
+def test_rated_admissions_skip_rows_without_scores():
+    from jev_router.workbench import rated_admissions
+
+    rows = [
+        {"id": 1, "session_id": "s-1", "alias": "auto", "rule": "admission_fallback", "answers": None},
+        {"id": 2, "session_id": "s-2", "alias": "auto", "rule": "easy", "decision_id": "d2",
+         "answers": {"task": {"type": "choice", "choice": "code"},
+                     "difficulty": {"type": "score", "score": 0.4}}},
+    ]
+    out = rated_admissions(rows, [{"decision_id": "d2", "verdict": "right"}], {})
+    assert out == [{"session_id": "s-2", "alias": "auto", "rule": "easy", "verdict": "right",
+                    "scores": {"difficulty": 0.4}}]
+
+
 async def test_config_never_serves_a_snapshot(monkeypatch):
     monkeypatch.setenv("WB_TOKEN", "t")
     app = create_app(make_config(settings={"admin_token_env": "WB_TOKEN"}))

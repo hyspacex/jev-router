@@ -444,8 +444,41 @@ def _window(params: Any, allowed: set[str]) -> str | Response:
     return window
 
 
+def rated_admissions(
+    rows: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+    labels: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Each admission's numeric scores beside the verdict about it, if any.
+
+    Numbers and labels only: the session id, alias and rule, the score and
+    noul answers, and the newest verdict (None when nobody rated it). An
+    admission with no numeric answer, such as a fallback, is left out.
+    Pure. The Rules tab plots these on its threshold rulers.
+    """
+    sessions = [{"session_id": sid, **item} for sid, item in (labels or {}).items()]
+    verdicts = verdicts_by_admission(rows, feedback, sessions)
+    out = []
+    for row in rows:
+        scores = _numbers(row.get("answers"))
+        if not scores:
+            continue
+        out.append({
+            "session_id": _label(row.get("session_id")),
+            "alias": _label(row.get("alias")),
+            "rule": _label(row.get("rule")),
+            "verdict": verdicts.get(row.get("id")),
+            "scores": scores,
+        })
+    return out
+
+
 async def get_config(request: Request) -> Response:
-    """The running config, its rules with their hits, and where each one is."""
+    """The running config, its rules with their hits, and where each one is.
+
+    Also `rated`: the admissions in the window with their scores and
+    verdicts, newest first, at most PREVIEW_MAX. Reads only.
+    """
     router = request.app.state.router
     window = _window(request.query_params, {"window"})
     if isinstance(window, Response):
@@ -454,7 +487,13 @@ async def get_config(request: Request) -> Response:
     counts = {
         (alias, rule): n for alias, rule, n in router.sessions.admission_rule_counts(since)
     }
-    return _json(describe_config(router.config, counts, window, since))
+    body = describe_config(router.config, counts, window, since)
+    body["rated"] = rated_admissions(
+        router.sessions.admissions_since(since, PREVIEW_MAX),
+        router.sessions.admission_feedback(since),
+        router.sessions.session_labels(since),
+    )
+    return _json(body)
 
 
 # --- POST /router/config/preview -------------------------------------------

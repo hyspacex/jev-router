@@ -286,6 +286,18 @@ def session_c():
     }
 
 
+# What the list shows of each session, shaped from the seeded server's rows.
+LABELS = {
+    A_ID: {"title": "Getting this on startup since the pydantic upgrade, any idea?",
+           "prompt_preview": "Getting this on startup since the pydantic upgrade, any idea? Traceback (most recent call last):",
+           "workspace_hint": "inventory-service", "turn_count": 2, "feedback_verdict": "too_weak"},
+    B_ID: {"title": "Design and implement an incremental re-index for the search service.",
+           "prompt_preview": "Design and implement an incremental re-index for the search service.",
+           "workspace_hint": "search-index", "turn_count": 5, "feedback_verdict": None},
+    C_ID: {"title": None, "prompt_preview": None, "workspace_hint": None, "turn_count": None,
+           "feedback_verdict": None},
+}
+
 BOOKMARKS = [
     {"slug": "debugging", "label": "Debugging", "session_id": A_ID, "created": A_START},
     {"slug": "design-review", "label": "Design review", "session_id": B_ID, "created": B_START},
@@ -318,6 +330,7 @@ def listing(details, params=None):
             "problems": problems,
             "response_ms": {"n": len(times), "p50": times[(len(times) + 1) // 2 - 1] if times else None},
             "pinned": {"slug": pin["slug"], "label": pin["label"]} if pin else None,
+            **LABELS[s["session_id"]],
         })
     out.sort(key=lambda row: -(row["last_seen"] or row["created"] or 0))
     facets = {
@@ -325,6 +338,10 @@ def listing(details, params=None):
                for v in sorted({r[key] for r in out if r[key]})]
         for name, key in (("client", "client"), ("model", "model"), ("rule", "rule"))
     }
+    facets["feedback"] = [
+        {"value": v, "n": sum(1 for r in out if (r["feedback_verdict"] or "unrated") == v)}
+        for v in sorted({r["feedback_verdict"] or "unrated" for r in out})
+    ]
     keep = []
     for row in out:
         if params.get("client") and row["client"] != params["client"]:
@@ -337,7 +354,9 @@ def listing(details, params=None):
             continue
         if params.get("pinned") == "1" and not row["pinned"]:
             continue
-        if params.get("q") and params["q"] not in row["session_id"]:
+        if params.get("q") and not any(params["q"] in (row[k] or "") for k in ("session_id", "title", "prompt_preview")):
+            continue
+        if params.get("feedback") and (row["feedback_verdict"] or "unrated") != params["feedback"]:
             continue
         problem = params.get("problem")
         if problem and not (row["problems"] if problem == "any" else problem in row["problems"]):
@@ -392,7 +411,46 @@ def overview(window, now):
     }
     body = build_overview(raw, window, since)
     body["config_hash"] = RUNNING
+    body["subscriptions"] = subscriptions(now)
     return body
+
+
+def subscriptions(now):
+    """`live_quota` as the monitor reports it: one routed provider read from
+    CodexBar, one not polled, one tracked subscription with plans and cost."""
+    def window(name, minutes, used, expected, resets):
+        return {"used_percent": used, "expected_percent": expected,
+                "pace_delta": None if expected is None else round(used - expected, 2),
+                "resets_at": now + resets, "window_minutes": minutes, "name": name,
+                "reset_description": None}
+
+    def routed(provider, models, **extra):
+        return {"pressure": 0.0, "age_seconds": None, "fetched_at": None, "used_percent": None,
+                "demote_above": 0.6, "exhausted_at": 100.0, "polls": 0, "errors": 0,
+                "provider": provider, "enabled": False, "source": "codexbar",
+                "codexbar_provider": None, "via": None, "status": "unknown", "steering": None,
+                "exhausted": None, "windows": [],
+                "models": [{"model": m, "quota_cost": 1.0, "pressure": 0.0} for m in models], **extra}
+
+    return {
+        "as_of": now, "quota_routing": True, "demote_above": 0.6, "exhausted_at": 100.0,
+        "routed": [
+            routed("openai", ["gpt-6-astra", "gpt-6-sol"], enabled=True, codexbar_provider="codex",
+                   via="snapshot", status="fresh", steering="calm", age_seconds=34.0, polls=1,
+                   used_percent=40.0, windows=[window("secondary", 10080.0, 40.0, 57.14, 259200)]),
+            routed("ollama", ["ollama/glm-5.3"]),
+        ],
+        "tracked": [{
+            "age_seconds": 180.0, "fetched_at": now - 180, "credits_remaining": None, "polls": 1,
+            "errors": 0, "id": "claude", "via": "snapshot", "status": "fresh",
+            "windows": [window("primary", 300.0, 12.0, 50.0, 9000),
+                        window("secondary", 10080.0, 43.0, 71.43, 172800)],
+            "plans": [{"title": "Session", "used_percent": 12.0}, {"title": "Weekly", "used_percent": 43.0}],
+            "tokens": {"session_tokens": 5000.0, "session_cost_usd": 0.75,
+                       "last_30_days_tokens": 70000000.0, "last_30_days_cost_usd": 812.0},
+            "currency": "USD",
+        }],
+    }
 
 
 def fixture_routes(details):
@@ -466,31 +524,28 @@ def test_browser_session_inspector(monkeypatch):
                 page.locator("#token").fill(credential)
                 page.get_by_role("button", name="Connect", exact=True).click()
                 # The home is the overview.
-                page.wait_for_function("() => document.querySelectorAll('.kpi').length === 6")
+                page.wait_for_function("() => document.querySelectorAll('.bigk').length === 4")
                 assert page.locator("#token").input_value() == ""
                 page.wait_for_function("() => document.fonts.ready.then(() => document.fonts.check('16px Geist'))")
                 assert page.evaluate("document.fonts.check('16px \"Geist Mono\"')")
                 assert page.evaluate("getComputedStyle(document.documentElement).fontSize") == "17px"
                 assert page.locator("#v-overview").get_attribute("aria-current") == "page"
                 text = body_text(page)
-                assert "Legacy alias traffic" in text and "Response time by model" in text
-                assert page.locator(".kpi.warn").count() == 2  # one unknown, one rejected
-                # First byte missing on 4 of 20 executions is a gap, not a faster number.
-                assert "8 of 10 recorded" in text
-                assert "usage not reported on 20 of 20" in text
-                assert "stale · counted as 0" in text and "41%" in text and "13%" in text
+                assert "Legacy alias traffic" in text
+                assert page.locator(".rf.warn").count() == 2  # one unknown, one rejected
+                # First byte missing on 2 of 10 calls per model is a gap, not a faster number.
+                assert "8 of 10" in page.locator(".lt").inner_text()
                 assert page.locator(".sb .bad").count() == 24
-                assert page.locator(".dr").count() >= 4
                 shot("overview")
                 for window in ("1h", "7d", "30d"):
                     page.locator(".segb", has_text=window).click()
                     page.wait_for_function(f"() => location.hash === '#overview?w={window}' && document.querySelector('.segb.on').textContent === '{window}'")
-                    assert page.locator(".kpi").count() == 6
+                    assert page.locator(".bigk").count() == 4
                 page.locator(".segb", has_text="24h").click()
                 page.wait_for_function("() => location.hash === '#overview'")
 
                 # A problem count opens the sessions behind it.
-                page.locator(".kpi.warn").first.click()
+                page.locator(".rf.warn").first.click()
                 page.wait_for_function("() => location.hash.startsWith('#sessions?problem=unknown')")
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 1")
                 assert page.locator("#f-problem").input_value() == "unknown"
@@ -518,9 +573,9 @@ def test_browser_session_inspector(monkeypatch):
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
                 page.keyboard.press("/")
                 page.wait_for_function("() => document.activeElement && document.activeElement.id === 'q'")
-                page.keyboard.type("0f3e")
-                page.wait_for_function("() => location.hash === '#sessions?q=0f3e' && document.querySelectorAll('.srow[href]').length === 1")
-                assert page.locator("#q").input_value() == "0f3e"  # typing is never interrupted
+                page.keyboard.type("pydantic upgrade")
+                page.wait_for_function("() => location.hash === '#sessions?q=pydantic+upgrade' && document.querySelectorAll('.srow[href]').length === 1")
+                assert page.locator("#q").input_value() == "pydantic upgrade"  # typing is never interrupted
                 page.locator("#clear").click()
                 page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
                 page.locator("body").click(position={"x": 5, "y": 400})
@@ -738,7 +793,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 shot("sessions", 390, 844)
                 page.keyboard.press("o")
-                page.wait_for_function("() => document.querySelectorAll('.kpi').length === 6")
+                page.wait_for_function("() => document.querySelectorAll('.bigk').length === 4")
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 shot("overview", 390, 844)
                 page.set_viewport_size({"width": 1440, "height": 900})
@@ -805,3 +860,330 @@ def test_fixtures_match_the_contract_shape():
              "estimate_method", "session_mode"}
     assert set(session_a()["admission"]["facts"]) <= allow
     assert copy.deepcopy(session_b())["trace"] == {"available": False, "reason": "not_on_file"}
+
+
+# --- the Rules view ------------------------------------------------------------
+
+def rules_yaml():
+    """A long router.yaml-like text, so the editor has to scroll to a rule."""
+    head = [f"# filler line {i}" for i in range(1, 121)]
+    body = """policy:
+  low_confidence:
+    min_confidence: 0.4
+    questions: [task, difficulty]
+    use:
+      route: frontier_medium
+  rules:
+    - name: very_hard
+      lane: hardest-work
+      when:
+        difficulty:
+          gte: 3.0
+      use:
+        route: frontier_xhigh
+    - name: hard
+      lane: hard-work
+      when:
+        difficulty:
+          gte: 2.4
+      use:
+        route: frontier_high
+    - name: high_harm
+      lane: high-consequence
+      when:
+        harm_if_wrong:
+          gte: 0.8
+      use:
+        route: frontier_medium
+    - name: moderate_tools
+      lane: moderate-tools
+      when:
+        has_tools: true
+        difficulty:
+          gte: 1.4
+      use:
+        route: mid_tools
+    - name: easy
+      lane: simple-work
+      when: {}
+      use:
+        route: fast
+  default:
+    use:
+      route: frontier_medium
+""".splitlines()
+    tail = [f"# more filler {i}" for i in range(1, 81)]
+    return "\n".join(head + body + tail) + "\n"
+
+
+def line_of(text, needle):
+    return text.splitlines().index(needle) + 1
+
+
+def rules_config(window, yaml_text, config_hash=RUNNING):
+    """`GET /router/config`, shaped from the seeded server's answer."""
+    def rule(index, name, lane, when, route, hits):
+        return {"index": index, "name": name, "lane": lane, "protected": False, "when": when,
+                "use": {"route": route}, "line": line_of(yaml_text, f"    - name: {name}"),
+                "hits": hits, "share": hits / 10}
+
+    rules = [
+        rule(1, "very_hard", "hardest-work", {"difficulty": {"gte": 3.0}}, "frontier_xhigh", 0),
+        rule(2, "hard", "hard-work", {"difficulty": {"gte": 2.4}}, "frontier_high", 3),
+        rule(3, "high_harm", "high-consequence", {"harm_if_wrong": {"gte": 0.8}}, "frontier_medium", 1),
+        rule(4, "moderate_tools", "moderate-tools", {"has_tools": True, "difficulty": {"gte": 1.4}}, "mid_tools", 4),
+        rule(5, "easy", "simple-work", {}, "fast", 1),
+    ]
+    gate = {"min_confidence": 0.4, "questions": ["task", "difficulty"], "use": {"route": "frontier_medium"},
+            "hits": 1, "share": 0.1}
+    default = {"use": {"route": "frontier_medium"}, "hits": 0, "share": 0.0}
+    policy = {"name": "policy", "aliases": ["auto"], "admissions": 10, "rules": rules,
+              "low_confidence": gate, "default": default, "fallback": {"hits": 0, "share": 0.0}}
+    rated = [
+        {"session_id": A_ID, "alias": "auto", "rule": "moderate_tools", "verdict": "too_weak",
+         "scores": {"difficulty": 2.33, "harm_if_wrong": 0.27}},
+        {"session_id": B_ID, "alias": "auto", "rule": "hard", "verdict": "too_strong",
+         "scores": {"difficulty": 2.5, "harm_if_wrong": 0.2}},
+        {"session_id": C_ID, "alias": "auto", "rule": "easy", "verdict": "right",
+         "scores": {"difficulty": 0.4, "harm_if_wrong": 0.05}},
+        {"session_id": "pi-unrated-0001", "alias": "auto", "rule": "moderate_tools", "verdict": None,
+         "scores": {"difficulty": 1.6, "harm_if_wrong": 0.3}},
+    ]
+    return {
+        "config_hash": config_hash, "path": "/srv/router.yaml", "yaml": yaml_text, "yaml_source": "loaded",
+        "window": window, "since": 0, "admissions": 10, "rules": rules, "low_confidence": gate,
+        "default": default, "fallback": {"hits": 0, "share": 0.0}, "rulesets": {"policy": policy},
+        "routes": {}, "quality_lanes": {}, "models": {},
+        "quota_policy": {"enabled": True, "demote_above": 0.6, "exhausted_at": 100.0},
+        "adaptive_effort": {"mode": "off", "line": None, "ladder": [], "thresholds": {}},
+        "questions": {"difficulty": {"type": "score", "levels": 4, "max": 3, "line": 2},
+                      "harm_if_wrong": {"type": "noul", "max": 1, "line": 3}},
+        "thresholds": {"difficulty": [1.4, 2.4, 3.0], "harm_if_wrong": [0.8]},
+        "effort_order": ["none", "low", "medium", "high", "xhigh", "max"],
+        "rated": rated,
+    }
+
+
+PREVIEW = {
+    "valid": True, "errors": [], "config_hash_running": RUNNING, "config_hash_draft": "d4af7c0ffee01234",
+    "evaluated": 10, "changed": 2, "unreplayable": 1, "running_reproduces": 10,
+    "tier_share_before": {"gpt-6-astra": 0.4, "ollama/glm-5.3": 0.6},
+    "tier_share_after": {"gpt-6-astra": 0.6, "ollama/glm-5.3": 0.4},
+    "quota_saved_before": {"saved_rate": 0.42, "quota_cost_sum": 5.8, "priced": 10, "unpriced": 0},
+    "quota_saved_after": {"saved_rate": 0.3, "quota_cost_sum": 7.0, "priced": 10, "unpriced": 0},
+    "feedback": {"rated": 2, "resolved_too_weak": 1, "resolved_too_strong": 0, "conflicts": 0,
+                 "right_changed": 0, "unranked": 0},
+    "diffs": [
+        {"row": 730, "decision_id": "25d58e7563e0", "session_id": A_ID,
+         "title": "Getting this on startup since the pydantic upgrade, any idea?", "ts": A_START,
+         "answers": {"difficulty": 2.33, "harm_if_wrong": 0.27},
+         "before": {"rule": "moderate_tools", "route": "mid_tools", "model": "ollama/glm-5.3", "effort": "high", "lane": "moderate-tools"},
+         "after": {"rule": "hard", "route": "frontier_high", "model": "gpt-6-astra", "effort": "high", "lane": "hard-work"},
+         "direction": "up", "feedback_verdict": "too_weak", "feedback_effect": "resolved_too_weak"},
+        {"row": 741, "decision_id": "aa11bb22cc33", "session_id": "pi-unrated-0001", "title": None, "ts": A_START,
+         "answers": {"difficulty": 2.1, "harm_if_wrong": 0.3},
+         "before": {"rule": "moderate_tools", "route": "mid_tools", "model": "ollama/glm-5.3", "effort": "high", "lane": "moderate-tools"},
+         "after": {"rule": "hard", "route": "frontier_high", "model": "gpt-6-astra", "effort": "high", "lane": "hard-work"},
+         "direction": "unranked", "feedback_verdict": None, "feedback_effect": None},
+    ],
+    "window": "7d", "since": 0, "limit": 200,
+}
+
+
+def rules_routes(state):
+    """`/router/config` and its preview and apply, served from fixtures.
+
+    The preview refuses a draft that holds `bad:` the way the router refuses
+    an invalid one: 422 with lines. Apply records what it was sent."""
+    async def config(request: Request):
+        return JSONResponse(rules_config(request.query_params.get("window", "7d"), state["yaml"], state["hash"]),
+                            headers=HEADERS)
+
+    async def preview(request: Request):
+        body = await request.json()
+        state["previews"].append(body)
+        if "bad:" in body["yaml"]:
+            line = body["yaml"].splitlines().index("bad: [") + 1
+            return JSONResponse({"valid": False, "errors": [{"message": "invalid YAML: unclosed list",
+                                                             "path": None, "line": line}]},
+                                status_code=422, headers=HEADERS)
+        return JSONResponse(PREVIEW, headers=HEADERS)
+
+    async def apply(request: Request):
+        body = await request.json()
+        state["applied"].append(body)
+        return JSONResponse({"applied": True, "config_hash": "d4af7c0ffee01234", "previous_hash": RUNNING,
+                             "backup_path": "/srv/config-backups/router.20261027T101500Z.yaml",
+                             "restart_required": []}, headers=HEADERS)
+
+    return [
+        Route("/router/config", config, methods=["GET"]),
+        Route("/router/config/preview", preview, methods=["POST"]),
+        Route("/router/config/apply", apply, methods=["POST"]),
+    ]
+
+
+def test_browser_overview_sessions_and_rules(monkeypatch):
+    credential = "browser-test-only"
+    monkeypatch.setenv("AUDIT_BROWSER_TOKEN", credential)
+    app = create_app(make_config(settings={"admin_token_env": "AUDIT_BROWSER_TOKEN"}))
+    details = {A_ID: session_a(), B_ID: session_b(), C_ID: session_c()}
+    state = {"yaml": rules_yaml(), "hash": RUNNING, "previews": [], "applied": []}
+    for route in reversed(fixture_routes(details) + rules_routes(state)):
+        app.router.routes.insert(0, route)
+    shots = os.environ.get("DASHBOARD_SHOTS")
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    try:
+        with playwright.sync_playwright() as p:
+            chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+            browser = p.chromium.launch(executable_path=str(chrome) if chrome.exists() else None, headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1920, "height": 1080})
+                errors = []
+                page.on("pageerror", lambda error: errors.append(str(error)))
+
+                def shot(name, width=1920, height=1080):
+                    if not shots:
+                        return
+                    page.set_viewport_size({"width": width, "height": height})
+                    page.wait_for_timeout(900)
+                    Path(shots).mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(Path(shots) / f"{name}-{width}.png"), full_page=True)
+                    page.set_viewport_size({"width": 1920, "height": 1080})
+
+                def narrow_fits():
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    page.wait_for_timeout(300)
+                    fits = page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+                    page.set_viewport_size({"width": 1920, "height": 1080})
+                    return fits
+
+                page.goto(f"http://127.0.0.1:{port}/dashboard")
+                page.locator("#token").fill(credential)
+                page.get_by_role("button", name="Connect", exact=True).click()
+                page.wait_for_function("() => document.querySelectorAll('.bigk').length === 4")
+
+                # Overview: quota first, routed then tracked, gaps as chips.
+                subs = page.locator(".sub")
+                assert subs.count() == 3
+                assert "calm" in subs.nth(0).inner_text() and "−17" in subs.nth(0).inner_text()
+                assert subs.nth(0).locator(".qtrack b").count() == 1  # the pace tick
+                assert subs.nth(1).locator(".gapchip").inner_text() == "not polled"
+                assert subs.nth(1).locator(".qbar").count() == 0
+                tracked = subs.nth(2)
+                assert "tracked" in tracked.get_attribute("class")
+                assert tracked.locator(".ql").all_inner_texts() == ["Session", "Weekly"]
+                assert "$812" in tracked.inner_text()
+                labels = page.locator(".bigk .kl").all_inner_texts()
+                assert labels == ["Quota saved", "Router tax", "Clean turns", "Cache hit"]
+                assert page.locator(".mxv .mxn").count() >= 1
+                assert narrow_fits()
+                shot("rules-overview")
+
+                # Sessions: titles, the preview beyond them, the feedback filter.
+                page.evaluate("location.hash = 'sessions'")
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
+                row_a = page.locator(f".srow[data-sid='{A_ID}']")
+                assert row_a.locator(".stt").inner_text().startswith("Getting this on startup")
+                assert row_a.locator(".sprev").inner_text() == "Traceback (most recent call last):"
+                assert row_a.locator(".vbadge").inner_text() == "↑ more"
+                assert row_a.locator(".wchip").inner_text() == "inventory-service"
+                # A title that is the whole prompt shows no second line.
+                assert page.locator(f".srow[data-sid='{B_ID}'] .sprev").count() == 0
+                page.locator("#f-feedback").select_option("too_weak")
+                page.wait_for_function("() => location.hash === '#sessions?feedback=too_weak' && document.querySelectorAll('.srow[href]').length === 1")
+                assert narrow_fits()
+                page.locator("#clear").click()
+                page.wait_for_function("() => document.querySelectorAll('.srow[href]').length === 3")
+
+                # Rules: the ladder between the gate and the default.
+                page.keyboard.press("r")
+                page.wait_for_function("() => document.querySelectorAll('.lad .lr').length === 7")
+                assert page.locator("#v-rules").get_attribute("aria-current") == "page"
+                names = page.locator(".lad .lnm").all_inner_texts()
+                assert names == ["confidence gate", "very_hard", "hard", "high_harm", "moderate_tools", "easy", "default"]
+                assert "difficulty ≥ 2.4" in page.locator(".lad .lr").nth(2).inner_text()
+                assert page.locator(".rfield .rdot.v-too_weak").count() == 2  # one per ruler
+                assert page.locator(".rfield .rdot.v-none").count() == 2
+                assert page.locator(".rleg").inner_text().split() == ["✓", "right", "↑", "more", "↓", "less"]
+                shot("rules-ladder")
+
+                # A ladder row scrolls the editor to its line and marks it.
+                hard = line_of(state["yaml"], "    - name: hard")
+                assert page.evaluate("document.querySelector('.yta').scrollTop") == 0
+                page.locator(".lad .lr").nth(2).click()
+                page.wait_for_timeout(300)
+                top = page.evaluate("document.querySelector('.yta').scrollTop")
+                assert top > 1000
+                band = page.evaluate("(() => { const b = document.querySelector('.hlb'); const t = document.querySelector('.yta');"
+                                     " return {hidden: b.hidden, top: b.getBoundingClientRect().top - t.getBoundingClientRect().top,"
+                                     " height: t.clientHeight}; })()")
+                assert not band["hidden"] and 0 < band["top"] < band["height"]
+                assert abs(band["top"] - (10 + (hard - 1) * 20 - top)) < 1
+                assert page.evaluate("document.querySelector('.gut').scrollTop") == top
+                assert page.locator(".lad .lr.on .lnm").inner_text() == "hard"
+
+                # A draft survives the live refresh; a moved server hash is said quietly.
+                draft = state["yaml"].replace("          gte: 2.4", "          gte: 2.0")
+                page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", draft)
+                assert "edited" in page.locator(".edp .ph").inner_text()
+                state["hash"] = "0123456789abcdef"
+                page.wait_for_function("() => document.querySelector('.edmoved') && !document.querySelector('.edmoved').hidden", timeout=8000)
+                assert page.locator(".yta").input_value() == draft
+                assert "config changed on the server" in page.locator(".edmoved").inner_text()
+
+                # Check: an invalid draft lists its line; the line button goes there.
+                bad = draft + "bad: [\n"
+                page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", bad)
+                page.get_by_role("button", name="Check", exact=True).click()
+                page.wait_for_function("() => document.querySelector('.err')")
+                assert state["previews"][-1]["limit"] == 1
+                bad_line = bad.splitlines().index("bad: [") + 1
+                assert page.locator(".err .eline").inner_text() == f"line {bad_line}"
+                page.locator(".err .eline").click()
+                assert page.evaluate("document.querySelector('.yta').scrollTop") > top
+
+                # Preview: k of n, the share before and after, the rated rows.
+                page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", draft)
+                page.get_by_role("button", name="Preview", exact=True).click()
+                page.wait_for_function("() => document.querySelector('.prv')")
+                assert state["previews"][-1] == {"yaml": draft, "window": "7d"}
+                assert page.locator(".pvk").inner_text() == "2 of 10"
+                assert "1 not replayable" in page.locator(".pvh").inner_text()
+                assert page.locator(".shrow.moved").count() == 3  # two models and quota saved
+                assert "1 resolved ↑ more" in page.locator(".fbm").inner_text()
+                rows = page.locator(".dfr")
+                assert rows.count() == 2
+                assert "resolved" in rows.nth(0).locator(".dff").inner_text()
+                assert rows.nth(0).locator(".arr.up").count() == 1
+                assert rows.nth(0).locator("a.dft").get_attribute("href") == "#s=" + A_ID
+                assert narrow_fits()
+                shot("rules-preview")
+                shot("rules-preview", 390, 844)
+
+                # Apply asks once, in the page, then says where the old file went.
+                page.get_by_role("button", name="Apply", exact=True).click()
+                page.wait_for_function("() => document.querySelector('.confirm')")
+                assert "Replace router.yaml and reload?" in page.locator(".confirm").inner_text()
+                assert state["applied"] == []
+                shot("rules-confirm")
+                page.locator(".confirm").get_by_role("button", name="Apply", exact=True).click()
+                page.wait_for_function("() => document.querySelector('.applied')")
+                assert state["applied"] == [{"yaml": draft, "base_hash": RUNNING}]
+                text = page.locator(".applied").inner_text()
+                assert "Applied" in text and "d4af7c0f" in text
+                assert "/srv/config-backups/router.20261027T101500Z.yaml" in text
+                assert page.locator(".prv").count() == 0
+                assert not errors, errors
+            finally:
+                browser.close()
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        sock.close()
+        assert not thread.is_alive()

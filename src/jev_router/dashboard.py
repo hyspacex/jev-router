@@ -72,6 +72,8 @@ async def dashboard(request: Request) -> Response:
 # request can never name a path: nothing outside it is served.
 ASSETS = {
     "dashboard.js": ("dashboard.js", "text/javascript"),
+    "overview.js": ("overview.js", "text/javascript"),
+    "rules.js": ("rules.js", "text/javascript"),
     "dashboard.css": ("dashboard.css", "text/css"),
     "Geist-Variable.woff2": ("fonts/Geist-Variable.woff2", "font/woff2"),
     "GeistMono-Variable.woff2": ("fonts/GeistMono-Variable.woff2", "font/woff2"),
