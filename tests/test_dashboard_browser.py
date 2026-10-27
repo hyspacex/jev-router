@@ -75,7 +75,7 @@ def _facts(messages, tokens, headroom, window, *, tools=33, max_tokens=8192, res
     reserve = reserve if reserve is not None else window - tokens - max_tokens - headroom
     return {
         "message_count": messages, "est_tokens": tokens, "input_tokens": tokens,
-        "reserve_tokens": reserve, "headroom": headroom, "context_window": window,
+        "output_tokens": max_tokens, "reserve_tokens": reserve, "headroom": headroom, "context_window": window,
         "max_tokens": max_tokens, "has_tools": tools > 0, "tool_count": tools,
         "has_images": False, "has_code": True, "stream": True,
         "estimate_method": "chars_over_4", "session_mode": "strict",
@@ -303,6 +303,25 @@ def session_c():
         # No turn rows at all: the page falls back to one admission turn.
         "turns": [], "turn_join": "by_index",
     }
+
+
+F_ID = "pi-fa11bac0d4e24c6f8b1a0d9e8c7b6a50"
+
+
+def session_fallback():
+    """Session A as a fallback admission: Jev failed, no rule ran, no lane, no quota record."""
+    item = copy.deepcopy(session_a())
+    item["session"].update(session_id=F_ID, decision_rule="admission_fallback", quality_lane="frontier_medium",
+                           feedback=None, feedback_verdict=None)
+    adm = item["admission"]
+    adm.update(fallback=True, rule="admission_fallback", route="frontier_medium", quality_lane="frontier_medium",
+               answers={}, counterfactual=None, evidence=None, qualification_ref=None, jev_ms=None, jev_tokens=None)
+    first = item["turns"][0]
+    first["decision"].update(rule="admission_fallback", route="frontier_medium", quality_lane="frontier_medium",
+                             fallback=True)
+    first["jev"] = {**first["jev"], "answers": {}, "latency_ms": None, "tokens": None}
+    item["trace"] = {"available": False, "reason": "fallback_admission"}
+    return item
 
 
 # What the list shows of each session, shaped from the seeded server's rows.
@@ -631,7 +650,8 @@ CONFIG = {
     "config_hash": RUNNING,
     "questions": {
         "task": {"type": "choice", "choices": ["debugging", "code-edit"], "instructions": "Which kind of request is this?", "line": 10},
-        "difficulty": {"type": "score", "levels": 4, "max": 3, "instructions": "How hard is this request?", "line": 20},
+        "difficulty": {"type": "score", "levels": 4, "max": 3, "instructions": "How hard is this request?", "line": 20,
+                       "criteria": [{"what": f"Level {n}.", "examples": [f"example {n}"]} for n in range(4)]},
         "harm_if_wrong": {"type": "noul", "max": 1, "instructions": "Would a mistake cause real harm?", "line": 30},
         "corrective_followup": {"type": "noul", "max": 1, "instructions": "Does the follow-up name a defect?", "line": 40},
     },
@@ -664,7 +684,8 @@ def fixture_routes(details, posted=None):
         posted.append(("sandbox", None, body))
         await asyncio.sleep(0.4)
         if isinstance(body.get("state"), dict) and body["state"].get("fail"):
-            return JSONResponse({"error": "jev call failed: jev error: ConnectError", "jev_ms": 31.0}, status_code=502, headers=HEADERS)
+            return JSONResponse({"error": "jev call failed: jev error: ConnectError", "jev_ms": 31.0, "reason": "unreachable"},
+                                status_code=502, headers=HEADERS)
         return JSONResponse(SANDBOX_OK, headers=HEADERS)
 
     async def config(_request: Request):
@@ -835,11 +856,11 @@ def test_browser_session_inspector(monkeypatch):
                 page.wait_for_function("() => document.querySelector('.imodel') && document.querySelector('.imodel').textContent.includes('glm-5.3')")
                 assert page.url.endswith("#debugging")
                 assert page.locator(".tcard").count() == 3
-                assert page.locator(".tcard.sel .tn").inner_text() == "Admission"
+                assert page.locator(".tcard.sel .tn").inner_text() == "Turn 1 · Admission"
                 assert page.evaluate("getComputedStyle(document.querySelector('.tcard')).animationName") == "rise"
                 cards = page.locator(".tcard").all_inner_texts()
                 assert "moderate_tools → glm-5.3 · high" in cards[0] and "12 calls" in cards[0]
-                assert "↑ more" in cards[1] and "15 calls" in cards[1]
+                assert "↑ too weak" in cards[1] and "15 calls" in cards[1]
                 assert "high → xhigh ▲" in cards[2] and "tokens" in cards[2]  # no usage reported: a gap
                 assert page.locator(".tcard").nth(2).locator(".gapchip").count() == 1
                 assert page.locator(".tjoin").count() == 0
@@ -847,7 +868,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert A_PROMPTS[0] in head and "importer" in head and "3 turns" in head and "37 calls" in head
                 assert "missed the second queue" in head
                 assert page.locator(".ifacts .vb.v-too_weak").count() == 1
-                assert page.locator(".fbb.on").inner_text() == "Too weak"
+                assert page.locator(".fbb.on").inner_text() == "↑ too weak"
                 assert heads() == ["request", "jev", "rule"]
                 text = body_text(page)
                 assert "Traceback" not in text  # pasted material starts closed
@@ -856,23 +877,36 @@ def test_browser_session_inspector(monkeypatch):
                 assert "queue.Full" in body_text(page)
                 # Hard facts, from the admission.
                 facts = page.locator(".hfacts").inner_text()
-                assert "33" in facts and "26,453" in facts and "961,259" in facts and "none" in facts
+                assert "33" in facts and "26,453 in" in facts and "961,259" in facts and "none" in facts
+                # Tokens in, the reserve held back for the reply, and the headroom add up to the window.
+                assert "Reserve\n12,288" in facts
                 # Jev: each numeric answer on a ruler, thresholds named by their rule.
-                assert page.locator(".tcolh .note").first.inner_text() == "183 ms"
+                assert page.locator(".tcolh .note").first.inner_text() == "183 ms · 1,651 tok"
                 assert page.locator(".qb").count() == 3
                 diff = page.locator(".qb").nth(1)
                 assert diff.locator(".qval").inner_text() == "2.33"
-                assert diff.locator(".rlabels span:not(.end)").all_inner_texts() == ["1.4 moderate_tools +3", "2.4 hard", "3 very_hard"]
-                assert diff.locator(".rlabels span.on").count() == 3
+                # Every rule under its tick, one per line: the decisive one bright and
+                # first, a rule this request fails elsewhere (no images) dimmer and last.
+                ticks = diff.locator(".rlabels span.rl")
+                assert ticks.count() == 3
+                assert ticks.nth(0).locator("em").inner_text() == "1.4"
+                names = ticks.nth(0).locator("b").all_inner_texts()
+                assert names[0] == "moderate_tools" and len(names) == 4
+                assert ticks.nth(0).locator("b.on").all_inner_texts() == ["moderate_tools"]
+                dim = ticks.nth(0).locator("b.dim").all_inner_texts()
+                assert "images_easy" in dim and names[-len(dim):] == dim
+                assert diff.locator(".rlabels b.on").all_inner_texts() == ["moderate_tools", "hard", "very_hard"]
+                # The end label a tick sits on is not drawn twice.
+                assert diff.locator(".rlabels span.end").all_inner_texts() == ["0"]
                 assert diff.locator(".rdist i").count() == 4
                 assert page.locator(".rmark").count() == 2
                 assert page.locator(".cbar i").count() == 2
                 for q in range(3):
                     rects = page.locator(".qb").nth(q).evaluate_all(
-                        "els => els.length ? [...els[0].querySelectorAll('.rlabels span')].map(e => e.getBoundingClientRect()).map(r => [r.left, r.right, r.top]) : []")
+                        "els => els.length ? [...els[0].querySelectorAll('.rlabels > span')].map(e => e.getBoundingClientRect()).map(r => [r.left, r.right, r.top, r.bottom]) : []")
                     for i, a in enumerate(rects):
                         for b in rects[i + 1:]:
-                            assert a[2] != b[2] or a[1] <= b[0] or b[1] <= a[0], rects
+                            assert a[3] <= b[2] or b[3] <= a[2] or a[1] <= b[0] or b[1] <= a[0], rects
                 # Rule: the ladder as replayed, then quota and lane.
                 assert page.locator(".r.hit").inner_text().split("\n")[-1] == "tools yes · difficulty 2.33 ≥ 1.4"
                 assert "difficulty 2.33 < 2.4" in page.locator(".r.miss").nth(4).inner_text()
@@ -888,6 +922,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert page.locator(".chip").all_inner_texts() == ["bash × 5", "read_file × 3"]
                 assert "drains before it refills" in page.locator(".asum").inner_text()
                 assert page.locator(".crow:not(.chead)").first.is_visible() is False
+                assert page.locator(".calls summary").inner_text() == "Tool loop · 12 calls"
                 page.locator(".calls summary").click()
                 assert page.locator(".crow:not(.chead)").count() == 12
                 shot("a-admission")
@@ -904,7 +939,7 @@ def test_browser_session_inspector(monkeypatch):
                 page.wait_for_function("() => document.querySelectorAll('.tcard')[2].classList.contains('sel')")
                 why = page.locator(".tcol").nth(2).inner_text()
                 assert "high → xhigh ▲" in page.locator(".effbig").inner_text()
-                assert "Changed by" in why and "↑ more" in why
+                assert "Stepped by feedback" in why and "↑ too weak" in why and "Fixed effort" not in why
                 assert "usage not reported" in page.locator(".roll").inner_text()
                 assert page.locator(".roll .gapchip").count() == 1
                 shot("a-turn3")
@@ -925,7 +960,7 @@ def test_browser_session_inspector(monkeypatch):
                 page.locator(".fbb.v-too_strong").click()
                 page.wait_for_function("() => document.querySelector('.ifacts .vb.v-too_strong')", timeout=8000)
                 assert posted[-1] == ("feedback", A_ID, {"verdict": "too_strong", "source": "dashboard"})
-                assert page.locator(".fbb.on").inner_text() == "Too strong"
+                assert page.locator(".fbb.on").inner_text() == "↓ too strong"
                 # Save as eval case: the session and the verdict now on it.
                 page.get_by_role("button", name="Save as eval case").click()
                 page.wait_for_function("() => document.querySelector('.isaved')")
@@ -937,7 +972,8 @@ def test_browser_session_inspector(monkeypatch):
                 # Jev sandbox: the admission's stored state, the running wording, one probe per Run.
                 page.get_by_role("button", name="Jev sandbox").click()
                 assert page.locator(".drawer").is_visible()
-                assert page.locator(".dtarget").inner_text() == "Admission"
+                assert page.locator(".dtarget").inner_text() == "Turn 1 · Admission"
+                assert page.locator(".dnote").inner_text() == "One live Jev call on the text below. Nothing is stored or rerouted."
                 assert A_PROMPTS[0] in page.locator(".dstate").input_value()
                 assert page.locator(".dq").count() == 3
                 assert page.locator(".dq").nth(1).input_value() == "How hard is this request?"
@@ -961,8 +997,21 @@ def test_browser_session_inspector(monkeypatch):
                 page.wait_for_function("() => document.querySelector('.dres .gaprow')")
                 assert posted[-1][2] == {"decision_row": 730, "state": {"latest_user_request": "x", "fail": True},
                                          "questions": {"difficulty": {"instructions": "Rate it harder."}}}
-                assert "jev call failed" in page.locator(".dres").inner_text()
-                assert page.locator(".dms").inner_text() == "Jev 31 ms"
+                assert page.locator(".dres").inner_text() == "Jev unreachable · check settings.jev_url"
+                assert page.locator(".dms").inner_text() == ""  # nothing was measured
+                # The criteria can be edited too; only a changed set is sent.
+                page.locator('[data-fk="crit-difficulty"]').click()
+                levels = json.loads(page.locator(".dc").first.input_value())
+                assert levels[0] == {"what": "Level 0.", "examples": ["example 0"]}
+                levels[3]["what"] = "Several connected stages."
+                page.locator(".dc").first.fill(json.dumps(levels))
+                page.locator(".dstate").fill('{"latest_user_request": "x"}')
+                page.locator(".drun").click()
+                page.wait_for_function("() => document.querySelector('.dgrid')")
+                assert posted[-1][2]["questions"] == {"difficulty": {"instructions": "Rate it harder.", "criteria": levels}}
+                page.locator(".dc").first.fill("[not json")
+                page.locator(".drun").click()
+                assert "Difficulty criteria are not JSON" in page.locator(".dres").inner_text()
                 page.locator(".dstate").fill("not json")
                 page.locator(".drun").click()
                 assert "not a JSON object" in page.locator(".dres").inner_text()
@@ -990,6 +1039,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert "1 escalation" in page.locator(".ihead").inner_text()
                 assert page.locator(".ifacts .vb").count() == 0
                 assert page.get_by_role("button", name="Save as eval case").is_disabled()
+                assert page.get_by_role("button", name="Save as eval case").get_attribute("title") == "Needs a verdict first"
                 # The admission: no replay, quota steered, shadow answers apart.
                 text = body_text(page)
                 assert "not replayed · config not on file" in text
@@ -1006,7 +1056,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert "keep the public API" in page.locator(".tcol").first.inner_text()
                 assert "Earlier request" in page.locator(".tcol").first.inner_text()
                 corr = page.locator(".qb").nth(2)
-                assert corr.locator(".rlabels span.on").all_inner_texts() == ["0.6 raise"]
+                assert corr.locator(".rlabels b.on").all_inner_texts() == ["raise"]
                 assert "0.82 ≥ 0.60" in page.locator(".limits").inner_text()
                 shot("b-escalation")
                 # The step down, sent but not confirmed, with its confirmations.
@@ -1020,6 +1070,18 @@ def test_browser_session_inspector(monkeypatch):
                 assert page.locator(".crow:not(.chead)").count() == 1
                 assert "rejected" in page.locator(".crow:not(.chead)").inner_text()
                 shot("b-last")
+
+                # A fallback admission: no rule ran, no lane, and no quota finding.
+                details[F_ID] = session_fallback()
+                LABELS[F_ID] = LABELS[A_ID]
+                page.evaluate(f"location.hash = 's={F_ID}'")
+                page.wait_for_function("() => document.querySelector('.r.hit.fb')")
+                why = page.locator(".tcol").nth(2).inner_text()
+                assert page.locator(".tcol").nth(2).locator(".tcolh .note").inner_text() == "Jev failed · no rule ran"
+                assert "Jev failed" not in page.locator(".r.hit.fb").inner_text()
+                assert "not recorded" in why and "kept primary" not in why
+                assert "no lane · fallback" in why and "frontier_medium\n" not in why.split("Lane")[-1]
+                del details[F_ID], LABELS[F_ID]
 
                 # A session with almost nothing recorded never shows blanks.
                 page.evaluate(f"location.hash = 's={C_ID}'")
