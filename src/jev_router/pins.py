@@ -2,19 +2,31 @@
 
 Nothing recoverable is stored: no message text, no API keys. The conversation
 key is a hash, and the log keeps lengths, Jev answers and the chosen route.
-The state sent to Jev is stored only when settings.log_state is true.
+The state sent to Jev is stored only when settings.log_state is true; its
+shape (field names and character counts, never text) is stored always.
+
+The config each decision was taken under is kept too, once per hash, with its
+quota commands scrubbed, so a decision can be replayed under its own config.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from .state import state_shape
+
+if TYPE_CHECKING:
+    from .config import RouterConfig
+
+log = logging.getLogger("jev_router")
 
 VERDICTS = ("right", "too_weak", "too_strong", "too_slow")
 
@@ -78,6 +90,19 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS feedback_decision_id ON feedback (decision_id);
 CREATE INDEX IF NOT EXISTS feedback_ts ON feedback (ts DESC);
+"""
+
+# The config text each decision was taken under, keyed by the hash the
+# decision row carries. Its own table, created if absent, so an older file
+# gains it without anything in it changing. Written once per hash at startup
+# (or by `config-snapshots import`), never on the request path, and never
+# pruned: a decision that outlives its config could not be replayed.
+CONFIG_SNAPSHOT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS config_snapshots (
+    config_hash TEXT PRIMARY KEY,
+    first_seen REAL NOT NULL,
+    text TEXT NOT NULL
+);
 """
 
 # Columns added after the first release. Every one is nullable, so a database
@@ -165,8 +190,11 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(SCHEMA)
+            self._conn.executescript(CONFIG_SNAPSHOT_SCHEMA)
             self.migrated = migrate(self._conn)
             self._conn.commit()
+        self._snapshots: dict[str, Any] = {}
+        self.refresh_columns()
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -180,6 +208,16 @@ class Store:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def refresh_columns(self) -> None:
+        """Reread which decision columns this file has.
+
+        A later map (sessions.py) may add one after this Store opened; the
+        session service calls this once it has migrated.
+        """
+        with self._lock:
+            rows = self._conn.execute("PRAGMA table_info(decisions)").fetchall()
+        self._decision_columns = {row[1] for row in rows}
 
     # --- pins ----------------------------------------------------------
 
@@ -248,41 +286,53 @@ class Store:
         shifted: list[dict[str, Any]] | None = None,
         reordered: bool = False,
     ) -> int:
+        # The shape of what Jev was shown is kept whatever log_state says:
+        # names and counts only, so it cannot carry the text it measures.
+        shape = None
+        if state is not None and "state_shape" in self._decision_columns:
+            try:
+                shape = state_shape(state_builder, state)
+            except Exception:  # noqa: BLE001 - a diagnostic never fails a request
+                shape = None
+        columns = (
+            "decision_id, ts, alias, client, conversation_key,"
+            " state_builder, answers, features, config_hash, model, effort, rule, mode,"
+            " fallback, pinned, jev_ms, jev_tokens, est_tokens, message_count, state,"
+            " route, pressures, shifted, reordered"
+        )
+        values: tuple[Any, ...] = (
+            decision_id,
+            time.time(),
+            alias,
+            client,
+            conversation_key,
+            state_builder,
+            json.dumps(answers, default=str),
+            json.dumps(features, default=str),
+            config_hash,
+            model,
+            effort,
+            rule,
+            mode,
+            fallback,
+            pinned,
+            jev_ms,
+            jev_tokens,
+            est_tokens,
+            message_count,
+            json.dumps(state, default=str) if (self.log_state and state) else None,
+            route,
+            json.dumps(pressures, default=str) if pressures else None,
+            json.dumps(shifted, default=str) if shifted else None,
+            bool(reordered),
+        )
+        if shape is not None:
+            columns += ", state_shape"
+            values += (json.dumps(shape, default=str),)
+        marks = ",".join("?" for _ in values)
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO decisions (decision_id, ts, alias, client, conversation_key,"
-                " state_builder, answers, features, config_hash, model, effort, rule, mode,"
-                " fallback, pinned, jev_ms, jev_tokens, est_tokens, message_count, state,"
-                " route, pressures, shifted, reordered)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    decision_id,
-                    time.time(),
-                    alias,
-                    client,
-                    conversation_key,
-                    state_builder,
-                    json.dumps(answers, default=str),
-                    json.dumps(features, default=str),
-                    config_hash,
-                    model,
-                    effort,
-                    rule,
-                    mode,
-                    fallback,
-                    pinned,
-                    jev_ms,
-                    jev_tokens,
-                    est_tokens,
-                    message_count,
-                    json.dumps(state, default=str)
-                    if (self.log_state and state)
-                    else None,
-                    route,
-                    json.dumps(pressures, default=str) if pressures else None,
-                    json.dumps(shifted, default=str) if shifted else None,
-                    bool(reordered),
-                ),
+                f"INSERT INTO decisions ({columns}) VALUES ({marks})", values
             )
             self._conn.commit()
             return cur.lastrowid or 0
@@ -375,6 +425,48 @@ class Store:
             ).fetchone()
         return _decision_row(row) if row else None
 
+    def deciding_decision(self, decision_id: str) -> dict[str, Any] | None:
+        """The row that actually decided, which is what a replay must read.
+
+        The newest row for a decision id is often not it: in a strict session
+        the newest is an execution row with no answers, and a reused legacy
+        pin logs pinned rows under the id it was first decided with. The
+        deciding row is the admission row if there is one, else the earliest
+        unpinned row that is not an execution, else the earliest row.
+        """
+        queries = []
+        if "event_type" in self._decision_columns:
+            queries.append(
+                "SELECT * FROM decisions WHERE decision_id = ?"
+                " AND event_type = 'admission' ORDER BY id ASC LIMIT 1"
+            )
+            queries.append(
+                "SELECT * FROM decisions WHERE decision_id = ? AND pinned = 0"
+                " AND COALESCE(event_type, '') != 'execution' ORDER BY id ASC LIMIT 1"
+            )
+        else:
+            queries.append(
+                "SELECT * FROM decisions WHERE decision_id = ? AND pinned = 0"
+                " ORDER BY id ASC LIMIT 1"
+            )
+        queries.append(
+            "SELECT * FROM decisions WHERE decision_id = ? ORDER BY id ASC LIMIT 1"
+        )
+        with self._lock:
+            for sql in queries:
+                row = self._conn.execute(sql, (decision_id,)).fetchone()
+                if row is not None:
+                    return _decision_row(row)
+        return None
+
+    def decision_by_row(self, row_id: int) -> dict[str, Any] | None:
+        """One decision row by its own id (`#730` on the command line)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM decisions WHERE id = ?", (int(row_id),)
+            ).fetchone()
+        return _decision_row(row) if row else None
+
     def last_decision_id(self, client: str | None = None) -> str | None:
         """The newest decision, for this client header when one is given."""
         with self._lock:
@@ -391,8 +483,108 @@ class Store:
             ).fetchone()
         return str(row["decision_id"]) if row else None
 
+    # --- config snapshots ----------------------------------------------
+
+    def save_config_snapshot(
+        self, config_hash: str, text: str, first_seen: float | None = None
+    ) -> bool:
+        """Store one config's text, scrubbed, under the hash of the original.
+
+        INSERT OR IGNORE: a hash already on file is left exactly as it was.
+        Returns whether a row was written. Raises ConfigError when the text
+        is not a YAML mapping, so nothing unscrubbed is ever written.
+        """
+        from .config import scrub_config_text
+
+        scrubbed = scrub_config_text(text)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO config_snapshots (config_hash, first_seen, text)"
+                " VALUES (?, ?, ?)",
+                (
+                    config_hash,
+                    time.time() if first_seen is None else first_seen,
+                    scrubbed,
+                ),
+            )
+            self._conn.commit()
+            return cur.rowcount == 1
+
+    def snapshot_running_config(self, config: RouterConfig) -> str:
+        """The startup write. Never raises: a lost snapshot is a lost diagnostic."""
+        try:
+            text = getattr(config, "_config_text", "") or ""
+            if not config.config_hash or not text:
+                return "skipped: no config file text"
+            written = self.save_config_snapshot(config.config_hash, text)
+            return "written" if written else "already on file"
+        except Exception as exc:  # noqa: BLE001 - never stops the router starting
+            log.warning("could not snapshot the config: %s", type(exc).__name__)
+            return f"failed: {type(exc).__name__}"
+
+    def config_snapshots(self) -> list[dict[str, Any]]:
+        """Every snapshot, oldest first, without its text."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.config_hash, s.first_seen, LENGTH(s.text) AS characters,"
+                " (SELECT COUNT(*) FROM decisions d WHERE d.config_hash = s.config_hash)"
+                " AS decisions FROM config_snapshots s ORDER BY s.first_seen ASC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def decisions_with_hash(self, config_hash: str) -> tuple[int, float | None]:
+        """How many decisions were taken under a hash, and when the first was."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*), MIN(ts) FROM decisions WHERE config_hash = ?",
+                (config_hash,),
+            ).fetchone()
+        return (int(row[0]), row[1]) if row else (0, None)
+
+    def load_config_snapshot(self, config_hash: str) -> RouterConfig | str:
+        """The stored config for a hash, or why there is none.
+
+        Returns a RouterConfig whose `config_hash` reports the key, or a
+        reason string: `not_on_file`, or `unloadable: <ExcType>` when the old
+        text does not validate under this code's schema. Never raises. A result is
+        cached per hash, since a stored snapshot never changes; `not_on_file`
+        is not, since an import may supply it later.
+        """
+        cached = self._snapshots.get(config_hash)
+        if cached is not None:
+            return cached
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT text FROM config_snapshots WHERE config_hash = ?",
+                    (config_hash,),
+                ).fetchone()
+        except Exception as exc:  # noqa: BLE001 - a read is never fatal
+            return f"unloadable: {type(exc).__name__}"
+        if row is None:
+            return "not_on_file"
+        result: RouterConfig | str
+        try:
+            from .config import config_from_text
+
+            # Schema validation only. The registry checks ask whether this
+            # process could run the config (a builder still registered, a
+            # report file beside it), which a replay of its policy never needs.
+            cfg = config_from_text(
+                row["text"], f"config snapshot {config_hash}", check_registries=False
+            )
+            cfg._config_hash = config_hash
+            result = cfg
+        except Exception as exc:  # noqa: BLE001 - an old config may not validate
+            result = f"unloadable: {type(exc).__name__}"
+        self._snapshots[config_hash] = result
+        return result
+
     def prune(self, older_than_seconds: float) -> dict[str, int]:
-        """Explicit retention: remove old logs/feedback and expired pins."""
+        """Explicit retention: remove old logs/feedback and expired pins.
+
+        Config snapshots are never pruned: a decision may outlive its config.
+        """
         cutoff = time.time() - older_than_seconds
         with self._lock:
             counts = {
@@ -482,6 +674,8 @@ def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
         "quota_snapshot",
         "quota_status",
         "exclusions",
+        # Added with the session inspector.
+        "state_shape",
     ):
         if item.get(field):
             item[field] = _load_json(item[field])

@@ -1,4 +1,4 @@
-"""Command line: serve, adapter, check-config, explain, decisions."""
+"""Command line: serve, adapter, check-config, explain, decisions, config-snapshots, bookmarks."""
 
 from __future__ import annotations
 
@@ -440,6 +440,20 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def _replay_target(args: argparse.Namespace) -> str | int | None:
+    """A row id (`--row 730` or `#730`), a decision id, 'last', or nothing."""
+    row = getattr(args, "row", None)
+    if row is not None:
+        return int(row)
+    target = (args.decision_id or "").strip()
+    if target.startswith("#"):
+        try:
+            return int(target[1:])
+        except ValueError:
+            return None
+    return target or None
+
+
 def cmd_replay(args: argparse.Namespace) -> int:
     """Re-run the pure selection from a stored decision row.
 
@@ -449,17 +463,33 @@ def cmd_replay(args: argparse.Namespace) -> int:
     from .pins import Store
     from .semantic import replay_decision
 
+    target = _replay_target(args)
+    if target is None:
+        print(
+            "decisions replay needs a decision id, 'last', '#<row>' or --row N",
+            file=sys.stderr,
+        )
+        return 2
     config = _load(args.config)
     store = Store(config.settings.db_path, config.settings.log_state)
     try:
-        decision_id = args.decision_id
-        if decision_id == "last":
-            decision_id = store.last_decision_id() or ""
-        row = store.get_decision(decision_id) if decision_id else None
+        if isinstance(target, int):
+            # A row id names one row exactly, whatever kind of row it is.
+            row = store.decision_by_row(target)
+            missing = f"unknown decision row #{target}"
+        else:
+            decision_id = target
+            if decision_id == "last":
+                decision_id = store.last_decision_id() or ""
+            # The row that decided, never the newest row with this id: in a
+            # strict session that is an execution with no answers.
+            row = store.deciding_decision(decision_id) if decision_id else None
+            missing = f"unknown decision id {args.decision_id!r}"
         if row is None:
-            print(f"unknown decision id {args.decision_id!r}", file=sys.stderr)
+            print(missing, file=sys.stderr)
             return 1
         result = replay_decision(config, row)
+        row_id, event = row.get("id"), row.get("event_type")
     finally:
         store.close()
 
@@ -468,6 +498,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "decision_id": result.decision_id,
+                    "row": row_id,
+                    "event_type": event,
                     "stored": list(result.stored),
                     "stored_rule": result.stored_rule,
                     "replayed": list(result.replayed) if result.replayed else None,
@@ -493,6 +525,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         return 0 if result.reproduced and result.same_config else 1
 
     print(f"decision {result.decision_id}:")
+    print(f"  row:      #{row_id}{f' ({event})' if event else ''}")
     print(f"  stored:   {result.stored[0]}({result.stored[1] or '-'}) "
           f"rule={result.stored_rule}")
     if result.replayed:
@@ -524,9 +557,6 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     from .pins import Store
 
     if getattr(args, "action", None) == "replay":
-        if not args.decision_id:
-            print("decisions replay needs a decision id", file=sys.stderr)
-            return 2
         return cmd_replay(args)
 
     config = _load(args.config)
@@ -712,6 +742,113 @@ def cmd_prune(args: argparse.Namespace) -> int:
         sessions.close()
         store.close()
     return 0
+
+
+def cmd_config_snapshots(args: argparse.Namespace) -> int:
+    """List the stored configs, or import old files whose hash a decision carries."""
+    from .config import config_text_hash
+    from .pins import Store
+
+    config = _load(args.config)
+    store = Store(config.settings.db_path, config.settings.log_state)
+    try:
+        if args.action == "list":
+            rows = store.config_snapshots()
+            for item in rows:
+                loaded = store.load_config_snapshot(item["config_hash"])
+                item["loads"] = not isinstance(loaded, str)
+                item["reason"] = loaded if isinstance(loaded, str) else None
+                item["running"] = item["config_hash"] == config.config_hash
+            if args.json:
+                print(json.dumps(rows, indent=2, default=str))
+                return 0
+            if not rows:
+                print("no config snapshots")
+                return 0
+            for item in rows:
+                when = datetime.fromtimestamp(item["first_seen"]).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                status = "loads" if item["loads"] else item["reason"]
+                running = "  [running]" if item["running"] else ""
+                print(
+                    f"{item['config_hash']}  first seen {when}"
+                    f"  decisions={item['decisions']}  {status}{running}"
+                )
+            return 0
+
+        # import
+        if not args.files:
+            print("config-snapshots import needs at least one file", file=sys.stderr)
+            return 2
+        failed = False
+        for name in args.files:
+            path = Path(os.path.expanduser(name))
+            try:
+                text = path.read_text()
+            except (OSError, UnicodeDecodeError) as exc:
+                print(f"{name}: unreadable ({type(exc).__name__})")
+                failed = True
+                continue
+            digest = config_text_hash(text)
+            count, first = store.decisions_with_hash(digest)
+            if not count:
+                print(f"{name}: {digest} skipped, no decision was taken under it")
+                continue
+            try:
+                written = store.save_config_snapshot(digest, text, first_seen=first)
+            except ConfigError as exc:
+                print(f"{name}: {digest} not imported, {exc}")
+                failed = True
+                continue
+            if written:
+                print(f"{name}: {digest} imported ({count} decision(s), scrubbed)")
+            else:
+                print(f"{name}: {digest} already on file")
+        return 1 if failed else 0
+    finally:
+        store.close()
+
+
+def cmd_bookmarks(args: argparse.Namespace) -> int:
+    """Name sessions for the inspector's start screen."""
+    config = _load(args.config)
+    store, sessions = _session_store(config)
+    try:
+        if args.action == "list":
+            rows = sessions.bookmarks()
+            if args.json:
+                print(json.dumps(rows, indent=2, default=str))
+                return 0
+            if not rows:
+                print("no bookmarks")
+                return 0
+            for row in rows:
+                print(f"{row['slug']:<20} {row['label']:<40} {row['session_id']}")
+            return 0
+        if args.action == "add":
+            if not args.target or args.label is None:
+                print("bookmarks add needs a session id and --label", file=sys.stderr)
+                return 2
+            try:
+                item = sessions.add_bookmark(args.target, args.label, args.slug)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            print(f"bookmarked {item['session_id']} as {item['slug']!r} ({item['label']})")
+            return 0
+        # remove
+        if not args.target:
+            print("bookmarks remove needs a slug", file=sys.stderr)
+            return 2
+        if not sessions.remove_bookmark(args.target):
+            print(f"no bookmark named {args.target!r}", file=sys.stderr)
+            return 1
+        print(f"removed bookmark {args.target!r}")
+        return 0
+    finally:
+        sessions.close()
+        store.close()
 
 
 def _session_store(config: RouterConfig):
@@ -1038,11 +1175,35 @@ def main(argv: list[str] | None = None) -> int:
         help="replay re-runs the selection from a stored row",
     )
     p_dec.add_argument(
-        "decision_id", nargs="?", help="a decision id, or 'last', for replay"
+        "decision_id",
+        nargs="?",
+        help="a decision id, 'last', or '#<row>' for one exact row, for replay",
+    )
+    p_dec.add_argument(
+        "--row", type=int, help="with replay, replay this exact decision row"
     )
     p_dec.add_argument("-n", "--limit", type=int, default=20)
     p_dec.add_argument("--json", action="store_true")
     p_dec.set_defaults(func=cmd_decisions)
+
+    p_snap = sub.add_parser(
+        "config-snapshots",
+        help="list stored configs, or import old files a decision was taken under",
+    )
+    p_snap.add_argument("action", choices=["list", "import"])
+    p_snap.add_argument("files", nargs="*", help="with import, config files to store")
+    p_snap.add_argument("--json", action="store_true")
+    p_snap.set_defaults(func=cmd_config_snapshots)
+
+    p_book = sub.add_parser("bookmarks", help="name sessions for the session inspector")
+    p_book.add_argument("action", choices=["add", "list", "remove"])
+    p_book.add_argument(
+        "target", nargs="?", help="a session id for add, a slug for remove"
+    )
+    p_book.add_argument("--label", help="with add, 1 to 40 characters")
+    p_book.add_argument("--slug", help="with add, [a-z0-9-]{1,40}; defaults from the label")
+    p_book.add_argument("--json", action="store_true")
+    p_book.set_defaults(func=cmd_bookmarks)
 
     p_fb = sub.add_parser("feedback", help="say whether a routing decision was right")
     p_fb.add_argument("decision_id", help="a decision id from `decisions`, or 'last'")

@@ -452,6 +452,12 @@ Measured against 0.155.1, and worth knowing before reading a result:
 - A tool continuation arrives as another `POST /v1/responses` whose input ends
   in a tool result rather than a user message. That is how the adapter tells a
   continuation from a new turn.
+- From 0.164.0 (measured 2026-10-26), the `memories` feature is on by default
+  and sends a second `POST /v1/responses` with `request_kind: "memory"` and the
+  same `session-id`, concurrently with the turn. The router allows one request
+  in flight per session, so the turn gets `409` and Codex retries until the
+  memory request ends. Pass `-c features.memories=false` until the adapter
+  treats that request kind separately.
 
 ## Compaction
 

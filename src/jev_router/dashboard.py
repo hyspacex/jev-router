@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib.resources import files
 from typing import Any
 
@@ -9,6 +10,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from .config import RouterConfig
+from .policy import trace
+from .semantic import ADMISSION_FALLBACK, features_from_facts, replay_decision
 
 # Explicit projection: future decision columns are private until reviewed here.
 AUDIT_FIELDS = frozenset([
@@ -28,7 +31,7 @@ HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; "
+        "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "
         "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     ),
 }
@@ -42,15 +45,29 @@ async def dashboard(request: Request) -> Response:
     )
 
 
+# Public asset name -> (file under static/, media type). An explicit map, so a
+# request can never name a path: nothing outside it is served.
+ASSETS = {
+    "dashboard.js": ("dashboard.js", "text/javascript"),
+    "dashboard.css": ("dashboard.css", "text/css"),
+    "Geist-Variable.woff2": ("fonts/Geist-Variable.woff2", "font/woff2"),
+    "GeistMono-Variable.woff2": ("fonts/GeistMono-Variable.woff2", "font/woff2"),
+    "OFL.txt": ("fonts/OFL.txt", "text/plain; charset=utf-8"),
+}
+
+
 async def asset(request: Request) -> Response:
-    name = request.path_params["name"]
-    media = {"dashboard.js": "text/javascript", "dashboard.css": "text/css"}
-    if name not in media:
+    entry = ASSETS.get(request.path_params["name"])
+    if entry is None:
         return Response(status_code=404, headers=HEADERS)
-    return Response(
-        files("jev_router").joinpath(f"static/{name}").read_bytes(),
-        media_type=media[name], headers=HEADERS,
-    )
+    path, media = entry
+    resource = files("jev_router").joinpath("static").joinpath(*path.split("/"))
+    try:
+        body = resource.read_bytes()
+    except OSError:
+        # A font missing from a build falls back to system-ui in the CSS.
+        return Response(status_code=404, headers=HEADERS)
+    return Response(body, media_type=media, headers=HEADERS)
 
 
 def project_row(row: dict[str, Any], config: RouterConfig) -> dict[str, Any]:
@@ -90,4 +107,298 @@ async def audit(request: Request) -> Response:
         "limit": limit,
         "config_hash": router.config.config_hash,
         "mode": router.config.settings.mode,
+    }, headers=HEADERS)
+
+
+# --- the session inspector ------------------------------------------------
+#
+# Read only, like everything above: no writes, no provider calls, no quota
+# polls. Every field below is named on purpose. A stored row carries the
+# conversation key, the full request facts (tool names, languages) and, with
+# log_state, the state Jev was shown; none of that is copied wholesale.
+
+# Request facts that may leave the router: counts, flags and router-made labels.
+FACT_FIELDS = (
+    "message_count", "est_tokens", "input_tokens", "output_tokens",
+    "reserve_tokens", "headroom", "context_window", "max_tokens", "has_tools",
+    "tool_count", "has_images", "has_code", "stream", "estimate_method",
+    "session_mode",
+)
+# The two allowlisted facts that are strings. Both are written by the router.
+FACT_LABELS = frozenset(["estimate_method", "session_mode"])
+# A state-shape fact that is a string survives only under one of these keys.
+SHAPE_LABELS = frozenset(["client"])
+
+SESSION_FIELDS = (
+    "session_id", "alias", "client", "state", "version", "created", "last_seen",
+    "closed_at", "provider", "protocol", "context_window", "max_output_tokens",
+    "supports_tools", "supports_vision", "base_effort", "effective_effort",
+    "expected_effort", "confirmed_effort", "effort_mode", "adaptation_mode",
+    "effort_lineage", "decision_id", "decision_rule", "decision_source",
+    "quality_lane", "quota_changed_choice", "config_hash", "jev_model",
+    "compaction_epoch", "compaction_state", "last_input_tokens",
+    "last_output_tokens", "tombstone", "state_builder",
+)
+
+PLAN_FIELDS = (
+    "plan_id", "turn_id", "sequence", "request_id", "mode", "action", "status",
+    "from_effort", "to_effort", "base_effort", "recommendation",
+    "expected_effort", "confirmed_effort", "reconciled", "compaction_epoch",
+    "reason", "created", "updated",
+)
+COUNTERFACTUAL_FIELDS = (
+    "question", "answer", "action", "to_effort", "recommendation", "changed", "reason",
+)
+
+QUOTA_STATUSES = frozenset(["fresh", "stale", "unknown", "error"])
+WINDOW_NUMBERS = (
+    "used_percent", "used", "limit", "expected_used_percent", "window_minutes",
+    "resets_at",
+)
+
+_LABEL = re.compile(r"[A-Za-z0-9_.:/()+-]{1,64}")
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _label(value: Any) -> str | None:
+    return value if isinstance(value, str) and _LABEL.fullmatch(value) else None
+
+
+def project_facts(raw: Any) -> dict[str, Any]:
+    """The allowlisted request facts, each checked for its type."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in FACT_FIELDS:
+        value = raw.get(key)
+        typed = isinstance(value, bool) or _is_number(value)
+        if typed or (key in FACT_LABELS and _label(value) is not None):
+            out[key] = value
+    return out
+
+
+def project_state_shape(raw: Any) -> dict[str, Any] | None:
+    """Field names and character counts; flags and counts; never text."""
+    if not isinstance(raw, dict):
+        return None
+    parts = raw.get("parts") if isinstance(raw.get("parts"), dict) else {}
+    facts = raw.get("facts") if isinstance(raw.get("facts"), dict) else {}
+    out_facts: dict[str, Any] = {}
+    for key, value in facts.items():
+        if _label(key) is None:
+            continue
+        typed = value is None or isinstance(value, bool) or _is_number(value)
+        if typed or (key in SHAPE_LABELS and _label(value) is not None):
+            out_facts[key] = value
+    return {
+        "builder": _label(raw.get("builder")),
+        "parts": {
+            key: value for key, value in parts.items()
+            if _label(key) is not None and _is_number(value) and not isinstance(value, float)
+        },
+        "facts": out_facts,
+    }
+
+
+def project_quota(raw: Any) -> dict[str, Any] | None:
+    """Per provider: status, pressure, age, and each window's own numbers."""
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}
+    for provider, row in raw.items():
+        if _label(provider) is None or not isinstance(row, dict):
+            continue
+        status = row.get("status")
+        item: dict[str, Any] = {
+            "status": status if status in QUOTA_STATUSES else None,
+            "pressure": row.get("pressure") if _is_number(row.get("pressure")) else None,
+            "age_seconds": row.get("age_seconds") if _is_number(row.get("age_seconds")) else None,
+        }
+        windows = []
+        for window in row.get("windows") or []:
+            if not isinstance(window, dict):
+                continue
+            # Each window stays one record: its usage beside its own reset.
+            entry = {k: window.get(k) for k in WINDOW_NUMBERS if _is_number(window.get(k))}
+            if _label(window.get("name")) is not None:
+                entry["name"] = window["name"]
+            windows.append(entry)
+        item["windows"] = windows
+        out[provider] = item
+    return out
+
+
+def _project_session(row: dict[str, Any], running: str) -> dict[str, Any]:
+    item = {key: row.get(key) for key in SESSION_FIELDS}
+    item["model"] = row.get("model_key")
+    if item["quota_changed_choice"] is not None:
+        item["quota_changed_choice"] = bool(item["quota_changed_choice"])
+    item["config_matches"] = bool(row.get("config_hash")) and row.get("config_hash") == running
+    return item
+
+
+def _project_plan(row: dict[str, Any]) -> dict[str, Any]:
+    item = {key: row.get(key) for key in PLAN_FIELDS}
+    facts = row.get("facts") if isinstance(row.get("facts"), dict) else {}
+    counterfactual = facts.get("shadow_counterfactual")
+    item["shadow_counterfactual"] = (
+        {key: counterfactual.get(key) for key in COUNTERFACTUAL_FIELDS}
+        if isinstance(counterfactual, dict) else None
+    )
+    return item
+
+
+def _project_request(seq: int, row: dict[str, Any]) -> dict[str, Any]:
+    decision = row.get("decision") or {}
+    usage = decision.get("upstream_usage")
+    return {
+        "seq": seq,
+        "request_id": row.get("request_id"),
+        "status": row.get("status"),
+        "created": row.get("created"),
+        "updated": row.get("updated"),
+        "upstream_status": row.get("upstream_status")
+        if row.get("upstream_status") is not None
+        else decision.get("upstream_status"),
+        "row": decision.get("id"),
+        "ts": decision.get("ts"),
+        "event_type": decision.get("event_type"),
+        "model": decision.get("model"),
+        # The base effort the request was sent with. Not the effective one.
+        "effort": decision.get("effort"),
+        "stream_state": decision.get("stream_state"),
+        "accepted": None if decision.get("accepted") is None else bool(decision["accepted"]),
+        "first_byte_ms": decision.get("first_byte_ms"),
+        "response_ms": decision.get("response_ms"),
+        "response_bytes": decision.get("response_bytes"),
+        "fallback_index": decision.get("fallback_index"),
+        "usage_reported": bool(usage) if decision else None,
+        "facts": project_facts(decision.get("features")) if decision else None,
+    }
+
+
+def _project_admission(row: dict[str, Any], config: RouterConfig) -> dict[str, Any]:
+    item = project_row(row, config)
+    item.pop("conversation_key", None)
+    item["facts"] = project_facts(row.get("features"))
+    item["state_shape"] = project_state_shape(row.get("state_shape"))
+    item["quota_snapshot"] = project_quota(row.get("quota_snapshot"))
+    return item
+
+
+def explain_admission(
+    row: dict[str, Any] | None, config: RouterConfig, store: Any
+) -> dict[str, Any]:
+    """The rule-by-rule trace of the admission, under the config it was taken under.
+
+    Only ever that config: the running one when the hashes agree, else the
+    stored snapshot. A changed router.yaml is a different policy, and a trace
+    under it would explain a decision nobody took.
+    """
+    if row is None:
+        return {"available": False, "reason": "no_admission_row"}
+    recorded = str(row.get("config_hash") or "")
+    stored = {"model": row.get("model"), "effort": row.get("effort"), "rule": row.get("rule")}
+    head = {"config_hash": recorded, "stored": stored}
+    if row.get("rule") == ADMISSION_FALLBACK:
+        # The classifier never answered and no rule ran; there is nothing to trace.
+        return {"available": False, "reason": "fallback_admission", **head}
+    answers = row.get("answers")
+    if not isinstance(answers, dict) or not answers:
+        return {"available": False, "reason": "no_answers", **head}
+    if recorded and recorded == config.config_hash:
+        source, under = "running", config
+    else:
+        loaded = store.load_config_snapshot(recorded) if recorded else "not_on_file"
+        if isinstance(loaded, str):
+            return {"available": False, "reason": loaded, **head}
+        source, under = "snapshot", loaded
+    alias_cfg = under.aliases.get(str(row.get("alias") or ""))
+    if alias_cfg is None:
+        return {"available": False, "reason": "alias_not_in_config", **head}
+    facts = row.get("features") if isinstance(row.get("features"), dict) else {}
+    # The pressure it was taken under, read the way `decisions replay` reads it.
+    pressures = replay_decision(under, row).pressures
+    try:
+        traced = trace(under, alias_cfg, answers, features_from_facts(facts), pressures)
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never fails the page
+        return {"available": False, "reason": f"untraceable: {type(exc).__name__}", **head}
+    replayed = {
+        "model": traced.get("model"),
+        "effort": traced.get("effort"),
+        "rule": traced.get("matched"),
+        "lane": traced.get("lane"),
+    }
+    return {
+        "available": True,
+        "source": source,
+        **head,
+        "reproduces": all(replayed[k] == stored[k] for k in ("model", "effort", "rule")),
+        "replayed": replayed,
+        "pressures": pressures,
+        **{k: v for k, v in traced.items() if k not in ("model", "effort", "lane")},
+    }
+
+
+async def audit_sessions(request: Request) -> Response:
+    """Recent strict sessions, newest first. Protected like every /router/* route."""
+    router = request.app.state.router
+    try:
+        limit = int(request.query_params.get("limit", "50"))
+        if not 1 <= limit <= 200:
+            raise ValueError
+    except ValueError:
+        return JSONResponse({"error": "limit must be between 1 and 200"}, status_code=400, headers=HEADERS)
+    running = router.config.config_hash
+    sessions = []
+    for row in router.sessions.audit_sessions(limit):
+        item = _project_session(row, running)
+        listed = {
+            key: item[key] for key in (
+                "session_id", "alias", "client", "state", "created", "last_seen",
+                "closed_at", "model", "base_effort", "effective_effort",
+                "decision_rule", "quality_lane", "config_hash", "config_matches",
+                "adaptation_mode", "tombstone",
+            )
+        }
+        listed["effort"] = listed.pop("base_effort")
+        listed["rule"] = listed.pop("decision_rule")
+        listed["requests"] = {
+            str(k): int(v) for k, v in (row.get("requests") or {}).items()
+        }
+        sessions.append(listed)
+    bookmarks = [
+        {key: b.get(key) for key in ("slug", "label", "session_id", "created")}
+        for b in router.sessions.bookmarks()
+    ]
+    return JSONResponse({
+        "config_hash": running,
+        "limit": limit,
+        "bookmarks": bookmarks,
+        "sessions": sessions,
+    }, headers=HEADERS)
+
+
+async def audit_session(request: Request) -> Response:
+    """One session: binding, admission, requests, plans and the admission trace."""
+    router = request.app.state.router
+    session_id = request.path_params["session_id"]
+    row = router.sessions.audit_session(session_id)
+    if row is None:
+        return JSONResponse({"error": "unknown session"}, status_code=404, headers=HEADERS)
+    config = router.config
+    admission = router.sessions.admission_row(session_id)
+    return JSONResponse({
+        "config_hash": config.config_hash,
+        "session": _project_session(row, config.config_hash),
+        "admission": _project_admission(admission, config) if admission else None,
+        "requests": [
+            _project_request(seq, item)
+            for seq, item in enumerate(router.sessions.request_rows(session_id), start=1)
+        ],
+        "plans": [_project_plan(plan) for plan in router.sessions.all_plans(session_id)],
+        "trace": explain_admission(admission, config, router.store),
     }, headers=HEADERS)

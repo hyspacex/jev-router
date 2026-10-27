@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -35,7 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from . import effort as E
 from .config import SessionRoutingCfg
-from .pins import Store, migrate
+from .pins import Store, _decision_row, migrate
 
 log = logging.getLogger("jev_router")
 
@@ -343,6 +344,40 @@ COMPACTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "turn_plans": [("compaction_epoch", "INTEGER")],
 }
 
+# What the session inspector adds. Same contract as every map above:
+# nullable, additive, never dropped. `state_shape` is the outline of the state
+# Jev was shown, field names and character counts only, never text; NULL means
+# the row predates it or no state was built (a pin, an execution).
+INSPECTOR_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "decisions": [("state_shape", "TEXT")],
+}
+
+# Named sessions for the inspector's start screen. A table of its own, so an
+# older file gains it without anything in it changing. A bookmark names a
+# session id and nothing else; it never holds a request.
+INSPECTOR_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_bookmarks (
+    slug TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    created REAL NOT NULL
+);
+"""
+
+BOOKMARK_SLUG = re.compile(r"[a-z0-9-]{1,40}")
+BOOKMARK_LABEL_MAX = 40
+
+
+def bookmark_slug(label: str) -> str:
+    """A slug made from a label: lower case, runs of anything else become '-'."""
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return slug[:BOOKMARK_LABEL_MAX].strip("-")
+
+
+# Columns the inspector's session reads leave out: the owner and request
+# fingerprints are hashes that identify a caller, and nothing shown needs them.
+PRIVATE_SESSION_FIELDS = ("owner", "fingerprint")
+
 # The decision-log events a session produces.
 EVENT_ADMISSION = "admission"
 EVENT_EXECUTION = "execution"
@@ -598,8 +633,11 @@ class Sessions:
             self.migrated_effort = migrate(self._conn, EFFORT_COLUMNS)
             self.migrated_reconcile = migrate(self._conn, RECONCILE_COLUMNS)
             self.migrated_compaction = migrate(self._conn, COMPACTION_COLUMNS)
+            self._conn.executescript(INSPECTOR_SCHEMA)
+            self.migrated_inspector = migrate(self._conn, INSPECTOR_COLUMNS)
             self.unique_turn_plans = self._take_turn_plan_index()
             self._conn.commit()
+        store.refresh_columns()
         if guard and self.cfg.enabled:
             self._take_guard()
 
@@ -1139,6 +1177,151 @@ class Sessions:
             )
             self._conn.commit()
 
+    # --- inspector reads -------------------------------------------------
+    #
+    # Read only. None of these writes, polls quota or calls a provider, and
+    # none returns an owner hash or a request fingerprint.
+
+    def audit_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Recent sessions, newest first, each with per-status request counts.
+
+        `requests` maps each `session_requests` status present to its count.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM sessions ORDER BY COALESCE(last_seen, created) DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            ids = [row["session_id"] for row in rows]
+            counts: dict[str, dict[str, int]] = {sid: {} for sid in ids}
+            if ids:
+                marks = ", ".join("?" for _ in ids)
+                for row in self._conn.execute(
+                    "SELECT session_id, status, COUNT(*) AS n FROM session_requests"
+                    f" WHERE session_id IN ({marks}) GROUP BY session_id, status",
+                    ids,
+                ).fetchall():
+                    counts[row["session_id"]][row["status"]] = int(row["n"])
+        out = []
+        for row in rows:
+            item = _public_session(_session_row(row))
+            item["requests"] = counts.get(item["session_id"], {})
+            out.append(item)
+        return out
+
+    def audit_session(self, session_id: str) -> dict[str, Any] | None:
+        """One session row, tombstones included, without owner or fingerprint."""
+        row = self.get(session_id)
+        return _public_session(row) if row is not None else None
+
+    def admission_row(self, session_id: str) -> dict[str, Any] | None:
+        """The decision row that admitted this session, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM decisions WHERE session_id = ? AND event_type = ?"
+                " ORDER BY id ASC LIMIT 1",
+                (session_id, EVENT_ADMISSION),
+            ).fetchone()
+        return _decision_row(row) if row else None
+
+    def decision_rows(self, session_id: str) -> list[dict[str, Any]]:
+        """Every decision row this session produced, oldest first.
+
+        Admission, executions and effort plans alike; `event_type` says which.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM decisions WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        return [_decision_row(row) for row in rows]
+
+    def request_rows(self, session_id: str) -> list[dict[str, Any]]:
+        """This session's `session_requests`, oldest first, each with its row.
+
+        `decision` is the execution decision row logged for that request id,
+        or None: a rejected or unknown request may never have had one. The
+        request fingerprint is left out.
+        """
+        with self._lock:
+            requests = self._conn.execute(
+                "SELECT * FROM session_requests WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+            executions = self._conn.execute(
+                "SELECT * FROM decisions WHERE session_id = ? AND event_type = ?"
+                " ORDER BY id ASC",
+                (session_id, EVENT_EXECUTION),
+            ).fetchall()
+        by_request: dict[str, dict[str, Any]] = {}
+        for row in executions:
+            if row["request_id"] and row["request_id"] not in by_request:
+                by_request[row["request_id"]] = _decision_row(row)
+        out = []
+        for row in requests:
+            item = dict(row)
+            item.pop("fingerprint", None)
+            item["decision"] = by_request.get(item["request_id"])
+            out.append(item)
+        return out
+
+    def all_plans(self, session_id: str) -> list[dict[str, Any]]:
+        """Every turn plan this session has, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM turn_plans WHERE session_id = ? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        return [_plan_row(row) for row in rows]
+
+    # --- bookmarks ------------------------------------------------------
+
+    def bookmarks(self) -> list[dict[str, Any]]:
+        """Every bookmark, in the order they were made."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT slug, session_id, label, created FROM audit_bookmarks"
+                " ORDER BY created ASC, slug ASC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_bookmark(
+        self, session_id: str, label: str, slug: str | None = None
+    ) -> dict[str, Any]:
+        """Name a session. Raises ValueError with a readable reason."""
+        label = (label or "").strip()
+        if not 1 <= len(label) <= BOOKMARK_LABEL_MAX:
+            raise ValueError(f"a label is 1 to {BOOKMARK_LABEL_MAX} characters")
+        slug = bookmark_slug(label) if slug is None else slug
+        if not BOOKMARK_SLUG.fullmatch(slug or ""):
+            raise ValueError(
+                "a slug is 1 to 40 characters of lower-case letters, digits and '-'"
+            )
+        if self.get(session_id) is None:
+            raise ValueError(f"unknown session {session_id!r}")
+        item = {
+            "slug": slug,
+            "session_id": session_id,
+            "label": label,
+            "created": self.clock(),
+        }
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO audit_bookmarks (slug, session_id, label, created)"
+                " VALUES (?, ?, ?, ?)",
+                tuple(item.values()),
+            )
+            self._conn.commit()
+        if cur.rowcount != 1:
+            raise ValueError(f"a bookmark named {slug!r} already exists")
+        return item
+
+    def remove_bookmark(self, slug: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM audit_bookmarks WHERE slug = ?", (slug,))
+            self._conn.commit()
+        return cur.rowcount == 1
+
     # --- retention ------------------------------------------------------
 
     def prune(self, older_than_seconds: float) -> dict[str, int]:
@@ -1212,6 +1395,10 @@ def _plan_row(row: sqlite3.Row) -> dict[str, Any]:
         except (TypeError, ValueError):
             pass
     return item
+
+
+def _public_session(item: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in item.items() if k not in PRIVATE_SESSION_FIELDS}
 
 
 def _session_row(row: sqlite3.Row) -> dict[str, Any]:

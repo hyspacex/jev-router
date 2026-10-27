@@ -222,8 +222,13 @@ def evaluate(
     pressures: dict[str, float] | None = None,
     *,
     freeze_rule_pressure: bool = False,
+    collector: dict[str, Any] | None = None,
 ) -> PolicyResult:
-    """Choose a route. `pressures` is quota pressure per provider, or nothing."""
+    """Choose a route. `pressures` is quota pressure per provider, or nothing.
+
+    `collector`, when given, is a dict the rule pass fills with what it read
+    on the way to its answer, for `trace`. It never changes the answer.
+    """
     ruleset = config.ruleset_for(alias_cfg)
     live = _live_pressures(config, pressures)
     mode = config.semantic_policy.distribution_policy
@@ -232,9 +237,12 @@ def evaluate(
 
     shifts: list[Shift] = []
     notes: list[str] = []
+    if collector is not None:
+        collector["rule_pressures"] = {} if freeze_rule_pressure else dict(live)
+        collector["distribution_policy"] = mode
     use, rule_name, reason, protected = _pick_route(
         config, ruleset, answers, features, {} if freeze_rule_pressure else live,
-        shifts, running, notes
+        shifts, running, notes, collector
     )
     result = finalize(
         config,
@@ -822,15 +830,28 @@ def _pick_route(
     shifts: list[Shift],
     running: frozenset[str] = frozenset(),
     notes: list[str] | None = None,
+    collector: dict[str, Any] | None = None,
 ) -> tuple[Route, str, str, bool]:
     lc = ruleset.low_confidence
     if lc and lc.use and lc.questions:
+        checks: list[dict[str, Any]] | None = None
+        if collector is not None:
+            checks = collector.setdefault("gate_checks", [])
         for qid in lc.questions:
             ans = answers.get(qid)
             if ans is None:
+                if checks is not None:
+                    checks.append({"question": qid, "outcome": "absent"})
                 continue
             conf = ans.get("confidence")
             if conf is None or conf >= lc.min_confidence:
+                if checks is not None:
+                    checks.append(
+                        {
+                            "question": qid,
+                            "outcome": "no_confidence" if conf is None else "confident",
+                        }
+                    )
                 continue
             # A score split across the lower levels is not a frontier request.
             # The mean is what the rules already know how to place. No vector
@@ -843,6 +864,10 @@ def _pick_route(
                 else None
             )
             if top is not None and top < lc.score_top_min_mass:
+                if checks is not None:
+                    checks.append(
+                        {"question": qid, "outcome": "top_is_noise", "top_mass": top}
+                    )
                 if notes is not None:
                     notes.append(
                         f"{qid} confidence {conf:.2f} is below {lc.min_confidence}, "
@@ -857,12 +882,16 @@ def _pick_route(
                 # not a reason to send the work somewhere stronger. Off by
                 # default: without `action_equivalent` the gate fires as it
                 # always has.
+                if checks is not None:
+                    checks.append({"question": qid, "outcome": "action_equivalent"})
                 if notes is not None:
                     notes.append(
                         f"{qid} confidence {conf:.2f} is below {lc.min_confidence}, "
                         "but every label it is uncertain between routes the same way"
                     )
                 continue
+            if checks is not None:
+                checks.append({"question": qid, "outcome": "fired", "top_mass": top})
             return (
                 lc.use,
                 "low_confidence",
@@ -870,7 +899,9 @@ def _pick_route(
                 True,
             )
 
-    return _match_rules(config, ruleset, answers, features, pressures, shifts, running)
+    return _match_rules(
+        config, ruleset, answers, features, pressures, shifts, running, collector
+    )
 
 
 def _match_rules(
@@ -881,11 +912,21 @@ def _match_rules(
     pressures: dict[str, float],
     shifts: list[Shift],
     running: frozenset[str],
+    collector: dict[str, Any] | None = None,
 ) -> tuple[Route, str, str, bool]:
+    seen_rules: list[dict[str, Any]] | None = None
+    if collector is not None:
+        seen_rules = collector.setdefault("rules", [])
     for rule in ruleset.rules:
         if rule.name not in running and rule_uses_distribution(rule):
             # An experimental rule fires only for the policy that is running
             # it. In `shadow` that is never the executed pass.
+            if seen_rules is not None:
+                seen_rules.append(
+                    {"name": rule.name, "outcome": "skipped_experiment",
+                     "pressures": {} if rule.protected else dict(pressures),
+                     "shifts": [], "decisive": False}
+                )
             continue
         # A protected rule exists because the request needs it, so quota never
         # makes it harder to reach.
@@ -893,11 +934,23 @@ def _match_rules(
         applied = {} if rule.protected else pressures
         if matches(rule.when, answers, features, applied, seen, rule.name):
             shifts.extend(seen)
+            if seen_rules is not None:
+                seen_rules.append(
+                    {"name": rule.name, "outcome": "hit", "pressures": dict(applied),
+                     "shifts": list(seen), "decisive": False}
+                )
             return rule.use, rule.name, _describe(rule.when, answers), rule.protected
+        decisive = False
         if seen and matches(rule.when, answers, features, {}, None, rule.name):
             # The shift is the only reason this rule did not fire. That is the
             # one worth logging, so record it and carry on down the list.
             shifts.extend(seen)
+            decisive = True
+        if seen_rules is not None:
+            seen_rules.append(
+                {"name": rule.name, "outcome": "miss", "pressures": dict(applied),
+                 "shifts": list(seen), "decisive": decisive}
+            )
 
     default = ruleset.default or config.settings.default_route
     return default, "default", "no rule matched", True
@@ -1119,6 +1172,241 @@ def _describe(when: dict[str, Any], answers: dict[str, dict[str, Any]]) -> str:
         elif ans.get("type") == "noul":
             bits.append(f"{key}={ans.get('noul', 0):.2f}")
     return ", ".join(bits)
+
+
+# --- trace ----------------------------------------------------------------
+
+# How a trace names each feature condition: the comparison, and the request
+# field it reads. A list-valued field reads as None, so a trace never carries
+# a tool name or a language; `passed` says all the inspector needs. A key with
+# no entry here still traces, as `custom` with no value.
+_FEATURE_TRACE: dict[str, tuple[str, Callable[[Features], Any] | None]] = {
+    "has_tools": ("eq", lambda f: f.has_tools),
+    "has_images": ("eq", lambda f: f.has_images),
+    "has_code": ("eq", lambda f: f.has_code),
+    "stream": ("eq", lambda f: f.stream),
+    "est_tokens_gte": ("gte", lambda f: f.est_tokens),
+    "est_tokens_lte": ("lte", lambda f: f.est_tokens),
+    "message_count_gte": ("gte", lambda f: f.message_count),
+    "message_count_lte": ("lte", lambda f: f.message_count),
+    "max_tokens_gte": ("gte", lambda f: f.max_tokens),
+    "client": ("eq", lambda f: f.client),
+    "client_in": ("in", lambda f: f.client),
+    "languages_include": ("intersects", None),
+    "tool_names_include": ("intersects", None),
+}
+
+# Keys of an answer condition that modify a comparison rather than make one.
+_SHIFT_KEYS = ("shift_with", "max_shift")
+
+
+def _answer_value(op: str, answer: dict[str, Any] | None) -> Any:
+    """The number or label the comparison `op` reads from this answer."""
+    if not isinstance(answer, dict):
+        return None
+    if op == "conf_gte":
+        return answer.get("confidence")
+    if op in DISTRIBUTION_OPS:
+        return p_hard(answer) if op.startswith("p_hard") else p_nontrivial(answer)
+    atype = answer.get("type")
+    if atype in ("choice", "score", "noul"):
+        return answer.get(atype)
+    return None
+
+
+def _trace_conditions(
+    rule: Rule,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float] | None,
+) -> list[dict[str, Any]]:
+    """Each condition of `rule`, one comparison per entry.
+
+    With `pressures` None the rule was not reached and nothing is judged.
+    Otherwise each comparison goes through `matches` on its own, at the
+    pressures the rule saw, so a hit is every entry passing and a miss is at
+    least one failing.
+    """
+    out: list[dict[str, Any]] = []
+    for key, cond in rule.when.items():
+        if key in FEATURE_CONDITIONS:
+            op, read = _FEATURE_TRACE.get(key, ("custom", None))
+            out.append(
+                {
+                    "key": key,
+                    "source": "feature",
+                    "op": op,
+                    "threshold": cond,
+                    "value": read(features) if read is not None else None,
+                    "passed": None
+                    if pressures is None
+                    else matches({key: cond}, answers, features, {}, None, rule.name),
+                }
+            )
+            continue
+        # Config load refuses an answer condition that is not a mapping.
+        modifiers = {k: cond[k] for k in _SHIFT_KEYS if k in cond}
+        answer = answers.get(key)
+        for op, operand in cond.items():
+            if op in _SHIFT_KEYS:
+                continue
+            entry: dict[str, Any] = {
+                "key": key,
+                "source": "answer",
+                "op": op,
+                "threshold": operand,
+                "value": _answer_value(op, answer),
+                "passed": None,
+            }
+            if pressures is not None:
+                moved: list[Shift] = []
+                entry["passed"] = matches(
+                    {key: {op: operand, **modifiers}},
+                    answers,
+                    features,
+                    pressures,
+                    moved,
+                    rule.name,
+                )
+                if moved:
+                    entry["effective_threshold"] = moved[0].effective
+                    entry["shift"] = moved[0].to_dict()
+            out.append(entry)
+    return out
+
+
+def _trace_gate(
+    ruleset: Ruleset,
+    answers: dict[str, dict[str, Any]],
+    collected: dict[str, Any],
+) -> dict[str, Any]:
+    lc = ruleset.low_confidence
+    if not (lc and lc.use and lc.questions):
+        return {"applies": False}
+    questions: dict[str, Any] = {}
+    for qid in lc.questions:
+        ans = answers.get(qid)
+        questions[qid] = ans.get("confidence") if isinstance(ans, dict) else None
+    checks = list(collected.get("gate_checks", []))
+    fired = next((c["question"] for c in checks if c["outcome"] == "fired"), None)
+    if fired is not None:
+        conf = questions.get(fired)
+        detail = f"{fired} confidence {conf:.2f} below {lc.min_confidence}"
+    else:
+        stood_down = [
+            c["question"]
+            for c in checks
+            if c["outcome"] in ("top_is_noise", "action_equivalent")
+        ]
+        detail = (
+            "below min_confidence but stood down for " + ", ".join(stood_down)
+            if stood_down
+            else f"no gated answer below {lc.min_confidence}"
+        )
+    return {
+        "applies": True,
+        "min_confidence": lc.min_confidence,
+        "questions": questions,
+        "checks": checks,
+        "fired_by": fired,
+        "passed": fired is None,
+        "detail": detail,
+    }
+
+
+def trace(
+    config: RouterConfig,
+    alias_cfg: AliasCfg,
+    answers: dict[str, dict[str, Any]],
+    features: Features,
+    pressures: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Why `select` chose what it chose, gate and rule by rule.
+
+    Runs `select` itself, with a rule pass that fills a collector, and reads
+    the collector of the pass whose result `select` returned. So `matched` is
+    `select(...).rule` by construction, not by a second implementation. Pure,
+    like the rest of this module. A routing error is reported, not raised.
+    """
+    ruleset = config.ruleset_for(alias_cfg)
+    passes: list[tuple[PolicyResult | None, dict[str, Any]]] = []
+
+    def collecting(*args: Any, **kwargs: Any) -> PolicyResult:
+        collected: dict[str, Any] = {}
+        passes.append((None, collected))
+        out = evaluate(*args, collector=collected, **kwargs)
+        passes[-1] = (out, collected)
+        return out
+
+    result: PolicyResult | None
+    error = ""
+    try:
+        result = select(
+            config, alias_cfg, answers, features, pressures, evaluate_rules=collecting
+        )
+    except RoutingError as exc:
+        result, error = None, str(exc)
+
+    collected = next((c for r, c in passes if result is not None and r is result), None)
+    if collected is None:
+        # Only on a routing error: the pass that raised is the last one run.
+        collected = passes[-1][1] if passes else {}
+
+    hits = {r["name"]: r for r in collected.get("rules", [])}
+    rule_pressures = collected.get("rule_pressures", {})
+    rules: list[dict[str, Any]] = []
+    for index, rule in enumerate(ruleset.rules, start=1):
+        seen = hits.get(rule.name)
+        outcome = seen["outcome"] if seen else "not_reached"
+        shift = None
+        if seen and seen["shifts"]:
+            shift = {
+                "shifts": [s.to_dict() for s in seen["shifts"]],
+                "decisive": seen["decisive"],
+            }
+        rules.append(
+            {
+                "index": index,
+                "name": rule.name,
+                "lane": rule.lane or None,
+                "protected": rule.protected,
+                "experimental": rule_uses_distribution(rule),
+                "outcome": outcome,
+                "pressure_ignored": bool(rule.protected and rule_pressures),
+                "conditions": _trace_conditions(
+                    rule, answers, features, seen["pressures"] if seen else None
+                ),
+                "shift": shift,
+            }
+        )
+
+    if result is not None:
+        matched: str = result.rule
+    elif any(c["outcome"] == "fired" for c in collected.get("gate_checks", [])):
+        matched = "low_confidence"
+    else:
+        matched = next(
+            (r["name"] for r in collected.get("rules", []) if r["outcome"] == "hit"),
+            "default",
+        )
+
+    out: dict[str, Any] = {
+        "gate": _trace_gate(ruleset, answers, collected),
+        "rules": rules,
+        "matched": matched,
+        "route": result.route if result is not None else None,
+        "model": result.model if result is not None else None,
+        "effort": result.effort if result is not None else None,
+        "lane": (result.lane or None) if result is not None else None,
+        "rule_pressures": dict(rule_pressures),
+        "distribution_policy": collected.get(
+            "distribution_policy", config.semantic_policy.distribution_policy
+        ),
+        "experiments": [e.to_dict() for e in result.experiments] if result else [],
+    }
+    if error:
+        out["error"] = f"routing_error: {error}"
+    return out
 
 
 # --- capabilities and efforts -------------------------------------------
