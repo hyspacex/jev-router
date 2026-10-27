@@ -1182,18 +1182,25 @@ class Sessions:
     # Read only. None of these writes, polls quota or calls a provider, and
     # none returns an owner hash or a request fingerprint.
 
-    def audit_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+    def audit_sessions(
+        self, limit: int = 50, filters: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Recent sessions, newest first, each with per-status request counts.
 
-        `requests` maps each `session_requests` status present to its count.
+        `requests` maps each `session_requests` status present to its count;
+        `response_ms` lists the recorded execution times, oldest first.
+        `filters` is the validated set `audit_where` understands.
         """
+        where, args = audit_where(filters or {})
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM sessions ORDER BY COALESCE(last_seen, created) DESC LIMIT ?",
-                (limit,),
+                f"SELECT * FROM sessions s{where}"
+                " ORDER BY COALESCE(s.last_seen, s.created) DESC LIMIT ?",
+                (*args, limit),
             ).fetchall()
             ids = [row["session_id"] for row in rows]
             counts: dict[str, dict[str, int]] = {sid: {} for sid in ids}
+            times: dict[str, list[float]] = {sid: [] for sid in ids}
             if ids:
                 marks = ", ".join("?" for _ in ids)
                 for row in self._conn.execute(
@@ -1202,11 +1209,88 @@ class Sessions:
                     ids,
                 ).fetchall():
                     counts[row["session_id"]][row["status"]] = int(row["n"])
+                for row in self._conn.execute(
+                    "SELECT session_id, response_ms FROM decisions"
+                    f" WHERE session_id IN ({marks}) AND event_type = ?"
+                    " AND response_ms IS NOT NULL ORDER BY id ASC",
+                    (*ids, EVENT_EXECUTION),
+                ).fetchall():
+                    times[row["session_id"]].append(float(row["response_ms"]))
         out = []
         for row in rows:
             item = _public_session(_session_row(row))
             item["requests"] = counts.get(item["session_id"], {})
+            item["response_ms"] = times.get(item["session_id"], [])
             out.append(item)
+        return out
+
+    def audit_count(self, filters: dict[str, Any] | None = None) -> int:
+        """How many sessions match, beyond any listing limit."""
+        where, args = audit_where(filters or {})
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT COUNT(*) FROM sessions s{where}", args
+            ).fetchone()
+        return int(row[0])
+
+    def audit_facets(self, limit: int = 50) -> dict[str, list[tuple[Any, int]]]:
+        """The values the list can be filtered by, most common first."""
+        out: dict[str, list[tuple[Any, int]]] = {}
+        with self._lock:
+            for name, column in (("client", "client"), ("model", "model_key"),
+                                 ("rule", "decision_rule")):
+                out[name] = [
+                    (row[0], int(row[1])) for row in self._conn.execute(
+                        f"SELECT {column}, COUNT(*) FROM sessions"
+                        f" WHERE {column} IS NOT NULL GROUP BY {column}"
+                        " ORDER BY COUNT(*) DESC, 1 ASC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                ]
+        return out
+
+    def audit_overview(self, since: float) -> dict[str, list[dict[str, Any]]]:
+        """The rows the overview is computed from, every one since `since`.
+
+        Named columns only: numbers, router-made labels and timestamps. No
+        conversation key, no owner, no fingerprint, no answers, no facts.
+        """
+        queries = {
+            "sessions": (
+                "SELECT created, state, adaptation_mode, decision_source,"
+                " decision_rule, quota_changed_choice FROM sessions WHERE created >= ?"
+            ),
+            "requests": (
+                "SELECT created, status FROM session_requests WHERE created >= ?"
+            ),
+            "decisions": (
+                "SELECT ts, event_type, model, effort, rule, fallback, pinned, jev_ms,"
+                " first_byte_ms, response_ms, stream_state, upstream_status,"
+                " upstream_usage IS NOT NULL AS usage_reported"
+                " FROM decisions WHERE ts >= ?"
+            ),
+            "plans": (
+                "SELECT created, mode, action, status, from_effort, to_effort,"
+                " recommendation, jev_ms FROM turn_plans WHERE created >= ?"
+            ),
+        }
+        with self._lock:
+            out = {
+                name: [dict(row) for row in self._conn.execute(sql, (since,)).fetchall()]
+                for name, sql in queries.items()
+            }
+            # The newest quota reading any decision carried, whenever it was.
+            row = self._conn.execute(
+                "SELECT ts, quota_snapshot FROM decisions"
+                " WHERE quota_snapshot IS NOT NULL ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        quota = None
+        if row is not None:
+            try:
+                quota = {"ts": row["ts"], "snapshot": json.loads(row["quota_snapshot"])}
+            except (TypeError, ValueError):
+                quota = {"ts": row["ts"], "snapshot": None}
+        out["quota"] = [quota] if quota else []
         return out
 
     def audit_session(self, session_id: str) -> dict[str, Any] | None:
@@ -1378,6 +1462,62 @@ class Sessions:
             "session_requests": requests,
             "turn_plans": plans,
         }
+
+
+# What the inspector's list may be filtered by. Each value arrives validated
+# (an allowlisted word or a router-made label) and only ever as a parameter.
+REQUEST_PROBLEMS = {
+    "unknown": ("unknown",),
+    "rejected": ("rejected",),
+    "stream_failed": ("stream_failed",),
+}
+ADMISSION_PROBLEMS = {
+    "fallback": "(s.decision_source = 'admission_fallback'"
+                " OR s.decision_rule = 'admission_fallback')",
+    "low_confidence": "s.decision_rule = 'low_confidence'",
+}
+AUDIT_PROBLEMS = (*REQUEST_PROBLEMS, *ADMISSION_PROBLEMS)
+
+
+def audit_where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
+    """A WHERE clause over `sessions s` for the inspector's filters."""
+    where: list[str] = []
+    args: list[Any] = []
+    since = filters.get("since")
+    for key, column in (("client", "client"), ("model", "model_key"),
+                        ("rule", "decision_rule"), ("state", "state"),
+                        ("adaptation", "adaptation_mode")):
+        if filters.get(key) is not None:
+            where.append(f"s.{column} = ?")
+            args.append(filters[key])
+    if filters.get("pinned"):
+        where.append("s.session_id IN (SELECT session_id FROM audit_bookmarks)")
+    if filters.get("search"):
+        # Anywhere in the id, so the short form the list shows finds it too.
+        where.append("instr(s.session_id, ?) > 0")
+        args.append(filters["search"])
+    if since is not None:
+        where.append("COALESCE(s.last_seen, s.created) >= ?")
+        args.append(since)
+    problem = filters.get("problem")
+    if problem:
+        kinds = AUDIT_PROBLEMS if problem == "any" else (problem,)
+        parts: list[str] = []
+        statuses = [s for k in kinds for s in REQUEST_PROBLEMS.get(k, ())]
+        if statuses:
+            marks = ", ".join("?" for _ in statuses)
+            clause = (
+                "EXISTS (SELECT 1 FROM session_requests r"
+                f" WHERE r.session_id = s.session_id AND r.status IN ({marks})"
+            )
+            args.extend(statuses)
+            if since is not None:
+                clause += " AND r.created >= ?"
+                args.append(since)
+            parts.append(clause + ")")
+        parts.extend(ADMISSION_PROBLEMS[k] for k in kinds if k in ADMISSION_PROBLEMS)
+        where.append("(" + " OR ".join(parts) + ")")
+    return (" WHERE " + " AND ".join(where)) if where else "", args
 
 
 def _dump(value: Any) -> str | None:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import re
+import time
 from importlib.resources import files
 from typing import Any
 
@@ -12,7 +14,14 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from .config import RouterConfig
 from .policy import trace
 from .semantic import ADMISSION_FALLBACK, features_from_facts, replay_decision
-from .sessions import EVENT_EFFORT_PLAN
+from .sessions import (
+    AUDIT_PROBLEMS,
+    EVENT_ADMISSION,
+    EVENT_EFFORT_PLAN,
+    EVENT_EXECUTION,
+    REQUEST_PROBLEMS,
+    STATES,
+)
 
 # Explicit projection: future decision columns are private until reviewed here.
 AUDIT_FIELDS = frozenset([
@@ -392,43 +401,356 @@ def explain_admission(
     }
 
 
+# --- the session list -------------------------------------------------------
+
+# Overview and list windows: span and bucket width, in seconds.
+WINDOWS = {
+    "1h": (3600, 300),
+    "24h": (86400, 3600),
+    "7d": (7 * 86400, 6 * 3600),
+    "30d": (30 * 86400, 86400),
+}
+ADAPTATION_MODES = ("off", "shadow", "active")
+_SEARCH = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+LIST_PARAMS = frozenset([
+    "limit", "client", "model", "rule", "state", "adaptive", "problem", "pinned",
+    "q", "window",
+])
+LISTED_FIELDS = (
+    "session_id", "alias", "client", "state", "created", "last_seen",
+    "closed_at", "model", "base_effort", "effective_effort",
+    "decision_rule", "quality_lane", "config_hash", "config_matches",
+    "adaptation_mode", "tombstone",
+)
+
+
+class BadQuery(ValueError):
+    """A query parameter outside its bounds; the message is safe to return."""
+
+
+def _bad(message: str) -> Response:
+    return JSONResponse({"error": message}, status_code=400, headers=HEADERS)
+
+
+def percentiles(values: list[Any]) -> dict[str, Any]:
+    """Nearest-rank p50 and p95. No values is a gap, never zero."""
+    data = sorted(v for v in values if _is_number(v))
+    if not data:
+        return {"n": 0, "p50": None, "p95": None}
+
+    def rank(q: float) -> float:
+        return data[max(0, math.ceil(q * len(data)) - 1)]
+
+    return {"n": len(data), "p50": rank(0.5), "p95": rank(0.95)}
+
+
+def list_filters(params: Any, now: float) -> dict[str, Any]:
+    """The validated filters of `/router/audit/sessions`. Raises BadQuery."""
+    unknown = sorted(set(params.keys()) - LIST_PARAMS)
+    if unknown:
+        raise BadQuery("unknown parameter")
+    filters: dict[str, Any] = {}
+    for key in ("client", "model", "rule"):
+        value = params.get(key)
+        if value is not None:
+            if _label(value) is None:
+                raise BadQuery(f"{key} must be a label of at most 64 characters")
+            filters[key] = value
+    state = params.get("state")
+    if state is not None:
+        if state not in STATES:
+            raise BadQuery("state must be one of " + ", ".join(STATES))
+        filters["state"] = state
+    adaptive = params.get("adaptive")
+    if adaptive is not None:
+        if adaptive not in ADAPTATION_MODES:
+            raise BadQuery("adaptive must be one of " + ", ".join(ADAPTATION_MODES))
+        filters["adaptation"] = adaptive
+    problem = params.get("problem")
+    if problem is not None:
+        if problem != "any" and problem not in AUDIT_PROBLEMS:
+            raise BadQuery("problem must be any or one of " + ", ".join(AUDIT_PROBLEMS))
+        filters["problem"] = problem
+    pinned = params.get("pinned")
+    if pinned is not None:
+        if pinned not in ("0", "1"):
+            raise BadQuery("pinned must be 0 or 1")
+        filters["pinned"] = pinned == "1"
+    search = params.get("q")
+    if search is not None:
+        if not _SEARCH.fullmatch(search):
+            raise BadQuery("q must be 1 to 64 id characters")
+        filters["search"] = search
+    window = params.get("window")
+    if window is not None:
+        if window not in WINDOWS:
+            raise BadQuery("window must be one of " + ", ".join(WINDOWS))
+        filters["since"] = now - WINDOWS[window][0]
+    return filters
+
+
+def session_problems(row: dict[str, Any]) -> list[str]:
+    """What went wrong on this session, by kind, from its own rows."""
+    counts = row.get("requests") or {}
+    out = [kind for kind, statuses in REQUEST_PROBLEMS.items()
+           if any(counts.get(s) for s in statuses)]
+    if "admission_fallback" in (row.get("decision_source"), row.get("decision_rule")):
+        out.append("fallback")
+    if row.get("decision_rule") == "low_confidence":
+        out.append("low_confidence")
+    return out
+
+
 async def audit_sessions(request: Request) -> Response:
-    """Recent strict sessions, newest first. Protected like every /router/* route."""
+    """Recent strict sessions, newest first, filtered. Protected like every /router/* route."""
     router = request.app.state.router
     try:
         limit = int(request.query_params.get("limit", "50"))
         if not 1 <= limit <= 200:
             raise ValueError
     except ValueError:
-        return JSONResponse({"error": "limit must be between 1 and 200"}, status_code=400, headers=HEADERS)
+        return _bad("limit must be between 1 and 200")
+    try:
+        filters = list_filters(request.query_params, time.time())
+    except BadQuery as exc:
+        return _bad(str(exc))
     running = router.config.config_hash
+    pins = {b["session_id"]: b for b in router.sessions.bookmarks()}
     sessions = []
-    for row in router.sessions.audit_sessions(limit):
+    for row in router.sessions.audit_sessions(limit, filters):
         item = _project_session(row, running)
-        listed = {
-            key: item[key] for key in (
-                "session_id", "alias", "client", "state", "created", "last_seen",
-                "closed_at", "model", "base_effort", "effective_effort",
-                "decision_rule", "quality_lane", "config_hash", "config_matches",
-                "adaptation_mode", "tombstone",
-            )
-        }
+        listed = {key: item[key] for key in LISTED_FIELDS}
         listed["effort"] = listed.pop("base_effort")
         listed["rule"] = listed.pop("decision_rule")
         listed["requests"] = {
             str(k): int(v) for k, v in (row.get("requests") or {}).items()
         }
+        listed["problems"] = session_problems(row)
+        times = percentiles(row.get("response_ms") or [])
+        listed["response_ms"] = {"n": times["n"], "p50": times["p50"]}
+        pin = pins.get(row["session_id"])
+        listed["pinned"] = {"slug": pin["slug"], "label": pin["label"]} if pin else None
         sessions.append(listed)
     bookmarks = [
         {key: b.get(key) for key in ("slug", "label", "session_id", "created")}
         for b in router.sessions.bookmarks()
     ]
+    facets = {
+        name: [{"value": value, "n": n} for value, n in values if _label(value) is not None]
+        for name, values in router.sessions.audit_facets().items()
+    }
     return JSONResponse({
         "config_hash": running,
         "limit": limit,
+        "matched": router.sessions.audit_count(filters),
         "bookmarks": bookmarks,
+        "facets": facets,
         "sessions": sessions,
     }, headers=HEADERS)
+
+
+# --- the overview ------------------------------------------------------------
+
+REQUEST_STATUSES = ("completed", "unknown", "rejected", "stream_failed", "accepted", "in_flight")
+PLAN_STATUSES = ("planned", "accepted", "confirmed", "rejected", "outcome_unknown")
+PLAN_ACTIONS = ("keep", "change_effort", "blocked")
+TOP = 20
+
+
+def _top(counter: dict[Any, int], *keys: str) -> list[dict[str, Any]]:
+    """The most common values, each a router-made label or a visible null."""
+    out = []
+    for value, n in sorted(counter.items(), key=lambda kv: (-kv[1], str(kv[0])))[:TOP]:
+        values = value if len(keys) > 1 else (value,)
+        entry: dict[str, Any] = {k: _label(v) for k, v in zip(keys, values)}
+        entry["n"] = n
+        out.append(entry)
+    return out
+
+
+def _slot(series: list[dict[str, Any]], since: float, step: int, ts: Any) -> dict | None:
+    if not _is_number(ts) or ts < since:
+        return None
+    index = int((ts - since) // step)
+    return series[index] if 0 <= index < len(series) else None
+
+
+def _is_fallback(row: dict[str, Any]) -> bool:
+    return row.get("rule") == ADMISSION_FALLBACK or bool(row.get("fallback"))
+
+
+def build_overview(raw: dict[str, list[dict[str, Any]]], window: str, since: float) -> dict[str, Any]:
+    """Counts, rates, percentiles and buckets. Pure: rows in, numbers out.
+
+    Strict-session metrics come from session rows only. Legacy alias rows
+    (no event type) are counted on their own and never mixed in.
+    """
+    span, step = WINDOWS[window]
+    series: list[dict[str, Any]] = [
+        {"t": since + i * step, "requests": 0, "problems": 0, "_ms": []}
+        for i in range(span // step)
+    ]
+
+    sessions = raw.get("sessions") or []
+    adaptation = dict.fromkeys(ADAPTATION_MODES, 0)
+    unrecorded = quota_changed = quota_recorded = 0
+    for row in sessions:
+        mode = row.get("adaptation_mode")
+        if mode in adaptation:
+            adaptation[mode] += 1
+        else:
+            unrecorded += 1
+        if row.get("quota_changed_choice") is not None:
+            quota_recorded += 1
+            quota_changed += int(bool(row["quota_changed_choice"]))
+
+    # The request ledger decides each execution's outcome.
+    statuses = dict.fromkeys(REQUEST_STATUSES, 0)
+    for row in raw.get("requests") or []:
+        status = row.get("status")
+        if status in statuses:
+            statuses[status] += 1
+        slot = _slot(series, since, step, row.get("created"))
+        if slot is not None:
+            slot["requests"] += 1
+            if status in ("unknown", "rejected", "stream_failed"):
+                slot["problems"] += 1
+    total = sum(statuses.values())
+
+    admissions: list[dict[str, Any]] = []
+    executions: list[dict[str, Any]] = []
+    legacy: list[dict[str, Any]] = []
+    for row in raw.get("decisions") or []:
+        kind = row.get("event_type")
+        if kind == EVENT_ADMISSION:
+            admissions.append(row)
+        elif kind == EVENT_EXECUTION:
+            executions.append(row)
+            slot = _slot(series, since, step, row.get("ts"))
+            if slot is not None and _is_number(row.get("response_ms")):
+                slot["_ms"].append(row["response_ms"])
+        elif kind is None:
+            legacy.append(row)
+
+    by_model: dict[str, list[dict[str, Any]]] = {}
+    for row in executions:
+        by_model.setdefault(_label(row.get("model")) or "", []).append(row)
+    models = [
+        {
+            "model": model or None,
+            "n": len(rows),
+            "first_byte_ms": percentiles([r.get("first_byte_ms") for r in rows]),
+            "response_ms": percentiles([r.get("response_ms") for r in rows]),
+            "usage_reported": sum(1 for r in rows if r.get("usage_reported")),
+        }
+        for model, rows in sorted(by_model.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:TOP]
+    ]
+
+    rules: dict[Any, int] = {}
+    choices: dict[Any, int] = {}
+    for row in admissions:
+        rules[row.get("rule")] = rules.get(row.get("rule"), 0) + 1
+        pair = (row.get("model"), row.get("effort"))
+        choices[pair] = choices.get(pair, 0) + 1
+
+    plans = raw.get("plans") or []
+    effort: dict[str, Any] = {}
+    for mode in ("shadow", "active"):
+        mine = [p for p in plans if p.get("mode") == mode]
+        changes = [p for p in mine if p.get("action") == "change_effort"]
+        effort[mode] = {
+            "plans": len(mine),
+            # A plan whose own recommendation differs from the effort it started at.
+            "recommended": sum(
+                1 for p in mine
+                if p.get("recommendation") and p.get("recommendation") != p.get("from_effort")
+            ),
+            "applied": len(changes),
+            "confirmed": sum(1 for p in changes if p.get("status") == "confirmed"),
+            "by_action": {a: sum(1 for p in mine if p.get("action") == a) for a in PLAN_ACTIONS},
+            "by_status": {s: sum(1 for p in mine if p.get("status") == s) for s in PLAN_STATUSES},
+        }
+
+    quota = None
+    for reading in (raw.get("quota") or [])[:1]:
+        quota = {
+            "ts": reading.get("ts") if _is_number(reading.get("ts")) else None,
+            "providers": project_quota(reading.get("snapshot")) or {},
+        }
+
+    for slot in series:
+        times = slot.pop("_ms")
+        slot["timed"] = len(times)
+        slot["response_p50_ms"] = percentiles(times)["p50"]
+
+    return {
+        "window": window,
+        "since": since,
+        "bucket_seconds": step,
+        "sessions": {
+            "admitted": len(sessions),
+            "adaptation": adaptation,
+            "adaptation_unrecorded": unrecorded,
+        },
+        "executions": {
+            "total": total,
+            "by_status": statuses,
+            "completion_rate": statuses["completed"] / total if total else None,
+            "rows": len(executions),
+            "usage_reported": sum(1 for r in executions if r.get("usage_reported")),
+            "first_byte_recorded": sum(1 for r in executions if _is_number(r.get("first_byte_ms"))),
+        },
+        "latency": {
+            # A fallback admission's time is a failed call's, not Jev's answer time.
+            "jev_admission_ms": percentiles(
+                [r.get("jev_ms") for r in admissions if not _is_fallback(r)]
+            ),
+            "jev_plan_ms": percentiles([p.get("jev_ms") for p in plans]),
+            "models": models,
+        },
+        "series": series,
+        "decisions": {
+            "admissions": len(admissions),
+            "rules": _top(rules, "rule"),
+            "choices": _top(choices, "model", "effort"),
+            "low_confidence": rules.get("low_confidence", 0),
+            "fallback": sum(1 for r in admissions if _is_fallback(r)),
+            "quota_changed": quota_changed,
+            "quota_recorded": quota_recorded,
+        },
+        "quota": quota,
+        "effort": effort,
+        "legacy": {
+            "decisions": len(legacy),
+            "pinned": sum(1 for r in legacy if r.get("pinned")),
+            "fallback": sum(1 for r in legacy if r.get("fallback")),
+            "upstream_errors": sum(
+                1 for r in legacy
+                if _is_number(r.get("upstream_status")) and r["upstream_status"] >= 400
+            ),
+            "jev_ms": percentiles(
+                [r.get("jev_ms") for r in legacy if not r.get("pinned") and not r.get("fallback")]
+            ),
+            "first_byte_ms": percentiles([r.get("first_byte_ms") for r in legacy]),
+            "response_ms": percentiles([r.get("response_ms") for r in legacy]),
+        },
+    }
+
+
+async def audit_overview(request: Request) -> Response:
+    """Router health over a window, computed from the tables. Writes nothing."""
+    router = request.app.state.router
+    if set(request.query_params.keys()) - {"window"}:
+        return _bad("unknown parameter")
+    window = request.query_params.get("window", "24h")
+    if window not in WINDOWS:
+        return _bad("window must be one of " + ", ".join(WINDOWS))
+    span, step = WINDOWS[window]
+    # Buckets end at the next boundary, so the answer changes only with the data.
+    since = (math.floor(time.time() / step) + 1) * step - span
+    body = build_overview(router.sessions.audit_overview(since), window, since)
+    body["config_hash"] = router.config.config_hash
+    return JSONResponse(body, headers=HEADERS)
 
 
 async def audit_session(request: Request) -> Response:

@@ -31,7 +31,7 @@ from . import protocols as P
 from . import sessions as S
 from .config import AliasCfg, RouterConfig
 from .dashboard import asset as dashboard_asset
-from .dashboard import audit, audit_session, audit_sessions, dashboard
+from .dashboard import audit, audit_overview, audit_session, audit_sessions, dashboard
 from .deciders import build_decider
 from .deciders.base import Decision
 from .features import Features, estimate_input, extract_features
@@ -3364,6 +3364,7 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/dashboard/", dashboard, methods=["GET"]),
         Route("/dashboard/assets/{name}", dashboard_asset, methods=["GET"]),
         Route("/router/audit", audit, methods=["GET"]),
+        Route("/router/audit/overview", audit_overview, methods=["GET"]),
         Route("/router/audit/sessions", audit_sessions, methods=["GET"]),
         Route("/router/audit/sessions/{session_id}", audit_session, methods=["GET"]),
         Route("/v1/chat/completions", chat_completions, methods=["POST"]),
