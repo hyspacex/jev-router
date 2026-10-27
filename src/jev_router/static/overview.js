@@ -1,9 +1,19 @@
 "use strict";
 
-// Overview. Four rows: quota, four numbers, tasks beside latency, requests
-// over time with reliability. Uses the shell's builders and formatters.
+// Overview. A headline band of four numbers; requests beside quota; one
+// "By model" table with the task heatmap folded under it; legacy traffic
+// last, only when there is any. Uses the shell's builders and formatters.
+// Every top-level name here starts with "ov" (or is the old bucketLabel) so
+// the other view files can never collide with it.
 
-const STEER_CLASS = {calm: "calm", elevated: "elevated", demoting: "demoting", exhausted: "exhausted"};
+// Fewer calls than this and a p50 is a hint, not a measurement: its count is muted.
+const OV_FEW_CALLS = 5;
+// The payload's lists stop at this many entries (dashboard.py TOP).
+const OV_TOP = 20;
+// The heatmap's fold, kept across the live refresh so it never snaps shut.
+let ovTasksOpen = false;
+
+const OV_PROBLEMS = [["unknown", "unknown"], ["rejected", "rejected"], ["stream_failed", "stream failed"]];
 
 // 1234 -> 1.2k, 7e7 -> 70M. Token counts read at a glance.
 function ovTokens(n) {
@@ -12,63 +22,314 @@ function ovTokens(n) {
   if (v >= 1e3) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + "k";
   return String(Math.round(v));
 }
-function ovSigned(d) {
-  const v = Math.round(Number(d));
-  return (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v);
-}
 function ovMoney(v, currency) {
   const n = Number(v);
   const sym = !currency || currency === "USD" ? "$" : currency + " ";
   return sym + (n >= 100 ? int(n) : n.toFixed(2));
 }
 function ovUntil(ts, now) {
+  if (absent(ts) || absent(now)) return null;
   const t = Number(ts) - Number(now);
   if (!(t > 0)) return null;
   return t >= 86400 ? Math.round(t / 86400) + " d" : t >= 3600 ? Math.round(t / 3600) + " h" : Math.max(1, Math.round(t / 60)) + " min";
 }
+// "613 ms" as a number and a quieter unit, for the headline.
+function ovValueUnit(text) {
+  const cut = String(text).lastIndexOf(" ");
+  if (cut < 0) return document.createTextNode(String(text));
+  return add(el("span"), text.slice(0, cut), el("small", null, text.slice(cut + 1)));
+}
+function ovBold(text) { return el("b", null, text); }
+// "per hour", "per 5 min": the bucket a bar stands for.
+function ovPer(step) {
+  if (step === 3600) return "per hour";
+  if (step === 86400) return "per day";
+  return "per " + windowSpan(step / 60);
+}
 
 function overviewView(kind) {
   const ov = S.overview;
-  const root = el("section", "ov" + (kind === "data" ? " still" : ""));
+  const root = el("div", "ov" + (kind === "data" ? " still" : ""));
   const w = ov.window || S.win;
   const within = (extra) => listHash(Object.assign({window: w}, extra || {}));
-  const head = el("div", "ovh");
-  add(head, el("h1", "ovt", "Overview"), windowSeg(w, overviewHash));
-  root.append(head, quotaPanel(ov), kpiStrip(ov));
-  root.append(add(el("div", "ovrow"), matrixPanel(ov), latencyPanel(ov)));
-  root.append(seriesPanel(ov, within));
+  const head = el("div", "head");
+  add(head, el("h1", null, "Overview"), add(el("div", "right"), windowSeg(w, overviewHash)));
+  root.append(head, ovHeadline(ov, within));
+  root.append(add(el("div", "grid two"), ovRequests(ov), ovQuota(ov)));
+  root.append(ovByModel(ov));
   const legacy = ov.legacy || {};
-  if (legacy.decisions > 0) root.append(legacyPanel(legacy));
+  if (legacy.decisions > 0) root.append(ovLegacy(legacy));
   return root;
 }
 
-// --- 1. quota -------------------------------------------------------------------
+// --- 1. the headline band ------------------------------------------------------
 
-function quotaPanel(ov) {
+function ovStat(value, label, help, comparator) {
+  const box = el("div", "stat");
+  add(box, add(el("div", "v"), value), add(el("div", "l"), label, help ? helpMark(help) : null));
+  if (comparator) box.append(add(el("div", "c"), ...comparator));
+  return box;
+}
+
+function ovHeadline(ov, within) {
+  const box = band(null, null, "headline");
+  const stats = el("div", "stats");
+  stats.append(ovQuotaSaved(ov), ovOverhead(ov), ovCleanTurns(ov), ovCalls(ov, within));
+  box.append(stats, foot(ovCacheLine(ov), ovBreakers(ov)));
+  return box;
+}
+
+function ovQuotaSaved(ov) {
+  const qs = (ov.efficiency || {}).quota_saved || {};
+  const counted = qs.counted || 0;
+  const unknown = qs.unknown || 0;
+  const calls = counted + unknown;
+  const base = qs.baseline_model;
+  const value = counted && !absent(qs.saved_rate) ? pct(qs.saved_rate)
+    : gap(!calls ? "No call in this window" : base ? "No call could be priced against " + base : "No model in router.yaml has a quota_cost");
+  const help = base
+    ? "Calls that did not spend " + base + "'s quota, weighted by each model's quota_cost. A comparison against every call going to " + base + ", not a measured subscription delta."
+    : "Calls that did not spend the frontier model's quota, weighted by each model's quota_cost. A comparison against every call going to the priced model with the highest quota_cost, not a measured subscription delta.";
+  const comparator = calls
+    ? [ovBold(int(counted) + " of " + int(calls)), " calls priced", unknown ? " · " + int(unknown) + " unknown" : null]
+    : null;
+  return ovStat(value, "Frontier quota saved", help, comparator);
+}
+
+function ovOverhead(ov) {
+  const tax = ov.router_tax || {};
+  const adm = tax.admission_ms || {};
+  const value = adm.n ? ovValueUnit(ms(adm.p50)) : gap("No admission timed in this window");
+  const parts = [];
+  if (adm.n && !absent(adm.p95)) parts.push("p95 ", ovBold(ms(adm.p95)));
+  if (!absent(tax.amortized_ms_per_request)) {
+    if (parts.length) parts.push(" · ");
+    parts.push(ms(tax.amortized_ms_per_request) + " per call amortised");
+  } else if (tax.execution_requests) {
+    if (parts.length) parts.push(" · ");
+    parts.push(gap("No Jev call was timed"), " per call amortised");
+  }
+  const help = "The Jev call plus policy at admission, p50, fallback admissions left out. Amortised: every Jev call's time (admissions and turn plans) over every execution call.";
+  return ovStat(value, "Router overhead per admission", help, parts.length ? parts : null);
+}
+
+function ovCleanTurns(ov) {
+  const cf = (ov.quality || {}).corrective_followup || {};
+  const ad = ((ov.sessions || {}).adaptation) || {};
+  const adaptive = (ad.shadow || 0) + (ad.active || 0);
+  const value = cf.denominator ? pct(1 - cf.rate) : gap("No planned turn was assessed in this window");
+  const threshold = absent(cf.threshold) ? "the corrective cutoff" : num2(cf.threshold);
+  const help = "Planned turns whose next prompt was not a correction (corrective_followup below " + threshold + ").";
+  const comparator = [];
+  if (cf.denominator) comparator.push(ovBold(int(cf.denominator - cf.numerator) + " of " + int(cf.denominator)), " planned turns");
+  if (ov.sessions) {
+    if (comparator.length) comparator.push(" · ");
+    comparator.push(plural(adaptive, "adaptive session"));
+  }
+  return ovStat(value, "Clean turns", help, comparator.length ? comparator : null);
+}
+
+function ovCalls(ov, within) {
+  const ex = ov.executions || {};
+  const st = ex.by_status || {};
+  const total = ex.total || 0;
+  const done = st.completed || 0;
+  const value = done === total ? int(total) : add(el("span"), int(done), el("small", null, "of " + int(total)));
+  const problems = OV_PROBLEMS.reduce((sum, [key]) => sum + (st[key] || 0), 0);
+  // Line one: the problems, each a link to the sessions it filters to.
+  // Line two (or the same line when there is none): fallback and low confidence.
+  const first = el("span", problems ? "ov-ln" : null);
+  if (problems) {
+    first.append(add(link("ov-link", null, within({problem: "any"}), plural(problems, "problem") + ": open the sessions"), badge("warn", plural(problems, "problem"))));
+    for (const [key, words] of OV_PROBLEMS) {
+      if (st[key]) add(first, " ", add(link("ov-link", null, within({problem: key})), badge("bad", int(st[key]) + " " + words)));
+    }
+  } else add(first, ovBold("0"), " problems · ");
+  const second = el("span");
+  const rel = ov.reliability || {};
+  const rate = (r, key, label, warn) => {
+    const part = el("span", "ov-nw", label + " ");
+    if (!r || !r.denominator) part.append(gap("No admission in this window"));
+    else {
+      const text = int(r.numerator) + " of " + int(r.denominator);
+      if (r.numerator) part.append(add(link("ov-link", null, within({problem: key})), warn ? badge("warn", text) : ovBold(text)));
+      else part.append(text);
+    }
+    return part;
+  };
+  add(second, rate(rel.fallback, "fallback", "fallback", true), " · ", rate(rel.low_confidence, "low_confidence", "low confidence", false));
+  const c = [first, second];
+  const help = absent(ex.completion_rate) ? null
+    : pct(ex.completion_rate) + " of this window's execution calls completed. Problems are calls whose outcome is unknown, rejected or whose stream failed.";
+  return ovStat(value, "Calls completed", help, c);
+}
+
+// Cache hit and tokens per second, in one sentence. A value the upstream did
+// not report is a gap with the count of calls that did report.
+function ovCacheLine(ov) {
+  const eff = ov.efficiency || {};
+  const cache = eff.cache || {};
+  const usage = eff.usage_reported || {};
+  const pairs = ((ov.upstream || {}).pairs) || [];
+  const hasTps = pairs.some((p) => p.tps && p.tps.n);
+  const line = el("span");
+  const reported = usage.executions
+    ? "The upstream reported usage on " + int(usage.reported || 0) + " of " + plural(usage.executions, "call")
+    : "No call in this window";
+  const why = !usage.executions ? "no call in this window."
+    : usage.reported ? "not in the usage the upstream reported (" + int(usage.reported) + " of " + plural(usage.executions, "call") + ")."
+    : "not reported by the upstream on any call this window.";
+  if (absent(cache.rate)) {
+    if (hasTps) add(line, "Cache hit: ", gap(reported), " " + why + " Tokens per second are in the table below.");
+    else add(line, "Cache hit and tokens per second: ", gap(reported), " " + why);
+    return line;
+  }
+  add(line, "Cache hit ", ovBold(pct(cache.rate)));
+  if (!absent(cache.input_tokens)) add(line, " · " + ovTokens(cache.cached_tokens || 0) + " of " + ovTokens(cache.input_tokens) + " input tokens");
+  if (hasTps) add(line, " · tokens per second in the table below.");
+  else add(line, " · tokens per second ", gap(reported), " not reported.");
+  return line;
+}
+
+function ovBreakers(ov) {
+  const breakers = (ov.reliability || {}).breakers;
+  const line = el("span");
+  if (!breakers || typeof breakers !== "object") return add(line, "Breakers ", gap("Breaker state was not read"), ".");
+  const names = Object.entries(breakers);
+  if (!names.length) return add(line, "No provider breakers.");
+  const open = names.filter(([, b]) => !b || b.state !== "closed");
+  if (!open.length) return add(line, names.length === 1 ? "Breaker closed on " + names[0][0] + "." : "Breakers closed on all " + names.length + " providers.");
+  line.append("Breakers: ");
+  open.forEach(([name, b], i) => {
+    const state = b && b.state ? human(b.state) : "state unknown";
+    const retry = b && !absent(b.retry_in_seconds) ? " · retry in " + Math.ceil(b.retry_in_seconds) + " s" : "";
+    if (i) line.append(" ");
+    line.append(badge(b && b.state ? "warn" : "plain", name + " " + state + retry));
+  });
+  const closed = names.length - open.length;
+  if (closed) line.append(" · closed on the other " + plural(closed, "provider") + ".");
+  return line;
+}
+
+// --- 2. requests ----------------------------------------------------------------
+
+function bucketLabel(t, step) {
+  if (step >= 86400) return shortDay(t);
+  if (step >= 21600) return DAYS[new Date(t * 1000).getDay()] + " " + clock(t).slice(0, 5);
+  return clock(t).slice(0, 5);
+}
+
+function ovRequests(ov) {
+  const series = Array.isArray(ov.series) ? ov.series : [];
+  const step = ov.bucket_seconds || 3600;
+  const problems = series.reduce((sum, b) => sum + (b.problems || 0), 0);
+  const box = band("Requests", ovPer(step) + " · " + plural(problems, "problem"), "requests");
+  if (!series.length) {
+    box.append(el("p", "empty", "No bucket in this window"));
+    return box;
+  }
+  const maxReq = Math.max(1, ...series.map((b) => b.requests || 0));
+  const fbs = series.map((b) => (absent(b.first_byte_p50_ms) ? null : Number(b.first_byte_p50_ms)));
+  const maxFb = Math.max(0, ...fbs.filter((v) => v !== null));
+
+  const bars = el("div", "bars");
+  series.forEach((b, i) => {
+    const col = el("div", "b");
+    const when = bucketLabel(b.t, step);
+    const fb = fbs[i] !== null ? " · first byte p50 " + ms(fbs[i]) : b.requests ? " · first byte not recorded" : "";
+    col.title = when + " · " + plural(b.requests || 0, "call") + (b.problems ? " · " + plural(b.problems, "problem") : "") + fb;
+    const good = Math.max(0, (b.requests || 0) - (b.problems || 0));
+    const delay = Math.min(400, i * 10) + "ms";
+    if (good) {
+      const g = el("i");
+      g.style.height = (good / maxReq * 100) + "%";
+      g.style.animationDelay = delay;
+      col.append(g);
+    }
+    if (b.problems) {
+      const p = el("i", "bad");
+      p.style.height = (b.problems / maxReq * 100) + "%";
+      p.style.animationDelay = delay;
+      col.append(p);
+    }
+    bars.append(col);
+  });
+
+  const chart = el("div", "chart");
+  // An empty window has no top to label: only the zero line is drawn.
+  const anyReq = series.some((b) => b.requests);
+  add(chart, add(el("div", "y"), el("span", null, anyReq ? int(maxReq) : ""), el("span", null, "0")), bars);
+  if (maxFb > 0) {
+    add(chart, add(el("div", "y fby"), el("span", null, "first byte"), el("span", null, ms(maxFb))), ovFirstByteLine(fbs, maxFb, series, step));
+  } else {
+    add(chart, add(el("div", "y fby"), el("span", null, "first byte")),
+      add(el("div", "line none"), gap(series.some((b) => b.requests) ? "No call in this window recorded a first byte" : "No call in this window"), " no first byte recorded"));
+  }
+  const axis = el("div", "xaxis");
+  const n = series.length;
+  const marks = [...new Set([0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round(3 * (n - 1) / 4), n - 1])];
+  for (const i of marks) axis.append(el("span", null, bucketLabel(series[i].t, step)));
+  add(chart, el("div"), axis);
+  box.append(chart);
+  return box;
+}
+
+// The first-byte p50 per bucket as a line under the bars. A bucket with no
+// first byte is skipped, never drawn as zero; each point sits at its bar's centre.
+function ovFirstByteLine(fbs, maxFb, series, step) {
+  const NS = "http://www.w3.org/2000/svg";
+  const wrap = el("div", "line");
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 100 36");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  const n = fbs.length;
+  const pts = [];
+  fbs.forEach((v, i) => { if (v !== null) pts.push([(i + 0.5) / n * 100, 33 - v / maxFb * 30, i]); });
+  const path = document.createElementNS(NS, "polyline");
+  path.setAttribute("points", pts.map((p) => p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" "));
+  svg.append(path);
+  wrap.append(svg);
+  // Points as page dots, so they stay round however wide the chart is.
+  for (const [x, y, i] of pts) {
+    const d = el("i");
+    d.style.left = x + "%";
+    d.style.top = (y / 36 * 100) + "%";
+    d.title = bucketLabel(series[i].t, step) + " · first byte p50 " + ms(fbs[i]);
+    wrap.append(d);
+  }
+  return wrap;
+}
+
+// --- 3. quota ---------------------------------------------------------------------
+
+function ovQuota(ov) {
   const subs = ov.subscriptions;
-  const box = panel("Quota", subs && subs.quota_routing === false ? "not steering" : null, "quota2");
+  const steering = subs && subs.quota_routing
+    ? "steering on" + (absent(subs.demote_above) ? "" : " · demote above pressure " + pressureText(subs.demote_above))
+    : subs ? "not steering" : null;
+  const box = band("Quota", steering, "quota");
   if (!subs) {
-    box.append(el("p", "gaprow", "quota not readable"));
+    box.append(add(el("p", "empty"), gap("The quota monitor could not be read"), " Quota not readable."));
     return box;
   }
   const routed = Array.isArray(subs.routed) ? subs.routed : [];
   const tracked = Array.isArray(subs.tracked) ? subs.tracked : [];
-  const list = el("div", "subs");
-  // A provider with bars gets a row; one with nothing to draw gets a line.
-  for (const r of routed) list.append(hasReading(r, false) ? subRow(r, false, subs) : subLine(r, false));
-  for (const t of tracked) list.append(hasReading(t, true) ? subRow(t, true, subs) : subLine(t, true));
-  if (!routed.length && !tracked.length) list.append(el("p", "empty", "No provider"));
-  box.append(list, quotaFooter(ov));
+  const list = el("div", "qrows");
+  let ticks = false;
+  for (const r of routed) { const [row, t] = ovQuotaRow(r, false, subs); ticks = ticks || t; list.append(row); }
+  for (const r of tracked) { const [row, t] = ovQuotaRow(r, true, subs); ticks = ticks || t; list.append(row); }
+  if (!routed.length && !tracked.length) list.append(el("p", "empty", "No provider configured"));
+  box.append(list);
+  const d = ov.decisions || {};
+  const changed = d.quota_recorded
+    ? add(el("span"), "Quota changed the choice on ", ovBold(int(d.quota_changed || 0) + " of " + int(d.quota_recorded)), " admissions.")
+    : add(el("span"), "Quota changed the choice: ", gap("No admission in this window recorded it"), ".");
+  box.append(foot(changed, ticks ? "Tick marks show expected use at this point in the window." : null));
   return box;
 }
 
-function hasReading(r, tracked) {
-  const windows = Array.isArray(r.windows) ? r.windows.length : 0;
-  const plans = tracked && Array.isArray(r.plans) ? r.plans.length : 0;
-  return windows > 0 || plans > 0 || (!tracked && r.status === "fresh" && !absent(r.used_percent));
-}
-
-// Why a provider shows no bars. One chip, never a row of empty numbers.
+// Why a provider shows no meter. One quiet dash, never a row of empty numbers.
 function readingGap(r) {
   if (r.enabled === false) return "disabled";
   if (r.status === "stale") return "stale reading";
@@ -77,312 +338,234 @@ function readingGap(r) {
   return "no reading";
 }
 
-// One line: the provider, the models it carries, why there are no bars.
-function subLine(r, tracked) {
-  const row = el("div", "sub flat" + (tracked ? " tracked" : ""));
-  const models = !tracked && Array.isArray(r.models) ? r.models.map((m) => m.model).join(" · ") : "";
-  add(row, el("span", "subp", tracked ? r.id : r.provider), el("span", "subm mono", models), gap(readingGap(r)));
-  return row;
-}
-
-// The window's admissions: how often quota moved the choice.
-function quotaFooter(ov) {
-  const d = ov.decisions || {};
-  const line = el("div", "qfoot");
-  add(line, el("span", "kl", "Quota changed the choice"),
-    d.quota_recorded ? el("span", "mono", int(d.quota_changed || 0) + " of " + int(d.quota_recorded)) : gap());
-  return line;
-}
-
-function subRow(r, tracked, subs) {
-  const row = el("div", "sub" + (tracked ? " tracked" : ""));
-  const name = el("div", "subn");
-  name.append(el("span", "subp", tracked ? r.id : r.provider));
-  if (!tracked && Array.isArray(r.models) && r.models.length) {
-    name.append(el("span", "subm mono", r.models.map((m) => m.model).join(" · ")));
-  }
-  const bars = el("div", "subw");
-  const windows = Array.isArray(r.windows) ? r.windows : [];
-  const plans = tracked && Array.isArray(r.plans) ? r.plans : [];
-  windows.forEach((w, i) => {
-    // A plan that reads the same as its window names it.
-    const plan = plans[i] && !absent(plans[i].used_percent) && plans[i].used_percent === w.used_percent ? plans[i] : null;
-    const label = plan && plan.title ? plan.title : !absent(w.window_minutes) ? windowSpan(w.window_minutes) : w.name ? human(w.name) : "window";
-    bars.append(quotaBar(label, w.used_percent, w.expected_percent, w.pace_delta, ovUntil(w.resets_at, subs.as_of), subs.exhausted_at));
-  });
-  for (const plan of plans.slice(windows.length)) {
-    bars.append(quotaBar(plan.title || "other", plan.used_percent, null, null, null, subs.exhausted_at));
-  }
-  if (!windows.length && !plans.length) {
-    if (!tracked && r.status === "fresh" && !absent(r.used_percent)) bars.append(quotaBar("used", r.used_percent, null, null, null, subs.exhausted_at));
-    else bars.append(add(el("div", "subgap"), gap(readingGap(r))));
-  }
-  const side = el("div", "subs2");
-  if (tracked) {
-    const t = r.tokens || {};
-    if (!absent(t.last_30_days_cost_usd)) add(side, el("span", "cost mono", ovMoney(t.last_30_days_cost_usd, r.currency)), el("span", "faint", " / 30 d"));
-    if (r.status === "stale" || r.status === "error") side.append(el("span", "steer demoting", r.status));
-  } else if (r.steering && subs.quota_routing !== false) {
-    side.append(el("span", "steer " + (STEER_CLASS[r.steering] || ""), r.steering));
-  } else if ((windows.length || !absent(r.used_percent)) && (r.status === "stale" || r.status === "error")) {
-    side.append(el("span", "steer demoting", r.status));
-  }
-  add(row, name, bars, side);
-  return row;
-}
-
-function quotaBar(label, used, expected, delta, resets, exhaustedAt) {
-  const line = el("div", "qbar");
-  const track = el("span", "qtrack");
+// One meter: the used fill, the expected-use tick. Returns [node, drewTick].
+function ovMeter(used, expected, cls, title, small) {
+  const m = el("div", "meter" + (small ? " sm" : ""));
+  m.title = title;
   if (!absent(used)) {
-    const fill = el("i", Number(used) >= (exhaustedAt || 100) ? "full" : null);
-    fill.style.width = Math.max(0.5, Math.min(100, used)) + "%";
-    track.append(fill);
+    const fill = el("i", cls);
+    const u = Math.max(0, Math.min(100, Number(used)));
+    fill.style.width = (u > 0 ? Math.max(1, u) : 0) + "%";
+    m.append(fill);
   }
   if (!absent(expected)) {
     const tick = el("b");
-    tick.style.left = Math.max(0, Math.min(100, expected)) + "%";
-    track.append(tick);
+    tick.style.left = Math.max(0, Math.min(100, Number(expected))) + "%";
+    m.append(tick);
   }
-  const value = absent(used) ? gap() : el("span", "qv mono", Math.round(used) + "%");
-  const pace = el("span", "qd mono");
-  if (!absent(delta)) {
-    pace.classList.add(delta > 0 ? "over" : "under");
-    add(pace, ovSigned(delta), el("span", "faint", " vs pace"));
+  return [m, !absent(expected)];
+}
+
+function ovQuotaRow(r, tracked, subs) {
+  const row = el("div", "qrow" + (tracked ? " tracked" : ""));
+  const name = el("div", "p", tracked ? r.id : r.provider);
+  const models = !tracked && Array.isArray(r.models) ? r.models.map((m) => m.model) : [];
+  if (tracked) {
+    name.append(el("small", null, "tracked"));
+    name.title = "A subscription no provider links to: shown, never routed";
   }
-  add(line, el("span", "ql", label), track, value, pace, el("span", "qr faint", resets ? "resets in " + resets : ""));
-  return line;
+  else {
+    name.append(el("small", null, plural(models.length, "model")));
+    if (models.length) name.title = models.join(" · ");
+  }
+  const windows = Array.isArray(r.windows) ? r.windows : [];
+  const plans = tracked && Array.isArray(r.plans) ? r.plans : [];
+  const exhaustedAt = absent(subs.exhausted_at) ? 100 : subs.exhausted_at;
+  const demoting = !tracked && r.steering === "demoting";
+  const fillCls = (used) => (absent(used) ? null : Number(used) >= exhaustedAt ? "bad" : demoting ? "warn" : null);
+  // The meters: one per window, then any plan beyond the windows.
+  const items = windows.map((w, i) => {
+    const plan = plans[i] && !absent(plans[i].used_percent) && plans[i].used_percent === w.used_percent ? plans[i] : null;
+    const label = plan && plan.title ? plan.title : !absent(w.window_minutes) ? windowSpan(w.window_minutes) + " window" : w.name ? human(w.name) : "window";
+    return {label, used: w.used_percent, expected: w.expected_percent, resets: ovUntil(w.resets_at, subs.as_of) || w.reset_description || null};
+  });
+  for (const plan of plans.slice(windows.length)) items.push({label: plan.title || "other", used: plan.used_percent, expected: null, resets: null});
+  if (!items.length && !tracked && r.status === "fresh" && !absent(r.used_percent)) {
+    items.push({label: "used", used: r.used_percent, expected: null, resets: null});
+  }
+  let ticks = false;
+  const meters = el("div", "ov-ms");
+  const value = el("div", "num");
+  const resets = el("div", "ov-rs t3 s12");
+  if (!items.length) {
+    meters.classList.add("none");
+    add(meters, gap(readingGap(r)), el("span", null, readingGap(r)));
+  } else {
+    items.forEach((it, i) => {
+      const words = absent(it.used) ? "use not reported" : Math.round(it.used) + "% used";
+      const title = it.label + " · " + words + (absent(it.expected) ? "" : ", " + Math.round(it.expected) + "% expected by now") + (it.resets ? " · resets in " + it.resets : "");
+      const [m, t] = ovMeter(it.used, it.expected, fillCls(it.used), title, i > 0);
+      ticks = ticks || t;
+      meters.append(m);
+    });
+    // The number beside the meters is the window nearest its limit.
+    const known = items.filter((it) => !absent(it.used));
+    const top = known.length ? known.reduce((a, b) => (Number(b.used) > Number(a.used) ? b : a)) : null;
+    if (top) {
+      value.append(Math.round(top.used) + "%");
+      if (items.length > 1) value.title = top.label;
+      if (top.resets) resets.append("resets in " + top.resets);
+    } else value.append(gap("No window reported its use"));
+  }
+  const side = el("div", "steer");
+  if (tracked) {
+    const t = r.tokens || {};
+    if (!absent(t.last_30_days_cost_usd)) {
+      side.append(ovMoney(t.last_30_days_cost_usd, r.currency) + " / 30 d");
+      side.title = "Cost over the last 30 days, as the subscription reports it";
+    }
+    if (items.length && (r.status === "stale" || r.status === "error")) side.append(el("span", "t3", (side.childNodes.length ? " · " : "") + r.status));
+  } else if (r.steering && subs.quota_routing) {
+    side.textContent = r.steering;
+    if (r.steering === "exhausted") side.classList.add("bad");
+    else if (r.steering !== "calm") side.classList.add("warn");
+    if (!absent(r.pressure)) side.title = "Pressure " + pressureText(r.pressure);
+  } else if (items.length && (r.status === "stale" || r.status === "error")) {
+    side.textContent = r.status === "stale" ? "stale" : "failed";
+    side.title = "A " + (r.status === "stale" ? "stale" : "failed") + " reading steers nothing";
+  }
+  add(row, name, meters, value, resets, side);
+  return [row, ticks];
 }
 
-// --- 2. four numbers ---------------------------------------------------------------
+// --- 4. by model ---------------------------------------------------------------------
 
-function kpiStrip(ov) {
-  const strip = el("div", "big4");
-  const big = (label, value, sub) => strip.append(add(el("div", "bigk"), el("span", "kl", label), add(el("span", "bigv"), value), sub ? add(el("span", "ks"), sub) : null));
-  const eff = ov.efficiency || {};
-  const qs = eff.quota_saved || {};
-  const calls = (qs.counted || 0) + (qs.unknown || 0);
-  big("Frontier quota saved",
-    qs.counted && !absent(qs.saved_rate) ? pct(qs.saved_rate)
-      : gap(!calls ? "no calls" : qs.baseline_model ? "no call counted" : "no priced model"),
-    qs.baseline_model && calls ? "vs every call on " + qs.baseline_model + " · " + int(qs.counted || 0) + " of " + plural(calls, "call") : null);
-  const tax = ov.router_tax || {};
-  const adm = tax.admission_ms || {};
-  big("Router tax",
-    adm.n ? add(el("span"), ms(adm.p50), el("span", "bigu", "at admission")) : gap("no admission timed"),
-    absent(tax.amortized_ms_per_request) ? (tax.execution_requests ? gap("per call not recorded") : null)
-      : ms(tax.amortized_ms_per_request) + " per call across " + plural(tax.execution_requests, "call"));
-  const cf = (ov.quality || {}).corrective_followup || {};
-  big("Clean turns",
-    cf.denominator ? pct(1 - cf.rate) : gap("no turn assessed"),
-    cf.denominator ? int(cf.denominator - cf.numerator) + " of " + plural(cf.denominator, "planned turn") : null);
-  const cache = eff.cache || {};
-  const usage = eff.usage_reported || {};
-  const reported = usage.executions ? int(usage.reported || 0) + " of " + plural(usage.executions, "call") + " reported" : null;
-  big("Cache hit",
-    absent(cache.rate) ? gap("not reported") : pct(cache.rate),
-    absent(cache.input_tokens) ? reported
-      : ovTokens(cache.cached_tokens || 0) + " of " + ovTokens(cache.input_tokens) + " input tokens" + (reported ? " · " + reported : ""));
-  return strip;
+// The pairs the window admitted and called, joined by model and effort:
+// most admissions first, then most calls.
+function ovModelRows(ov) {
+  const choices = ((ov.decisions || {}).choices) || [];
+  const pairs = ((ov.upstream || {}).pairs) || [];
+  const key = (m, e) => (m || "") + "|" + (e || "");
+  const rows = new Map();
+  for (const c of choices) rows.set(key(c.model, c.effort), {model: c.model, effort: c.effort, adm: c.n || 0, up: null});
+  for (const p of pairs) {
+    const k = key(p.model, p.effort);
+    const row = rows.get(k) || {model: p.model, effort: p.effort, adm: null, up: null};
+    row.up = p;
+    rows.set(k, row);
+  }
+  // A pair missing from a list that stopped at its cap is unknown there, not zero.
+  const choicesFull = choices.length >= OV_TOP;
+  const pairsFull = pairs.length >= OV_TOP;
+  for (const row of rows.values()) {
+    if (row.adm === null && !choicesFull) row.adm = 0;
+    row.calls = row.up ? row.up.n || 0 : pairsFull ? null : 0;
+  }
+  return [...rows.values()].sort((a, b) => (b.adm || 0) - (a.adm || 0) || (b.calls || 0) - (a.calls || 0));
 }
 
-// --- 3. tasks beside latency ---------------------------------------------------------
-
-function ovPair(model, effort) {
-  const node = el("span", "pair");
-  const [prov, name] = splitModel(model);
-  add(node, prov ? el("span", "faint", prov) : null, model ? name : gap("model"), el("span", "eff", effort ? " · " + effort : " · no effort"));
-  return node;
+function ovByModel(ov) {
+  const d = ov.decisions || {};
+  const ex = ov.executions || {};
+  const admissions = d.admissions || 0;
+  const box = band("By model", plural(admissions, "admission") + " · " + plural(ex.rows || 0, "call"), "bymodel");
+  const rows = ovModelRows(ov);
+  const hasTps = rows.some((r) => r.up && r.up.tps && r.up.tps.n);
+  const table = el("div", "tbl models" + (hasTps ? " tps" : ""));
+  const head = el("div", "tr th");
+  add(head, el("span", null, "Model · effort"), el("span", null, "Admissions"), el("span", "num", "Calls"),
+    add(el("span", "num"), "First byte p50", el("span", "p95", "p95")), hasTps ? el("span", "num", "tok/s") : null);
+  table.append(head);
+  if (!rows.length) table.append(el("p", "empty", "No admission or call in this window"));
+  for (const r of rows) {
+    const tr = el("div", "tr");
+    const share = el("span", "share");
+    if (r.adm === null) share.append(gap("Outside the " + OV_TOP + " most admitted pairs"));
+    else {
+      const bar = el("i");
+      bar.style.setProperty("--w", (admissions ? r.adm / admissions * 100 : 0) + "%");
+      add(share, bar, r.adm ? int(r.adm) : el("span", "t3", "0"));
+    }
+    const calls = r.calls === null ? gap("Outside the " + OV_TOP + " most called pairs")
+      : el("span", r.calls < OV_FEW_CALLS ? "t3" : null, int(r.calls));
+    if (r.calls !== null && r.calls < OV_FEW_CALLS && r.calls > 0) calls.title = "Fewer than " + OV_FEW_CALLS + " calls: the p50 is a hint";
+    add(tr, modelNode(r.model, r.effort), share, add(el("span", "num"), calls), ovFirstByte(r), hasTps ? ovTps(r) : null);
+    table.append(tr);
+  }
+  box.append(table);
+  const heat = ovHeatmap(ov);
+  if (heat) box.append(heat);
+  return box;
 }
 
-function matrixPanel(ov) {
+function ovFirstByte(r) {
+  const cell = el("span", "num");
+  const fb = r.up && r.up.first_byte_ms;
+  if (fb && fb.n) {
+    add(cell, ms(fb.p50), absent(fb.p95) ? null : el("span", "p95", ms(fb.p95)));
+    if (fb.n < r.calls) add(cell, " ", gap("First byte recorded on " + int(fb.n) + " of " + plural(r.calls, "call")));
+  } else cell.append(gap(r.calls ? "No call recorded a first byte" : "No call in this window"));
+  return cell;
+}
+
+function ovTps(r) {
+  const t = r.up && r.up.tps;
+  const cell = el("span", "num");
+  if (t && t.n) {
+    cell.append(num1(t.p50));
+    if (t.n < r.calls) add(cell, " ", gap("Reported on " + int(t.n) + " of " + plural(r.calls, "call")));
+  } else cell.append(gap(r.calls ? "The upstream did not report output tokens" : "No call in this window"));
+  return cell;
+}
+
+// Admissions by task, folded under the table: one hue, counts in the cells,
+// a corrective rate only where a planned turn was assessed.
+function ovHeatmap(ov) {
   const m = ov.matrix || {};
   const pairs = Array.isArray(m.pairs) ? m.pairs : [];
   const cells = Array.isArray(m.cells) ? m.cells : [];
-  const admissions = cells.reduce((sum, c) => sum + (c.n || 0), 0);
-  const box = panel("Admissions by " + (m.question ? human(m.question) : "task"), admissions ? plural(admissions, "admission") : null, "mxp");
+  const more = el("details", "more");
+  more.open = ovTasksOpen;
+  more.addEventListener("toggle", () => { ovTasksOpen = more.open; });
+  more.append(el("summary", null, "Admissions by " + (m.question ? human(m.question) : "task")));
   if (!pairs.length || !cells.length) {
-    box.append(el("p", "empty", "No admission in this window"));
-    return box;
+    more.append(el("p", "empty", "No admission in this window"));
+    return more;
   }
   const key = (task, model, effort) => [task, model, effort].join("|");
   const at = new Map(cells.map((c) => [key(c.task, c.model, c.effort), c]));
   const order = (Array.isArray(m.tasks) ? m.tasks : []).filter((t) => cells.some((c) => c.task === t));
   if (cells.some((c) => absent(c.task))) order.push(null);
   const max = Math.max(1, ...cells.map((c) => c.n || 0));
-  const scroll = el("div", "mxs");
-  const grid = el("div", "mx");
-  grid.style.gridTemplateColumns = "minmax(9.5rem, 1.1fr) repeat(" + pairs.length + ", minmax(4.6rem, 1fr))";
-  grid.append(el("span", "mxh"));
+  const scroll = el("div", "heatscroll");
+  const grid = el("div", "heat");
+  grid.style.gridTemplateColumns = "minmax(8rem, 150px) repeat(" + pairs.length + ", minmax(4.5rem, 1fr))";
+  grid.append(el("span"));
   for (const p of pairs) {
-    const h = el("span", "mxh mxc");
     const [, name] = splitModel(p.model);
-    add(h, el("span", "mono", name || "?"), el("span", "eff", p.effort || "no effort"));
-    h.title = (p.model || "") + " · " + (p.effort || "no effort");
+    const h = el("span", "ov-hh mono", (name || "?") + " · " + (p.effort || "no effort"));
+    h.title = (p.model || "model not recorded") + " · " + (p.effort || "no effort");
     grid.append(h);
   }
   for (const task of order) {
-    grid.append(add(el("span", "mxt"), task === null ? gap("not recorded") : human(task)));
+    grid.append(task === null ? add(el("span", "ov-ht"), gap("Jev's task answer was not recorded"), " not recorded") : el("span", "ov-ht", human(task)));
     for (const p of pairs) {
       const c = at.get(key(task, p.model, p.effort));
-      const cell = el("span", "mxv");
+      const cell = el("div", "c");
       if (c && c.n) {
-        cell.style.backgroundColor = "rgba(123, 224, 195, " + (0.1 + 0.55 * c.n / max).toFixed(3) + ")";
-        cell.append(el("span", "mxn mono", int(c.n)));
+        cell.classList.add("on");
+        cell.style.setProperty("--a", (12 + 38 * c.n / max).toFixed(1) + "%");
+        cell.append(el("span", null, int(c.n)));
         const cr = c.corrective || {};
-        if (cr.denominator) cell.append(el("span", "mxr" + (cr.numerator ? " hot" : ""), pct(cr.rate) + " corrective"));
+        if (cr.denominator) cell.append(el("small", cr.numerator ? "hot" : null, pct(cr.rate) + " corrective"));
+        cell.title = (task === null ? "task not recorded" : human(task)) + " · " + (p.model || "?") + " · " + (p.effort || "no effort") + " · " + plural(c.n, "admission")
+          + (cr.denominator ? " · " + int(cr.numerator) + " of " + int(cr.denominator) + " planned turns corrective" : "");
       }
       grid.append(cell);
     }
   }
   scroll.append(grid);
-  scroll.addEventListener("scroll", () => mxEdge(scroll), {passive: true});
-  requestAnimationFrame(() => mxEdge(scroll));
-  box.append(scroll);
-  return box;
+  more.append(scroll);
+  return more;
 }
 
-// A grid wider than its panel fades at the right edge until scrolled to the end.
-function mxEdge(scroll) {
-  scroll.classList.toggle("more", scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 2);
-}
-window.addEventListener("resize", () => { for (const s of document.querySelectorAll(".mxs")) mxEdge(s); });
+// --- 5. legacy alias traffic ------------------------------------------------------------
 
-// A p50 with its own count: fewer recorded than ran is a gap beside it.
-function ovP50(p, rows, format) {
-  const cell = el("span", "num mono");
-  if (p && p.n) {
-    add(cell, format(p.p50));
-    if (rows && p.n < rows) add(cell, " ", gap(int(p.n) + " of " + int(rows)));
-  } else add(cell, rows ? gap() : el("span", "none", "–"));
-  return cell;
-}
-
-// Fewer calls than this and a p50 is a hint, not a measurement: its count is muted.
-const FEW_CALLS = 5;
-
-// The slowest first byte first; a pair with no first byte recorded last.
-function byFirstByte(a, b) {
-  const x = a.first_byte_ms && a.first_byte_ms.n ? a.first_byte_ms.p50 : null;
-  const y = b.first_byte_ms && b.first_byte_ms.n ? b.first_byte_ms.p50 : null;
-  if (absent(x) || absent(y)) return absent(x) ? (absent(y) ? 0 : 1) : -1;
-  return y - x;
-}
-
-function latencyPanel(ov) {
-  const pairs = (((ov.upstream || {}).pairs) || []).slice().sort(byFirstByte);
-  const box = panel("Latency", null);
-  const table = el("div", "lt");
-  const head = el("div", "ltr lth");
-  add(head, el("span", null, "Model · effort"), el("span", "num", "Calls"),
-    add(el("span", "num"), "First byte", el("span", "p95", "p50 · p95")), el("span", "num", "tok/s"));
-  table.append(head);
-  if (!pairs.length) table.append(el("p", "empty", "No calls in this window"));
-  for (const p of pairs) {
-    const row = el("div", "ltr");
-    const fb = ovP50(p.first_byte_ms, p.n, ms);
-    if (p.first_byte_ms && p.first_byte_ms.n && !absent(p.first_byte_ms.p95)) {
-      fb.insertBefore(el("span", "p95", ms(p.first_byte_ms.p95)), fb.childNodes[1] || null);
-    }
-    add(row, ovPair(p.model, p.effort), el("span", "num mono" + ((p.n || 0) < FEW_CALLS ? " few" : ""), int(p.n || 0)),
-      fb, ovP50(p.tps, p.n, (v) => num1(v)));
-    table.append(row);
-  }
-  box.append(table);
-  return box;
-}
-
-// --- 4. requests over time, reliability ------------------------------------------------
-
-function bucketLabel(t, step) {
-  if (step >= 86400) return shortDay(t);
-  if (step >= 21600) return DAYS[new Date(t * 1000).getDay()] + " " + clock(t).slice(0, 5);
-  return clock(t).slice(0, 5);
-}
-
-function seriesPanel(ov, within) {
-  const series = Array.isArray(ov.series) ? ov.series : [];
-  const step = ov.bucket_seconds || 3600;
-  const box = panel("Requests", "per " + windowSpan(step / 60), "wide");
-  const maxReq = Math.max(1, ...series.map((b) => b.requests || 0));
-  const maxMs = Math.max(1, ...series.map((b) => b.first_byte_p50_ms || 0));
-  const reqRow = el("div", "sbars");
-  const msRow = el("div", "sbars ms");
-  series.forEach((b, i) => {
-    const when = bucketLabel(b.t, step);
-    const col = el("div", "sb");
-    col.title = when + " · " + plural(b.requests, "request") + (b.problems ? " · " + plural(b.problems, "problem") : "");
-    const good = el("i");
-    good.style.height = ((b.requests - b.problems) / maxReq * 100) + "%";
-    const bad = el("i", "bad");
-    bad.style.height = (b.problems / maxReq * 100) + "%";
-    good.style.animationDelay = bad.style.animationDelay = Math.min(400, i * 10) + "ms";
-    add(col, good, bad);
-    reqRow.append(col);
-    const m = el("div", "sb");
-    const bar = el("i");
-    if (!absent(b.first_byte_p50_ms)) {
-      bar.style.height = Math.max(2, b.first_byte_p50_ms / maxMs * 100) + "%";
-      m.title = when + " · first byte p50 " + ms(b.first_byte_p50_ms);
-    } else if (b.requests > 0) {
-      // Requests ran and no first byte was recorded: a gap, not a zero.
-      bar.className = "gapbar";
-      m.title = when + " · first byte not recorded";
-    }
-    bar.style.animationDelay = Math.min(400, i * 10) + "ms";
-    m.append(bar);
-    msRow.append(m);
-  });
-  const axis = el("div", "saxis");
-  if (series.length) {
-    add(axis, el("span", null, bucketLabel(series[0].t, step)), el("span", null, bucketLabel(series[Math.floor(series.length / 2)].t, step)), el("span", null, bucketLabel(series[series.length - 1].t, step)));
-  }
-  const chart = el("div", "schart");
-  add(chart,
-    add(el("div", "sl"), el("span", "mono faint", int(maxReq)), el("span", null, "Calls")), reqRow,
-    add(el("div", "sl"), el("span", "mono faint", maxMs > 1 ? ms(maxMs) : "–"), el("span", null, "First byte")), msRow,
-    el("div"), axis);
-  box.append(chart, reliabilityLine(ov, within));
-  return box;
-}
-
-function reliabilityLine(ov, within) {
-  const line = el("div", "rel");
-  const fact = (label, value, hash, warn) => {
-    const node = hash ? link("rf" + (warn ? " warn" : ""), null, hash) : el("span", "rf" + (warn ? " warn" : ""));
-    add(node, el("span", "kl", label), add(el("span", "mono"), value));
-    line.append(node);
-  };
-  const ex = ov.executions || {};
-  const st = ex.by_status || {};
-  fact("Calls", int(ex.total || 0) + (absent(ex.completion_rate) ? "" : " · " + pct(ex.completion_rate) + " done"), null, false);
-  for (const [key, label] of [["unknown", "Unknown"], ["rejected", "Rejected"], ["stream_failed", "Stream failed"]]) {
-    if (st[key]) fact(label, int(st[key]), within({problem: key}), true);
-  }
-  const rel = ov.reliability || {};
-  const rate = (r) => (r && r.denominator ? int(r.numerator) + " of " + int(r.denominator) : "0");
-  fact("Fallback", rate(rel.fallback), rel.fallback && rel.fallback.numerator ? within({problem: "fallback"}) : null, !!(rel.fallback && rel.fallback.numerator));
-  fact("Low confidence", rate(rel.low_confidence), rel.low_confidence && rel.low_confidence.numerator ? within({problem: "low_confidence"}) : null, false);
-  const breakers = rel.breakers;
-  const br = el("span", "rf");
-  br.append(el("span", "kl", "Breakers"));
-  if (!breakers || typeof breakers !== "object") br.append(gap());
-  else {
-    const names = Object.entries(breakers);
-    const open = names.filter(([, b]) => b && b.state !== "closed");
-    if (!names.length) br.append(el("span", "faint", "none"));
-    else if (!open.length) br.append(el("span", "ok", "closed"));
-    for (const [name, b] of open) br.append(el("span", "gap mono", name + " " + human(b.state || "?") + (absent(b.retry_in_seconds) ? "" : " · " + Math.ceil(b.retry_in_seconds) + " s")));
-  }
-  line.append(br);
-  return line;
-}
-
-function legacyPanel(l) {
-  const box = panel("Legacy alias traffic", null, "wide legacy");
-  const row = el("div", "lrow");
-  const cell = (label, value) => row.append(add(el("div", "lc"), el("span", "kl", label), add(el("span", "lval"), value)));
-  const pp = (p) => (p && p.n ? ms(p.p50) + " · " + ms(p.p95) : gap());
+function ovLegacy(l) {
+  const box = band("Legacy alias traffic", "aliases without strict sessions, counted apart", "legacy");
+  const row = el("div", "ov-lrow");
+  const cell = (label, value) => row.append(add(el("div", "ov-lc"), el("span", "t3 s12", label), add(el("span", "ov-lv"), value)));
+  const pp = (p) => (p && p.n ? ms(p.p50) + " · " + ms(p.p95) : gap("Not recorded on any legacy row"));
   cell("Decisions", int(l.decisions));
   cell("Pinned", int(l.pinned || 0));
   cell("Fallback", int(l.fallback || 0));
