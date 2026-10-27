@@ -1,0 +1,458 @@
+{
+  "schema_version": "1",
+  "script": "evals/qualify_effort.py",
+  "kind": "live",
+  "written_at": "2026-10-27T04:37:39+00:00",
+  "repo_sha": "68384e245d5ba4ca8caede65afc5c7f05827c3a1-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "gpt-6-astra-responses": {
+      "upstream_id": "gpt-6-astra",
+      "provider": "openai",
+      "protocol": "openai-responses",
+      "context_window": 400000,
+      "max_output_tokens": 16384,
+      "compatibility_revision": "responses-astra-cliproxyapi-v1",
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "effort_control": {
+        "between_turn": "native_configuration_update",
+        "qualification": "verified",
+        "cache_behavior": "unverified",
+        "qualification_ref": "/Users/hy/Developer/jev-router/docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
+      }
+    }
+  },
+  "cases": {},
+  "seeds": {},
+  "repeats": 1,
+  "cache": {},
+  "caps": {
+    "max_calls": 60,
+    "max_seconds": 1500.0
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {},
+  "exclusions": [],
+  "unfinished": [],
+  "checks": [
+    {
+      "id": "Q01",
+      "what": "the base effort is accepted with no update item",
+      "calls": 1,
+      "result": "pass",
+      "note": "HTTP 200, terminal `response.completed`, reported effort `low`"
+    },
+    {
+      "id": "Q02",
+      "what": "an update immediately before the new user message is accepted",
+      "calls": 2,
+      "result": "pass",
+      "note": "update: HTTP 200 `response.completed`; control with an invented item type: HTTP 400 {\"code\": \"invalid_value\", \"message\": \"Invalid value: 'no_such_item_type'. Supported values are: 'additional_tools', 'agent_message', 'apply_patch_call', 'apply_"
+    },
+    {
+      "id": "Q03",
+      "what": "the reply reports the base effort and the ledger is not overwritten",
+      "calls": 2,
+      "result": "pass",
+      "note": "plan low -> high; the reply reported `low`; ledger base `low`, confirmed `high`, effective `high`"
+    },
+    {
+      "id": "Q04",
+      "what": "a full-history replay carrying every previous update is accepted",
+      "calls": 3,
+      "result": "pass",
+      "note": "turns: HTTP 200/200/200; the update replayed at index [2] on turn 3"
+    },
+    {
+      "id": "Q05",
+      "what": "a previous_response_id chain referencing the accepted parent works",
+      "calls": 2,
+      "result": "pass",
+      "note": "`store: true` parent HTTP 200; chained child HTTP 200 "
+    },
+    {
+      "id": "Q06",
+      "what": "resending a persisted update, or adding an adjacent one, is refused",
+      "calls": 4,
+      "result": "fail",
+      "note": "adjacent updates: HTTP 200 ; resending the persisted update in the chain: HTTP 200 ; through the router: an update no plan gave: HTTP 409 EFFORT_HISTORY_MISMATCH; a second copy beside a recorded update: HTTP 409 EFFORT_HISTORY_MISMATCH"
+    },
+    {
+      "id": "Q07",
+      "what": "the change is observable: more reasoning work at the higher rung",
+      "calls": 36,
+      "result": "pass",
+      "note": "update minus base: +5.4 reasoning tokens [+0.2, +10.6], n=12 pairs; update minus request-level high: -2.2 [-9.8, +3.3]"
+    },
+    {
+      "id": "Q08",
+      "what": "a tool continuation keeps the effective effort with no new item",
+      "calls": 2,
+      "result": "pass",
+      "note": "continuation HTTP 200; plans 3 -> 3; effective effort `high`; the two requests logged under ['turn-0003', 'turn-0003']"
+    },
+    {
+      "id": "Q09",
+      "what": "truncation 'auto' and automatic context management are refused",
+      "calls": 2,
+      "result": "pass",
+      "note": "`truncation`: HTTP 422 UNSUPPORTED_PROFILE; `context_management`: HTTP 422 UNSUPPORTED_PROFILE. The standalone compaction endpoint is forwarded as maintenance since the owner decision of 2026-09-19 and is not refused"
+    },
+    {
+      "id": "Q10",
+      "what": "the terminal status and usage, including cached tokens, are readable",
+      "calls": 0,
+      "result": "pass",
+      "note": "47 of 47 streamed replies carried a terminal status with reasoning and cached token counts"
+    }
+  ],
+  "run": {
+    "upstream": "http://100.82.7.89:8317",
+    "router": "http://127.0.0.1:18330",
+    "q07": [
+      {
+        "rep": 0,
+        "puzzle": 0,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 28,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 0,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 37,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 0,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 41,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 1,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 31,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 1,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 31,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 1,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 30,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 2,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 50,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 2,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 58,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 2,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 56,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 3,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 52,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 3,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 65,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 0,
+        "puzzle": 3,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 60,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 0,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 35,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 0,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 31,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 0,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 30,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 1,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 65,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 1,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 29,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 1,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 28,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 2,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 37,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 2,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 47,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 2,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 54,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 3,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 70,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 3,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 59,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 1,
+        "puzzle": 3,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 47,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 0,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 36,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 0,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 25,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 0,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 40,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 1,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 30,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 1,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 33,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 1,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 29,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 2,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 41,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 2,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 47,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 2,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 56,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 3,
+        "arm": "request_high",
+        "status": 200,
+        "reasoning_tokens": 67,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 3,
+        "arm": "base",
+        "status": 200,
+        "reasoning_tokens": 56,
+        "cached_tokens": 0
+      },
+      {
+        "rep": 2,
+        "puzzle": 3,
+        "arm": "update",
+        "status": 200,
+        "reasoning_tokens": 60,
+        "cached_tokens": 0
+      }
+    ],
+    "q10": [],
+    "chain_child": "resp_0e2695b10a723136016ae02a01bbbc87d0a58b15b9e7aceaf8",
+    "q07_seed": 20261026,
+    "q07_update_minus_base": {
+      "n": 12,
+      "mean": 5.416666666666667,
+      "lo": 0.16666666666666666,
+      "hi": 10.583333333333334
+    },
+    "q07_update_minus_request_high": {
+      "n": 12,
+      "mean": -2.25,
+      "lo": -9.833333333333334,
+      "hi": 3.3333333333333335
+    },
+    "adapter": [
+      "[adapter] conv=qualify- resolved session=session-7a12d900f1a14712d57d203c model=gpt-6-astra base=low adaptation=active",
+      "[adapter] conv=qualify- turn=turn-0001 action=keep base=low effective=low plan=a0efe53c9487 req=adapter-0001-0000-fe48eb52 items=1 updates=0",
+      "[adapter] conv=qualify- turn=turn-0001 status=completed response=resp_0118b698c825a3a2016ae02a81573087d0811ec463ea0dabf4 reasoning_tokens=0 input_tokens=329 cached_input_tokens=0 output_tokens=5 ms=1680",
+      "[adapter] conv=qualify- turn=turn-0002 action=change_effort base=low effective=high plan=2c3bbcdb74b4 req=adapter-0002-0001-6c6bcabb items=4 updates=0",
+      "[adapter] conv=qualify- turn=turn-0002 status=completed response=resp_0bd43bfddf48e1e1016ae02a8323c487d0b98d28bc0df04c50 reasoning_tokens=87 input_tokens=373 cached_input_tokens=0 output_tokens=424 ms=12501",
+      "[adapter] conv=qualify- turn=turn-0003 action=keep base=low effective=high plan=740ffe79ff6c req=adapter-0003-0002-d5bc3afb items=6 updates=1",
+      "[adapter] conv=qualify- turn=turn-0003 status=completed response=resp_0f7dacfd0b953bea016ae02a8fd31887d094f88567c5d1001a reasoning_tokens=0 input_tokens=767 cached_input_tokens=0 output_tokens=17 ms=1569",
+      "[adapter] conv=qualify- turn=turn-0003 action=continuation base=low effective=high plan=- req=adapter-0003-0003-a66c29dd items=8 updates=1",
+      "[adapter] conv=qualify- turn=turn-0003 status=completed response=resp_031588a148942010016ae02a9179c087d09a2bb12217632f72 reasoning_tokens=0 input_tokens=795 cached_input_tokens=0 output_tokens=5 ms=2461",
+      "[adapter] conv=qualify- turn=turn-0004 action=change_effort base=low effective=medium plan=d7360fb58c3c req=adapter-0004-0004-64e4d82b items=10 updates=1",
+      "[adapter] conv=qualify- turn=turn-0004 refused status=422",
+      "[adapter] conv=qualify- turn=turn-0004 action=change_effort base=low effective=medium plan=d7360fb58c3c req=adapter-0004-0005-096892b9 items=10 updates=1",
+      "[adapter] conv=qualify- turn=turn-0004 refused status=422"
+    ],
+    "router_session": "session-7a12d900f1a14712d57d203c",
+    "q06_router": [
+      [
+        "an update no plan gave",
+        409,
+        "EFFORT_HISTORY_MISMATCH"
+      ],
+      [
+        "a second copy beside a recorded update",
+        409,
+        "EFFORT_HISTORY_MISMATCH"
+      ]
+    ],
+    "q06_router_refuses": true,
+    "calls": 54,
+    "verdict": "not verified",
+    "seconds": 160.1992609500885
+  }
+}
