@@ -1,0 +1,25 @@
+{
+  "repo_at_capture": "4b7c5984174709e1646f956ac269383a74e78d07",
+  "sha256": {
+    "evals/admission.py": "f4cd3827d9dc0498118766b06377979b8df9b9cc6129e823d0876b54bcf92e88",
+    "evals/admission.yaml": "2270dafff263abdad33f5c9c012e8e85d541f2e6cf06a69e75e02e90b59de31f",
+    "evals/common.py": "eef78478448906fdc3b9dd59e5b2cdce7edb74dfc6cf8490eee126b593caa9da",
+    "evals/checks.py": "091f1bc2c928718ad8e634ce5cf175b717a393a8e72264000c4d51eb9a1da6c5",
+    "evals/outcome_specs.yaml": "b3ce702a264269723aeb4577b0c5093f79fcc64ac8f21b1271a0449a36392801",
+    "evals/run_sessions.py": "7012152770b4e70e14e0989eef6889870652fba5928ef0e6f8ff909e256d5953",
+    "evals/session_client.py": "fe06101da71f60493b875724df03b513be5d5f9f61897dfff0f4e0a2950b16bd",
+    "router.yaml": "70aeaf25974c794bef6504a10023221b6a0dd4f48722e24f40870d1a197fbbe8"
+  },
+  "note": "Working tree changed concurrently during the run; classifier wording and production config were not edited by this evaluation.",
+  "final_sha256": {
+    "evals/admission.py": "9d3df422cf291cf489cad1e2b29767e514f5479df6828f9c7c2f059dac5277be",
+    "evals/admission.yaml": "2270dafff263abdad33f5c9c012e8e85d541f2e6cf06a69e75e02e90b59de31f",
+    "evals/common.py": "71c29d9bf3350aa921650781886b71f994a1d698feb704d602c68ce86566680c",
+    "evals/checks.py": "091f1bc2c928718ad8e634ce5cf175b717a393a8e72264000c4d51eb9a1da6c5",
+    "evals/outcome_specs.yaml": "b3ce702a264269723aeb4577b0c5093f79fcc64ac8f21b1271a0449a36392801",
+    "evals/run_sessions.py": "7012152770b4e70e14e0989eef6889870652fba5928ef0e6f8ff909e256d5953",
+    "evals/session_client.py": "fe06101da71f60493b875724df03b513be5d5f9f61897dfff0f4e0a2950b16bd",
+    "router.yaml": "e3f6539d8ec39643caf0bdd56bfa754c07d908008490dea5befa6a91323fe50b"
+  },
+  "final_repo_base": "7281ea525fd012dcb57a3170262310a3e4a3641f"
+}

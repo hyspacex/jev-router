@@ -1,0 +1,166 @@
+{
+  "wire_attempts": 5,
+  "approved_total_cap": 600,
+  "probes": [
+    {
+      "model_requested": "ollama/deepseek-v4.1-flash:1017(low)",
+      "max_tokens": 8000,
+      "purpose": "transport/effort preflight, not quality evidence",
+      "status": 200,
+      "model_returned": "deepseek-v4.1-flash:1017",
+      "content": "437",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 21,
+        "total_tokens": 39,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": null,
+      "reasoning_chars": 0,
+      "response_keys": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "system_fingerprint",
+        "choices",
+        "usage"
+      ],
+      "seconds": 0.912
+    },
+    {
+      "model_requested": "ollama/deepseek-v4.1-flash:1017(max)",
+      "max_tokens": 8000,
+      "purpose": "transport/effort preflight, not quality evidence",
+      "status": 200,
+      "model_returned": "deepseek-v4.1-flash:1017",
+      "content": "437",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 20,
+        "total_tokens": 38,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "reasoning": null,
+      "reasoning_chars": 0,
+      "response_keys": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "system_fingerprint",
+        "choices",
+        "usage"
+      ],
+      "seconds": 0.717
+    },
+    {
+      "model_requested": "gpt-6.1-sol(low)",
+      "max_tokens": 8000,
+      "purpose": "transport/effort preflight, not quality evidence",
+      "status": 200,
+      "model_returned": "gpt-6.1-sol",
+      "content": "437",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 5,
+        "total_tokens": 321,
+        "prompt_tokens": 316,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_creation_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "reasoning": null,
+      "reasoning_chars": 0,
+      "response_keys": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices",
+        "service_tier",
+        "usage"
+      ],
+      "seconds": 2.655
+    },
+    {
+      "model_requested": "gpt-6.1-sol(high)",
+      "max_tokens": 8000,
+      "purpose": "transport/effort preflight, not quality evidence",
+      "status": 200,
+      "model_returned": "gpt-6.1-sol",
+      "content": "437",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 17,
+        "total_tokens": 333,
+        "prompt_tokens": 316,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_creation_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 10
+        }
+      },
+      "reasoning": null,
+      "reasoning_chars": 0,
+      "response_keys": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices",
+        "service_tier",
+        "usage"
+      ],
+      "seconds": 3.358
+    },
+    {
+      "model_requested": "gpt-6.1-sol(xhigh)",
+      "max_tokens": 8000,
+      "purpose": "transport/effort preflight, not quality evidence",
+      "status": 200,
+      "model_returned": "gpt-6.1-sol",
+      "content": "437",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 25,
+        "total_tokens": 341,
+        "prompt_tokens": 316,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_creation_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 18
+        }
+      },
+      "reasoning": null,
+      "reasoning_chars": 0,
+      "response_keys": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices",
+        "service_tier",
+        "usage"
+      ],
+      "seconds": 4.946
+    }
+  ]
+}

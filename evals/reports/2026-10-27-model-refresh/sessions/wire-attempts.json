@@ -1,0 +1,977 @@
+[
+  {
+    "attempt": 1,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 2,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 3,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 4,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 5,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 6,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 7,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 8,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 9,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 10,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 11,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 12,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 13,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 14,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 15,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 16,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 17,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 18,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 19,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 20,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 21,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 22,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 23,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 24,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 25,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 26,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 27,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 28,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 29,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 30,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 31,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 32,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 33,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 34,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 35,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 36,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 37,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 38,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 39,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 40,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 41,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 42,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 43,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 44,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 45,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 46,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 47,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 48,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 49,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 50,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 51,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 52,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 53,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 54,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 55,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 56,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 57,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 58,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 59,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 60,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 61,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 62,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 63,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 64,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 65,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 66,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 67,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 68,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 69,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 70,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 71,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 72,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 73,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 74,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 75,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 76,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 77,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 78,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 79,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 80,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 81,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 82,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 83,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 84,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 85,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 86,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 87,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 88,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 89,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 90,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 91,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 92,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 93,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 94,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 95,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 96,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 97,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 98,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 99,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 100,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 101,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 102,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 103,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 104,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 105,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 106,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 107,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 108,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 109,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 110,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 111,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 112,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 113,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 114,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 115,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 116,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 117,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 118,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 119,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 120,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 121,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 122,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 123,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 124,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 125,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 126,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 127,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 128,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 129,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 130,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 131,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 132,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 133,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 134,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 135,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 136,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 137,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 138,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 139,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 140,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 141,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 142,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 143,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 144,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 145,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 146,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 147,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 148,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 149,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 150,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 151,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 152,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 153,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 154,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 155,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 156,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 157,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 158,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 159,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 160,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 161,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 162,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 163,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 164,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 165,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 166,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 167,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 168,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 169,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 170,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 171,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 172,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 173,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 174,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 175,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 176,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 177,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 178,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 179,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 180,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 181,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 182,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 183,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 184,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 185,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 186,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 187,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 188,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 189,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 190,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 191,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 192,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 193,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 194,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  },
+  {
+    "attempt": 195,
+    "model": "ollama/glm-5.3(high)",
+    "status": 200
+  }
+]

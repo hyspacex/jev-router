@@ -1,0 +1,218 @@
+{
+  "schema_version": "1",
+  "script": "evals/run_sessions.py via fixed-arm refresh runner",
+  "kind": "live",
+  "written_at": "2026-10-27T16:25:46+00:00",
+  "repo_sha": "7281ea525fd012dcb57a3170262310a3e4a3641f-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "refresh_glm_high": {
+      "model": "ollama/glm-5.3",
+      "effort": "high",
+      "purpose": "fresh incumbent control"
+    },
+    "refresh_deepseek_max": {
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "purpose": "candidate moderate-tools replacement"
+    },
+    "refresh_sol61_low": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "purpose": "candidate moderate-tools equivalent"
+    }
+  },
+  "cases": {
+    "count": 8,
+    "by_split": {
+      "pilot": [
+        "mechanical-rename",
+        "mechanical-transform",
+        "implementation-csv",
+        "implementation-money",
+        "diagnosis-interacting",
+        "context-growth-audit",
+        "multi-turn-ladder",
+        "environment-missing"
+      ]
+    }
+  },
+  "seeds": {},
+  "repeats": 1,
+  "cache": {},
+  "caps": {
+    "approved_total": 600,
+    "text_stage_reserved": 310,
+    "preflight_calls": 5,
+    "text_calls_at_session_start": 58,
+    "session_wire_limit": 250,
+    "actual_session_wire_calls": 195,
+    "calls_per_session": 12,
+    "wall_seconds": 240,
+    "max_tokens": 4096
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "programmatic": "unchanged hidden task checks; expect_fail_before enforced"
+  },
+  "exclusions": [],
+  "unfinished": [
+    {
+      "task": "implementation-csv",
+      "family": "implementation",
+      "arm": "refresh_deepseek_max",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 37.05,
+      "tool_calls": 16,
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "turns": "0/1",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 26811,
+        "completion_tokens": 5921,
+        "total_tokens": 32732
+      }
+    },
+    {
+      "task": "implementation-money",
+      "family": "implementation",
+      "arm": "refresh_deepseek_max",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 20.01,
+      "tool_calls": 14,
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "turns": "0/1",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 21369,
+        "completion_tokens": 2293,
+        "total_tokens": 23662
+      }
+    },
+    {
+      "task": "multi-turn-ladder",
+      "family": "multi-turn",
+      "arm": "refresh_glm_high",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 19.48,
+      "tool_calls": 12,
+      "model": "ollama/glm-5.3",
+      "effort": "high",
+      "turns": "1/3",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 18314,
+        "completion_tokens": 2588,
+        "total_tokens": 20902
+      }
+    },
+    {
+      "task": "multi-turn-ladder",
+      "family": "multi-turn",
+      "arm": "refresh_deepseek_max",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 31.71,
+      "tool_calls": 17,
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "turns": "1/3",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 19326,
+        "completion_tokens": 5816,
+        "total_tokens": 25142
+      }
+    },
+    {
+      "task": "multi-turn-ladder",
+      "family": "multi-turn",
+      "arm": "refresh_sol61_low",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 66.66,
+      "tool_calls": 11,
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "turns": "1/3",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 18802,
+        "completion_tokens": 1239,
+        "total_tokens": 20041
+      }
+    },
+    {
+      "task": "environment-missing",
+      "family": "environment",
+      "arm": "refresh_deepseek_max",
+      "repeat": 0,
+      "completed": false,
+      "capped": "call cap: 12 of 12",
+      "calls": 12,
+      "wall_clock_s": 51.34,
+      "tool_calls": 23,
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "turns": "0/1",
+      "error": "",
+      "admission": {},
+      "usage": {
+        "prompt_tokens": 24140,
+        "completion_tokens": 7804,
+        "total_tokens": 31944
+      }
+    }
+  ],
+  "container_image": "sha256:f8c51ee4c21590c9bf3f230dfc0fa9ed6f7637e46bb2f3ae72cf67bcb44ddd58",
+  "isolation_test": "tests/test_eval_isolation_live.py passed",
+  "stop_reason": null,
+  "arms": {
+    "refresh_glm_high": {
+      "model": "ollama/glm-5.3",
+      "effort": "high",
+      "purpose": "fresh incumbent control"
+    },
+    "refresh_deepseek_max": {
+      "model": "ollama/deepseek-v4.1-flash:1017",
+      "effort": "max",
+      "purpose": "candidate moderate-tools replacement"
+    },
+    "refresh_sol61_low": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "purpose": "candidate moderate-tools equivalent"
+    }
+  },
+  "transport": "fixed concrete models directly through proxy; no production router bindings",
+  "validity": "contaminated pilot; hidden-test metadata leaked via pytest cache; not qualification evidence",
+  "limitations": [
+    "Preflight hidden checks leave pytest cache metadata visible to the candidate",
+    "OS/container isolation passed but hidden-check isolation did not",
+    "No new tool pair admitted; failures and successes cannot support a clean model ranking"
+  ]
+}

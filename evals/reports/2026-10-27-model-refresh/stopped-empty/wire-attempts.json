@@ -1,0 +1,527 @@
+[
+  {
+    "attempt": 1,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 2,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 3,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 4,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 5,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 6,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 7,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 8,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 9,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 10,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 11,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 12,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 13,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 14,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 15,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 16,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 17,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 18,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 19,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 20,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 21,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 22,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 23,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 24,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 25,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 26,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 27,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 28,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 29,
+    "model": "ollama/glm-5.3-flash(none)",
+    "status": 200
+  },
+  {
+    "attempt": 30,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 31,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 32,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 33,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 34,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 35,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 36,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 37,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 38,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 39,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 40,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 41,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 42,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 43,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 44,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 45,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 46,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 47,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 48,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 49,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 50,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 51,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 52,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 53,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 54,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 55,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 56,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 57,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 58,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 59,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 60,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 61,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 62,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 63,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 64,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 65,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 66,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 67,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 68,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 69,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 70,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 71,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 72,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 73,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 74,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 75,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 76,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 77,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 78,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 79,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 80,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 81,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 82,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 83,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 84,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 85,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 86,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 87,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 88,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 89,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 90,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 91,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 92,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 93,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 94,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 95,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 96,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 97,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 98,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 99,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 100,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 101,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  },
+  {
+    "attempt": 102,
+    "model": "ollama/deepseek-v4.1-flash:1017(max)",
+    "status": 200
+  },
+  {
+    "attempt": 103,
+    "model": "gpt-6.1-sol(low)",
+    "status": 200
+  },
+  {
+    "attempt": 104,
+    "model": "ollama/glm-5.3(none)",
+    "status": 200
+  },
+  {
+    "attempt": 105,
+    "model": "ollama/deepseek-v4.1-flash:1017(low)",
+    "status": 200
+  }
+]

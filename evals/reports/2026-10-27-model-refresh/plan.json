@@ -1,0 +1,24 @@
+{
+  "approved_cap": 600,
+  "allocations": {
+    "preflight": 5,
+    "text_including_judges_and_resumes": 310,
+    "sessions": 250,
+    "unused_reserve": 35
+  },
+  "concurrent_model_requests_max": 3,
+  "text_control_sampling": "one historical, one fresh per case",
+  "sessions": {
+    "repeats": 1,
+    "task_count": 8,
+    "arms": [
+      "GLM high",
+      "DeepSeek 1017 max",
+      "Sol 6.1 low"
+    ],
+    "per_session_calls": 12
+  },
+  "admission_rule": "unchanged; <=0.5 point deficit and either 30% faster or different subscription; partial steps cannot qualify",
+  "tool_qualification": "bounded pilot only; require all tasks complete, no empty/truncated replies or provider errors; never infer broad or long-context equivalence",
+  "stopped_attempt": "stopped-cross-workload/ preserves first attempt; resume uses per-step health baselines with same guard"
+}

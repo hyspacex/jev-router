@@ -50,7 +50,7 @@ def test_shipped_tool_tiers(task, difficulty, harm, tools, model, effort, rule):
         # Ollama is busy: easy and moderate work moves to OpenAI's cheap
         # models, which the admission test found as good for that work.
         ("ollama", "quick-question", .5, .1, False, False, "gpt-6-luna", "low"),
-        ("ollama", "code-edit", 1.8, .2, False, False, "gpt-6-sol", "low"),
+        ("ollama", "code-edit", 1.8, .2, False, False, "gpt-6.1-sol", "low"),
         ("ollama", "code-edit", 1.8, .2, True, False, "gpt-6-sol", "low"),
         # Nothing there sends an image to a model that misread one.
         ("ollama", "quick-question", .5, .1, False, True, "ollama/gemma4-31b", None),
@@ -79,6 +79,23 @@ def test_auto_balances_either_way_inside_measured_lanes(
     chosen = select(cfg, cfg.aliases["auto"], answers, features, {busy: 0.9})
     assert (chosen.model, chosen.effort) == (model, effort)
     assert chosen.evidence == "qualified"
+
+
+def test_refresh_does_not_promote_unqualified_pairs():
+    cfg = load_config("router.yaml")
+    assert "ollama/deepseek-v4.1-flash:1017" not in cfg.models
+    admitted = [
+        name for name, lane in cfg.quality_lanes.items()
+        if lane.allows("gpt-6.1-sol", "low")
+    ]
+    assert admitted == ["moderate-work"]
+    assert cfg.models["gpt-6.1-sol"].supports_vision is False
+    # Keep old profiles available: adding a candidate must not invalidate
+    # existing strict bindings by removing their model from the pool.
+    for alias in cfg.aliases.values():
+        assert alias.allowed_models is not None
+        assert "gpt-6-sol" in alias.allowed_models
+        assert "ollama/glm-5.3" in alias.allowed_models
 
 
 def test_the_retired_alias_routes_exactly_as_auto():

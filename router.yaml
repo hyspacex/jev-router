@@ -190,6 +190,22 @@ models:
     quota_cost: 0.2
     tags: [frontier, cloud]
     description: Stands in for glm-5.3 when Ollama is busy, and for astra high on hard work when OpenAI is. A fifth of astra's price.
+  gpt-6.1-sol:
+    upstream_id: gpt-6.1-sol
+    provider: openai
+    # Conservative operational window, not the advertised 1.05M maximum.
+    # This admission did not qualify long-context behavior.
+    context_window: 400000
+    supports_tools: true
+    supports_vision: false       # no image qualification in this refresh
+    efforts: [low]
+    default_effort: low
+    effort_style: suffix
+    quota_cost: 0.2              # $2/$10 versus Astra $10/$50, not tuned
+    tags: [mid, cloud]
+    compatibility_revision: cliproxyapi-8.0.33-2026-10-27
+    description: Qualified at low for moderate text only; tool and hard lanes require separate evidence.
+
   gpt-6-luna:
     upstream_id: gpt-6-luna
     provider: openai
@@ -240,6 +256,7 @@ routes:
     description: Moderate work without tools.
     primary: {model: ollama/glm-5.3, effort: none}
     fallbacks:
+      - {model: gpt-6.1-sol, effort: low, equivalent: true}
       - {model: gpt-6-sol, effort: low, equivalent: true}
 
   mid_tools:
@@ -318,6 +335,9 @@ quality_lanes:
       - model: ollama/glm-5.3
         effort: none
         qualification_ref: "evals/ADMISSION.md: 9.70 against the frontier model's 9.31 on 12 moderate cases"
+      - model: gpt-6.1-sol
+        effort: low
+        qualification_ref: "POOL.md: DeepSeek 1017 and Sol 6.1 (2026-10-27); refresh_mid, moderate text only"
       - model: gpt-6-sol
         effort: low
         qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step mid6, 0.24 below glm-5.3 on 12 moderate cases"
@@ -819,7 +839,7 @@ aliases:
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6-astra, grok-4.6]
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6.1-sol, gpt-6-astra, grok-4.6]
     # What admission binds when Jev is down. Without this an admission with no
     # classifier answer returns NO_SAFE_ADMISSION rather than guessing, and
     # whatever it binds here is as fixed as any other binding.
@@ -835,7 +855,7 @@ aliases:
     state_builder: continuation_aware_v1
     questions: [task, difficulty, harm_if_wrong]
     rules: policy
-    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6-astra, grok-4.6]
+    allowed_models: [ollama/glm-5.3-flash, ollama/glm-5.3, ollama/gemma4-31b, gpt-6-luna, gpt-6-sol, gpt-6.1-sol, gpt-6-astra, grok-4.6]
     admission_fallback: {route: frontier_medium}
 
 # Floors per X-Router-Client header value. Never keyed by an API key.
