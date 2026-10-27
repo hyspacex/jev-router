@@ -343,6 +343,24 @@ def _question_shape(question: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _criteria_key(key: Any) -> str:
+    # A noul's criteria are keyed by YAML booleans; JSON wants strings.
+    if key is True:
+        return "true"
+    if key is False:
+        return "false"
+    return str(key)
+
+
+def _criteria_view(criteria: Any) -> Any:
+    """A question's criteria as plain JSON: the labels or levels, as configured."""
+    if isinstance(criteria, dict):
+        return {_criteria_key(k): v for k, v in criteria.items()}
+    if isinstance(criteria, list):
+        return json.loads(json.dumps(criteria, default=str))
+    return None
+
+
 def describe_config(
     config: RouterConfig,
     counts: dict[tuple[Any, Any], int],
@@ -431,6 +449,9 @@ def describe_config(
                 **_question_shape(q),
                 # The running wording, so the Jev sandbox can start from it.
                 "instructions": q.get("instructions") if isinstance(q.get("instructions"), str) else None,
+                # The choice labels or score levels, as configured, so the
+                # sandbox can edit those too.
+                "criteria": _criteria_view(q.get("criteria")),
                 "line": node_line(root, ["questions", qid]),
             }
             for qid, q in config.questions.items()
@@ -901,14 +922,78 @@ def _overrides(config: RouterConfig, raw: Any) -> dict[str, dict[str, Any]] | st
             return f"unknown question {qid!r}"
         if not isinstance(change, dict) or set(change) - {"instructions", "criteria"}:
             return "a question override may set only instructions and criteria"
-        out[qid] = {**config.questions[qid], **change}
+        merged = {**config.questions[qid], **change}
+        if "instructions" in change and not _text(change["instructions"]):
+            return f"{qid}: instructions must be text of at most {OVERRIDE_MAX_CHARS} characters"
+        if "criteria" in change:
+            criteria = _criteria_override(config.questions[qid].get("criteria"), change["criteria"])
+            if isinstance(criteria, str):
+                return f"{qid}: {criteria}"
+            merged["criteria"] = criteria
+        out[qid] = merged
     return out
+
+
+OVERRIDE_MAX_CHARS = 8000
+
+
+def _text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and len(value) <= OVERRIDE_MAX_CHARS
+
+
+def _criteria_override(running: Any, raw: Any) -> Any:
+    """Edited criteria in the running shape, or why not.
+
+    Only the words may change. A choice keeps its labels and a score keeps
+    its number of levels, so the answers still mean what the rules read.
+    """
+    if isinstance(running, dict):
+        keys = {_criteria_key(k): k for k in running}
+        if not isinstance(raw, dict) or set(raw) != set(keys):
+            return "criteria must keep the same labels: " + ", ".join(keys)
+        if not all(_text(v) for v in raw.values()):
+            return "each label needs a description"
+        return {keys[k]: raw[k] for k in keys}
+    if isinstance(running, list):
+        if not isinstance(raw, list) or len(raw) != len(running):
+            return f"criteria must keep {len(running)} levels"
+        levels = []
+        for level in raw:
+            if _text(level):
+                levels.append(level)
+                continue
+            if not isinstance(level, dict) or set(level) - {"what", "examples"} or not _text(level.get("what")):
+                return "each level needs a `what`, and may have `examples`"
+            examples = level.get("examples")
+            if examples is not None and not (
+                isinstance(examples, list) and all(_text(e) for e in examples)
+            ):
+                return "`examples` must be a list of text"
+            levels.append(level)
+        return levels
+    return "this question has no criteria to edit"
 
 
 def _route_view(config: RouterConfig, row: dict[str, Any], answers: Any) -> dict[str, Any] | None:
     if row.get("event_type") == EVENT_EFFORT_PLAN or not isinstance(answers, dict) or not answers:
         return None
     return _route_under(config, {**row, "answers": answers, "rule": None})
+
+
+# The exceptions that mean no answer came back from Jev's host at all.
+_UNREACHABLE = ("ConnectError", "ConnectTimeout", "NetworkError", "ProxyError",
+                "UnsupportedProtocol", "RemoteProtocolError", "ReadError", "WriteError")
+
+
+def _failure_reason(error: str) -> str:
+    """A stable word for why a probe failed: unreachable, timeout, status or error."""
+    if error.startswith("jev error: ") and error.removeprefix("jev error: ") in _UNREACHABLE:
+        return "unreachable"
+    if error == "jev timed out":
+        return "timeout"
+    if error.startswith("jev returned "):
+        return "status"
+    return "error"
 
 
 async def sandbox_jev(request: Request) -> Response:
@@ -961,7 +1046,8 @@ async def sandbox_jev(request: Request) -> Response:
         features_from_facts(facts), quiet, state=state, question_ids=asked, shadow_ids=[]
     )
     if result.error:
-        return _error(f"jev call failed: {result.error}", 502, jev_ms=result.jev_ms)
+        return _error(f"jev call failed: {result.error}", 502, jev_ms=result.jev_ms,
+                      reason=_failure_reason(result.error))
     original = row.get("answers") if isinstance(row.get("answers"), dict) else {}
     return _json({
         "row": row.get("id"),
@@ -987,6 +1073,27 @@ def _count_lines(path: Path) -> int:
             return sum(1 for line in handle if line.strip())
     except OSError:
         return 0
+
+
+def _already_saved(path: Path, row_id: Any, verdict: str) -> bool:
+    """Whether this decision row is in the file with this verdict already."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    case = json.loads(line)
+                except ValueError:
+                    continue
+                expected = case.get("expected") if isinstance(case, dict) else None
+                if (
+                    case.get("row") == row_id
+                    and isinstance(expected, dict)
+                    and expected.get("verdict") == verdict
+                ):
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 def golden_case(
@@ -1061,6 +1168,10 @@ async def eval_cases(request: Request) -> Response:
         return _error("unknown session or decision", 404)
     case = golden_case(row, verdict, note, lanes["min_quality_lane"], lanes["max_quality_lane"])
     path = _private_dir(data_dir(router)) / GOLDEN_FILE
+    if _already_saved(path, row.get("id"), verdict):
+        # The same admission with the same verdict is one case, not two.
+        return _json({"saved": False, "duplicate": True, "path": str(path),
+                      "total_cases": _count_lines(path)})
     line = json.dumps(case, default=str, sort_keys=True) + "\n"
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
     try:

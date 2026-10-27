@@ -95,6 +95,9 @@ async def test_config_lists_rules_with_lines_and_hits(svc):
         assert body["questions"]["difficulty"]["max"] == 2
         # The running wording, for the Jev sandbox to start from.
         assert body["questions"]["difficulty"]["instructions"] == svc.config.questions["difficulty"]["instructions"]
+        # And the levels or labels, as configured, for the sandbox to edit.
+        assert body["questions"]["difficulty"]["criteria"] == svc.config.questions["difficulty"]["criteria"]
+        assert list(body["questions"]["task"]["criteria"]) == list(svc.config.questions["task"]["criteria"])
         for query in ("window=2h", "nope=1"):
             assert (await call(svc, "GET", "/router/config?" + query)).status_code == 400
         assert (await call(svc, "GET", "/router/config", token="wrong")).status_code == 401
@@ -363,6 +366,27 @@ async def test_sandbox_asks_jev_once_and_writes_nothing(svc):
         # The running config's wording is untouched.
         assert svc.router.config.questions["difficulty"]["instructions"] != "Probe wording."
 
+        # Criteria may be reworded, never reshaped.
+        levels = [dict(level, what=f"Level {i}.") if isinstance(level, dict) else f"Level {i}."
+                  for i, level in enumerate(svc.config.questions["difficulty"]["criteria"])]
+        labels = {k: "Edited." for k in svc.config.questions["task"]["criteria"]}
+        body = {"decision_row": row["id"], "questions": {"difficulty": {"criteria": levels},
+                                                         "task": {"criteria": labels}}}
+        response = await call(svc, "POST", "/router/sandbox/jev", body)
+        assert response.status_code == 200, response.text
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["questions"]["difficulty"]["criteria"] == levels
+        assert sent["questions"]["task"]["criteria"] == labels
+        assert sorted(response.json()["overridden"]) == ["difficulty", "task"]
+        for wrong in ({"difficulty": {"criteria": levels[:-1]}},
+                      {"difficulty": {"criteria": [{"examples": ["x"]}] * len(levels)}},
+                      {"task": {"criteria": {**labels, "invented": "x"}}},
+                      {"task": {"criteria": dict.fromkeys(labels, "")}},
+                      {"difficulty": {"instructions": ""}}):
+            refused = await call(svc, "POST", "/router/sandbox/jev", {"decision_row": row["id"], "questions": wrong})
+            assert refused.status_code == 400, wrong
+        assert svc.router.store.conn.total_changes == before
+
         bad = {"decision_row": row["id"], "questions": {"nope": {"instructions": "x"}}}
         assert (await call(svc, "POST", "/router/sandbox/jev", bad)).status_code == 400
         bad = {"decision_row": row["id"], "questions": {"difficulty": {"type": "noul"}}}
@@ -383,6 +407,29 @@ async def test_sandbox_without_a_stored_state_says_so(svc):
         assert response.status_code == 422
         assert response.json()["reason"] == "no_stored_state"
         assert route.call_count == calls
+    finally:
+        await svc.close()
+
+
+@respx.mock
+@pytest.mark.parametrize(("failure", "reason"), [
+    (httpx.ConnectError("no route to host"), "unreachable"),
+    (httpx.ReadTimeout("slow"), "timeout"),
+    (httpx.Response(503, json={"error": "busy"}), "status"),
+])
+async def test_a_failed_probe_says_why_in_one_word(svc, failure, reason):
+    try:
+        caller = await admit(svc, "session-dddd0003", task="code", difficulty=2.0)
+        row = admission(svc, caller.session_id)
+        if isinstance(failure, httpx.Response):
+            respx.post(JEV_URL).mock(return_value=failure)
+        else:
+            respx.post(JEV_URL).mock(side_effect=failure)
+        state = {"latest_user_request": "anything"}
+        response = await call(svc, "POST", "/router/sandbox/jev", {"decision_row": row["id"], "state": state})
+        assert response.status_code == 502
+        assert response.json()["reason"] == reason
+        assert response.json()["error"].startswith("jev call failed: ")
     finally:
         await svc.close()
 
@@ -415,6 +462,12 @@ async def test_eval_cases_append_beside_the_database(svc, tmp_path):
         assert first["config_hash"] == svc.config.config_hash and first["state"] is None
         assert SECRET not in path.read_text() and len(first["note"]) <= 500
         assert second["session_id"] == caller.session_id and second["note"] is None
+
+        # The same row with the same verdict is already a case: nothing is appended.
+        dup = await call(svc, "POST", "/router/eval-cases", {"session_id": caller.session_id, "verdict": "too_weak"})
+        assert dup.status_code == 200
+        assert dup.json() == {"saved": False, "duplicate": True, "path": str(path), "total_cases": 2}
+        assert len(path.read_text().splitlines()) == 2
 
         for bad in ({"session_id": caller.session_id, "verdict": "meh"},
                     {"session_id": caller.session_id, "verdict": "right", "min_quality_lane": "nope"},

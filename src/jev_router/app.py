@@ -1111,7 +1111,7 @@ class Router:
                 "quota_status": json.dumps(self.quota_status()),
                 # Turn capture. The texts are scrubbed and capped, and None
                 # with log_state off; the counts start here.
-                **self.session_texts(body, features),
+                **self.session_texts(body, features, decision.state),
                 "turn_count": 1,
                 "escalation_count": 0,
                 "corrective_count": 0,
@@ -1181,18 +1181,26 @@ class Router:
         )
         return S.contract(row, self.quota_status(), self.sessions.admission_row(req.session_id))
 
-    def session_texts(self, body: dict[str, Any], features: Features) -> dict[str, Any]:
+    def session_texts(
+        self, body: dict[str, Any], features: Features, state: Any = None
+    ) -> dict[str, Any]:
         """The title, preview and workspace a new session is shown under.
 
         All three are scrubbed and capped, and all three are None when
-        log_state is off. A pasted block is not the title: the title comes
-        from what the user typed above it.
+        log_state is off. A pasted block is neither the title nor the
+        preview: both come from the request as the state builder split it
+        (`latest_user_request`), and without one from what the user typed
+        above the paste.
         """
         prompt = features.last_user_message
+        latest = state.get("latest_user_request") if isinstance(state, dict) else None
+        if isinstance(latest, str) and latest.strip():
+            prompt = latest
+        # A builder that keeps the whole message still has its paste split off.
         typed = split_request_and_material(prompt)[0] or prompt
         return {
             "title": self.store.text(extract_session_title(typed), TITLE_MAX_CHARS),
-            "prompt_preview": self.store.text(prompt_preview(prompt), PREVIEW_MAX_CHARS),
+            "prompt_preview": self.store.text(prompt_preview(typed), PREVIEW_MAX_CHARS),
             "workspace_hint": self.store.text(
                 workspace_hint(features.system_prompt, body), WORKSPACE_MAX_CHARS
             ),
@@ -2437,14 +2445,25 @@ class Router:
         the request the person was looking at and the turn it belongs to.
         `adjust_effort` steps one rung along the bound model's efforts and
         never changes the model; see `step_session_effort` for when it may not.
+
+        A verdict alone changes nothing about the binding, so it is recorded
+        on any session the ingress credential lets the caller reach: the
+        dashboard's credential is not the client's. Only the owner may move
+        the session's effort, so `adjust_effort` keeps the owner check.
         """
         owner = self.session_owner(request)
         try:
             item = validate_session_feedback(payload)
         except FeedbackError as exc:
             raise SessionError(S.INVALID_ROUTER_INPUT, str(exc)) from None
-        row = self.sessions.get(session_id, owner)
+        row = self.sessions.get(session_id, owner if item.adjust_effort else "")
         if row is None:
+            if item.adjust_effort and self.sessions.get(session_id) is not None:
+                raise SessionError(
+                    S.SESSION_UNKNOWN,
+                    "this session belongs to another owner; only its owner may "
+                    "step its effort",
+                )
             raise SessionError(S.SESSION_UNKNOWN, "this session id is unknown")
         turn = (
             self.sessions.request_turn(session_id, item.request_id)

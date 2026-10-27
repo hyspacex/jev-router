@@ -191,23 +191,47 @@ def _corrective(evidence: Evidence, t: Any) -> bool:
     return evidence.failure_mode not in NOT_A_REASONING_PROBLEM
 
 
+def _difficulty_clause(evidence: Evidence, at: float) -> str:
+    return f"difficulty {evidence.difficulty:.2f} is at or above {at:g}"
+
+
+def _p_hard_clause(evidence: Evidence, at: float) -> str:
+    return (
+        f"{evidence.p_hard:.2f} of the difficulty mass is on the top level, "
+        f"at or above {at:g}"
+    )
+
+
+def _corrective_clause(evidence: Evidence) -> str:
+    return (
+        f"the follow-up names a defect in the earlier result "
+        f"({evidence.corrective_followup:.2f})"
+    )
+
+
+def _upward(evidence: Evidence, t: Any) -> tuple[str, str]:
+    """What argues for more effort, as (subject, clause), or two empty strings."""
+    if evidence.difficulty is not None and evidence.difficulty >= t.upgrade_difficulty:
+        return "difficulty", _difficulty_clause(evidence, t.upgrade_difficulty)
+    if evidence.p_hard is not None and evidence.p_hard >= t.upgrade_p_hard:
+        return "p_hard", _p_hard_clause(evidence, t.upgrade_p_hard)
+    if evidence.harm_if_wrong is not None and evidence.harm_if_wrong >= t.upgrade_harm:
+        return "harm", (
+            f"harm_if_wrong {evidence.harm_if_wrong:.2f} is at or above {t.upgrade_harm:g}"
+        )
+    if _corrective(evidence, t):
+        return "corrective", _corrective_clause(evidence)
+    return "", ""
+
+
 def _wants_more(evidence: Evidence, t: Any) -> str:
     """Why this turn argues for more effort, or an empty string."""
-    if evidence.difficulty is not None and evidence.difficulty >= t.upgrade_difficulty:
-        return f"difficulty {evidence.difficulty:.2f} is at or above {t.upgrade_difficulty:g}"
-    if evidence.p_hard is not None and evidence.p_hard >= t.upgrade_p_hard:
-        return (
-            f"{evidence.p_hard:.2f} of the difficulty mass is on the top level, "
-            f"at or above {t.upgrade_p_hard:g}"
-        )
-    if evidence.harm_if_wrong is not None and evidence.harm_if_wrong >= t.upgrade_harm:
-        return f"harm_if_wrong {evidence.harm_if_wrong:.2f} is at or above {t.upgrade_harm:g}"
-    if _corrective(evidence, t):
-        return (
-            f"the follow-up names a defect in the earlier result "
-            f"({evidence.corrective_followup:.2f})"
-        )
-    return ""
+    return _upward(evidence, t)[1]
+
+
+def _rung_words(name: str) -> str:
+    """A target name as a reason says it: `top` is the top rung, else the rung."""
+    return "the top rung" if name == "top" else name
 
 
 def _named_rung(rungs: Sequence[str], name: str) -> int | None:
@@ -224,7 +248,7 @@ def _named_rung(rungs: Sequence[str], name: str) -> int | None:
 
 def _target_index(
     evidence: Evidence, cfg: Any, rungs: Sequence[str], at: int, protected: bool
-) -> tuple[int, str]:
+) -> tuple[int, str, str]:
     """How far up this turn's evidence reaches, and why that far.
 
     Owner decision, 2026-09-19: an upward change goes straight to the rung the
@@ -239,43 +263,45 @@ def _target_index(
     top = len(rungs) - 1
     one_more = min(at + 1, top)
     if cfg.upward == "step":
-        return one_more, ""
+        return one_more, "", ""
 
     targets = cfg.targets
-    want, note = one_more, ""
+    want, subject, note = one_more, "", ""
 
-    def reach(index: int | None, why: str) -> None:
-        nonlocal want, note
+    def reach(index: int | None, about: str, why: str) -> None:
+        nonlocal want, subject, note
         if index is not None and index > want:
-            want, note = index, why
+            want, subject, note = index, about, why
 
     if evidence.difficulty is not None:
         for rung, entry in targets.difficulty.items():
             if evidence.difficulty >= entry:
                 reach(
                     _index(rungs, rung),
-                    f"difficulty {evidence.difficulty:.2f} is at or above the "
-                    f"{entry:g} this ladder asks for {rung}",
+                    "difficulty",
+                    f"{_difficulty_clause(evidence, entry)}, which asks for {rung}",
                 )
     if evidence.p_hard is not None and evidence.p_hard >= targets.p_hard_top:
         reach(
             top,
-            f"{evidence.p_hard:.2f} of the difficulty mass is on the top level, "
-            f"at or above {targets.p_hard_top:g}, which asks for the top rung",
+            "p_hard",
+            f"{_p_hard_clause(evidence, targets.p_hard_top)}, which asks for the top rung",
         )
     if _corrective(evidence, cfg.thresholds):
         reach(
             _named_rung(rungs, targets.corrective_rung),
-            "a follow-up naming a defect in the earlier result asks for "
-            f"{targets.corrective_rung}",
+            "corrective",
+            f"{_corrective_clause(evidence)}, which asks for "
+            f"{_rung_words(targets.corrective_rung)}",
         )
     if protected:
         reach(
             _named_rung(rungs, targets.protected_rung),
+            "protected",
             "this session was admitted by a protected rule, which asks for "
-            f"{targets.protected_rung} whenever a turn asks for more at all",
+            f"{_rung_words(targets.protected_rung)} whenever a turn asks for more at all",
         )
-    return min(want, top), note
+    return min(want, top), subject, note
 
 
 def _wants_less(evidence: Evidence, t: Any) -> str:
@@ -389,9 +415,10 @@ def plan_turn(
 
     bottom = max(_index(rungs, floor) or 0, 0) if floor in rungs else 0
 
-    up, down = _wants_more(evidence, t), _wants_less(evidence, t)
+    (subject, up), down = _upward(evidence, t), _wants_less(evidence, t)
+    reach_subject = ""
     if up:
-        want, note = _target_index(evidence, cfg, rungs, at, protected)
+        want, reach_subject, note = _target_index(evidence, cfg, rungs, at, protected)
         direction, why = "up", up
         plan.target, plan.target_reason = rungs[want], note
     elif down:
@@ -442,8 +469,12 @@ def plan_turn(
     plan.reason = f"{current} -> {rungs[want]}: {why}"
     if direction == "up" and want > at + 1 and plan.target_reason:
         # The move skipped a rung. Say which rule reached that far, so a plan
-        # that jumps two rungs never has to be reverse-engineered.
-        plan.reason += f"; {plan.target_reason}"
+        # that jumps two rungs never has to be reverse-engineered. When the
+        # same evidence argued for more and reached that far, say it once.
+        if reach_subject == subject:
+            plan.reason = f"{current} -> {rungs[want]}: {plan.target_reason}"
+        else:
+            plan.reason += f"; {plan.target_reason}"
     return plan
 
 

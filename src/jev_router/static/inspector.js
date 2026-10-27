@@ -7,10 +7,10 @@
 
 (() => {
   const VERDICT = {
-    right: {badge: "✓ right", button: "Good"},
-    too_weak: {badge: "↑ more", button: "Too weak"},
-    too_strong: {badge: "↓ less", button: "Too strong"},
-    too_slow: {badge: "slow", button: null},
+    right: {badge: "✓ good", button: "✓ good"},
+    too_weak: {badge: "↑ too weak", button: "↑ too weak"},
+    too_strong: {badge: "↓ too strong", button: "↓ too strong"},
+    too_slow: {badge: "too slow", button: null},
   };
   const STATUS_WORDS = {planned: "planned", accepted: "sent, not confirmed", confirmed: "confirmed", rejected: "rejected", outcome_unknown: "outcome unknown"};
   // A plan's thresholds, by the question each one is weighed against.
@@ -73,7 +73,7 @@
     const known = VERDICT[v];
     return el("span", "vb v-" + v, known ? known.badge : human(v));
   }
-  function label(t) { return t.kind === "admission" ? "Admission" : "Turn " + t.turn_index; }
+  function label(t) { return "Turn " + t.turn_index + (t.kind === "admission" ? " · Admission" : ""); }
   function note(text) { return el("span", "note", text); }
 
   // --- payload ---------------------------------------------------------------
@@ -169,8 +169,14 @@
         if (b.left < a.left || b.right > a.right) strip.scrollLeft += b.left - a.left - 8;
         I.scroll = strip.scrollLeft;
       }
+      edge(strip);
     }
     layoutRulers();
+  }
+
+  // The strip fades at its right edge while there are cards past it.
+  function edge(strip) {
+    strip.classList.toggle("more", strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 4);
   }
 
   // Where this session sits in the list it was opened from.
@@ -257,9 +263,10 @@
 
     const acts = el("div", "iacts");
     acts.append(feedbackButtons(verdict));
-    const save = button("ghost", I.saved ? "Saved" : "Save as eval case", saveCase);
+    const save = button("ghost", I.saved ? (I.saved.duplicate ? "Already saved" : "Saved") : "Save as eval case", saveCase);
     save.dataset.fk = "save-case";
     save.disabled = !verdict || I.posting === "save";
+    if (!verdict) save.title = "Needs a verdict first";
     const box = button("ghost" + (I.drawer && !I.drawer.hidden ? " on" : ""), "Jev sandbox", () => toggleDrawer(ctx));
     box.dataset.fk = "sandbox";
     box.setAttribute("aria-pressed", I.drawer && !I.drawer.hidden ? "true" : "false");
@@ -271,7 +278,9 @@
     if (I.fbError) root.append(el("p", "gaprow", I.fbError));
     if (I.saved) {
       const line = el("p", "isaved");
-      add(line, el("span", "ok", "Saved"), el("span", "mono", I.saved.path), note(int(I.saved.total) + (I.saved.total === 1 ? " case" : " cases")));
+      const cases = int(I.saved.total) + (I.saved.total === 1 ? " case" : " cases");
+      if (I.saved.duplicate) add(line, el("span", "faint", "Already saved · " + cases), el("span", "mono", I.saved.path));
+      else add(line, el("span", "ok", "Saved"), el("span", "mono", I.saved.path), note(cases));
       root.append(line);
     }
     if (I.saveError) root.append(el("p", "gaprow", I.saveError));
@@ -330,6 +339,7 @@
       const body = await response.json().catch(() => ({}));
       if (sid !== S.sid) return;
       if (response.ok && body.saved) I.saved = {path: body.path, total: body.total_cases};
+      else if (response.ok && body.duplicate) I.saved = {path: body.path, total: body.total_cases, duplicate: true};
       else I.saveError = "Not saved · " + (body.error || "HTTP " + response.status);
     } catch {
       if (sid === S.sid) I.saveError = "Not saved · router unreachable";
@@ -347,7 +357,7 @@
     const root = el("section", "turns" + still);
     root.setAttribute("aria-label", "Turns");
     const strip = el("div", "tstrip");
-    strip.addEventListener("scroll", () => { I.scroll = strip.scrollLeft; }, {passive: true});
+    strip.addEventListener("scroll", () => { I.scroll = strip.scrollLeft; edge(strip); }, {passive: true});
     ctx.turns.forEach((t, i) => strip.append(turnCard(ctx, t, i)));
     root.append(strip);
     if (ctx.join === "by_order") root.append(el("p", "tjoin", "Calls matched to turns by log order"));
@@ -548,7 +558,7 @@
     const strip = el("div", "hfacts");
     const cell = (k, v) => strip.append(add(el("div", "hf"), el("span", "k", k), add(el("span", "v"), v)));
     if (!f) {
-      for (const k of ["Tools", "Images", "Tokens", "Headroom"]) cell(k, gap());
+      for (const k of ["Tools", "Images", "Tokens", "Reserve", "Headroom"]) cell(k, gap());
       return strip;
     }
     const names = Array.isArray(f.tool_names) && f.tool_names.length ? f.tool_names
@@ -560,7 +570,10 @@
     else tools = gap();
     cell("Tools", tools);
     cell("Images", f.has_images === true ? "yes" : f.has_images === false ? "none" : gap());
-    cell("Tokens", show(!absent(f.input_tokens) ? f.input_tokens : f.est_tokens, int));
+    const input = !absent(f.input_tokens) ? f.input_tokens : f.est_tokens;
+    cell("Tokens", absent(input) ? gap() : int(input) + " in");
+    // What the window keeps back for the reply: the output ask plus the reserve.
+    cell("Reserve", absent(f.output_tokens) || absent(f.reserve_tokens) ? gap() : int(f.output_tokens + f.reserve_tokens));
     const head = el("span");
     if (absent(f.headroom)) head.append(gap());
     else {
@@ -575,7 +588,8 @@
   function jevCol(ctx, t) {
     const col = el("div", "tcol");
     const jev = t.jev;
-    col.append(colHead("Jev", jev && !absent(jev.latency_ms) ? ms(jev.latency_ms) : null));
+    const spent = jev ? [absent(jev.latency_ms) ? null : ms(jev.latency_ms), absent(jev.tokens) ? null : int(jev.tokens) + " tok"].filter(Boolean) : [];
+    col.append(colHead("Jev", t.kind === "user_turn" || !spent.length ? null : spent.join(" · ")));
     if (t.kind === "user_turn") {
       col.append(el("p", "notasked", "Not asked"));
       return col;
@@ -611,13 +625,37 @@
     if (!trace || !trace.available) return out;
     for (const r of Array.isArray(trace.rules) ? trace.rules : []) {
       const deciding = new Set(decidingConditions(r));
-      for (const c of Array.isArray(r.conditions) ? r.conditions : []) {
+      const conds = Array.isArray(r.conditions) ? r.conditions : [];
+      for (const c of conds) {
         if (c.source !== "answer" || !["gte", "gt", "lte", "lt"].includes(c.op) || typeof c.threshold !== "number") continue;
         if (!out.has(c.key)) out.set(c.key, []);
-        out.get(c.key).push({value: c.threshold, name: r.name || "?", on: deciding.has(c), hit: r.outcome === "hit"});
+        // A rule this request fails on another condition (no images, no
+        // tools, a task it excludes) could not have fired at this tick.
+        const blocked = conds.some((o) => o !== c && conditionPasses(o) === false);
+        out.get(c.key).push({value: c.threshold, name: r.name || "?", on: deciding.has(c), hit: r.outcome === "hit", dim: blocked && !deciding.has(c)});
       }
     }
     return out;
+  }
+
+  // The trace's own verdict on a condition, or, for a rule it never reached,
+  // the same comparison made here from the recorded value.
+  function conditionPasses(c) {
+    if (typeof c.passed === "boolean") return c.passed;
+    const v = c.value;
+    const t = c.threshold;
+    if (absent(v)) return null;
+    switch (c.op) {
+      case "eq": return v === t;
+      case "ne": return v !== t;
+      case "gte": return typeof v === "number" && v >= t;
+      case "gt": return typeof v === "number" && v > t;
+      case "lte": return typeof v === "number" && v <= t;
+      case "lt": return typeof v === "number" && v < t;
+      case "in": return Array.isArray(t) ? t.includes(v) : null;
+      case "not_in": return Array.isArray(t) ? !t.includes(v) : null;
+      default: return null;
+    }
   }
 
   function planTicks(t) {
@@ -701,24 +739,32 @@
       box.append(dist);
     }
     const track = el("div", "rtrack");
-    // Near-equal cutoffs (1.399 and 1.4) are one tick.
+    // Near-equal cutoffs (1.399 and 1.4) are one tick. Each rule keeps its
+    // own line under it: the decisive first, then those that could apply,
+    // then those this request fails elsewhere, dimmer.
     const merged = [];
     for (const tk of ticks.slice().sort((p, q) => p.value - q.value)) {
       const last = merged[merged.length - 1];
       if (last && Math.abs(x(tk.value) - x(last.value)) < 1) {
-        last.names.push(tk.name);
-        if (tk.on) { last.on = true; last.lead = tk.name; }
-      } else merged.push({value: tk.value, names: [tk.name], on: tk.on, lead: tk.name});
+        last.rules.push(tk);
+        if (tk.on) last.on = true;
+      } else merged.push({value: tk.value, rules: [tk], on: tk.on});
     }
+    const rank = (r) => (r.on ? 0 : r.dim ? 2 : 1);
     const labels = el("div", "rlabels");
     for (const m of merged) {
       const tick = el("i", "rtick" + (m.on ? " on" : ""));
       tick.style.left = x(m.value) + "%";
       track.append(tick);
-      const names = [m.lead, ...m.names.filter((n) => n !== m.lead)];
-      const unique = [...new Set(names)];
-      const text = cfg(Number(m.value.toFixed(2))) + " " + unique[0] + (unique.length > 1 ? " +" + (unique.length - 1) : "");
-      const lab = el("span", m.on ? "on" : null, text);
+      const seen = new Map();
+      for (const r of m.rules) {
+        const had = seen.get(r.name);
+        if (!had || rank(r) < rank(had)) seen.set(r.name, r);
+      }
+      const rules = [...seen.values()].sort((a, b) => rank(a) - rank(b));
+      const lab = el("span", "rl" + (m.on ? " on" : ""));
+      lab.append(el("em", null, cfg(Number(m.value.toFixed(2)))));
+      for (const r of rules) lab.append(el("b", r.on ? "on" : r.dim ? "dim" : null, r.name));
       lab.dataset.x = String(x(m.value));
       lab.style.left = x(m.value) + "%";
       labels.append(lab);
@@ -728,7 +774,9 @@
       mk.style.left = x(value) + "%";
       track.append(mk);
     }
+    // An end label a tick sits on would only repeat its number.
     for (const [v, at] of [[0, 0], [top, 100]]) {
+      if (merged.some((m) => Math.abs(x(m.value) - at) <= 3)) continue;
       const end = el("span", "end", cfg(v));
       end.dataset.x = String(at);
       labels.append(end);
@@ -737,33 +785,38 @@
     return box;
   }
 
-  // Labels go under their tick; one that would touch its neighbour drops a row.
+  // Labels go under their tick, clamped inside the ruler; a block that would
+  // touch another drops to the first rows where it touches nothing.
   function layoutRulers() {
     for (const box of document.querySelectorAll(".rlabels")) {
       const width = box.clientWidth;
       if (!width) continue;
-      // The ends hold row 0 at the edges; every other label takes the first
-      // row where it touches nothing.
-      const rows = [[]];
+      const rows = [];
+      const free = (row, left, right) => (rows[row] || []).every(([a, b]) => right + 8 <= a || left >= b + 8);
       const place = (lab, row, left) => {
+        const lines = Math.max(1, lab.querySelectorAll("b").length);
         lab.style.left = left + "px";
         lab.style.top = (row * 1.15) + "rem";
-        rows[row].push([left, left + lab.offsetWidth]);
+        for (let r = row; r < row + lines; r++) (rows[r] = rows[r] || []).push([left, left + lab.offsetWidth]);
       };
-      const ends = [...box.querySelectorAll(".end")];
-      for (const lab of ends) place(lab, 0, lab.dataset.x === "0" ? 0 : width - lab.offsetWidth);
+      for (const lab of box.querySelectorAll(".end")) place(lab, 0, lab.dataset.x === "0" ? 0 : width - lab.offsetWidth);
       const items = [...box.children].filter((n) => !n.classList.contains("end")).sort((a, b) => Number(a.dataset.x) - Number(b.dataset.x));
       for (const lab of items) {
         const w = lab.offsetWidth;
+        const lines = Math.max(1, lab.querySelectorAll("b").length);
         const left = Math.max(0, Math.min(width - w, Number(lab.dataset.x) / 100 * width - w / 2));
-        let row = rows.findIndex((taken) => taken.every(([a, b]) => left + w + 8 <= a || left >= b + 8));
-        if (row < 0) { rows.push([]); row = rows.length - 1; }
+        let row = 0;
+        while (![...Array(lines).keys()].every((k) => free(row + k, left, left + w))) row += 1;
         place(lab, row, left);
       }
       box.style.height = (Math.max(1, rows.length) * 1.15 + 0.2) + "rem";
     }
   }
-  window.addEventListener("resize", () => requestAnimationFrame(layoutRulers));
+  window.addEventListener("resize", () => requestAnimationFrame(() => {
+    layoutRulers();
+    const strip = document.querySelector(".tstrip");
+    if (strip) edge(strip);
+  }));
 
   function choiceStack(probs) {
     const box = el("div", "cstack");
@@ -798,6 +851,7 @@
       const rep = trace.replayed || {};
       corner = el("span", "gap", "replay differs · " + [rep.model, rep.effort, rep.rule].filter(Boolean).join(" "));
     } else if (!trace.available && trace.reason !== "fallback_admission") corner = gap(reasonText(trace.reason));
+    else if (d.fallback || (adm && adm.fallback)) corner = el("span", "gap", "Jev failed · no rule ran");
     col.append(colHead("Rule", corner));
     if (!adm) {
       col.append(el("p", "gaprow", "admission not recorded"));
@@ -831,7 +885,7 @@
     } else {
       const box = el("div", "rules");
       const row = el("div", "r hit" + (d.fallback ? " fb" : ""));
-      add(row, el("span", "i", ""), el("span", "nm", recordedRule || "?"), el("span", "why", d.fallback ? "Jev failed · the alias's fallback" : ""));
+      add(row, el("span", "i", ""), el("span", "nm", recordedRule || "?"), el("span", "why", d.fallback ? "the alias's fallback" : ""));
       box.append(row);
       col.append(box);
     }
@@ -839,7 +893,7 @@
     const effort = d.effort || adm.effort;
     add(route, el("span", "k", "Route"), el("span", "mono", (trace.route || d.route || adm.route || "direct") + " → " + (d.model || adm.model || "?") + (effort ? " · " + effort : "")));
     col.append(route);
-    col.append(quotaLine(adm, session), laneLine(adm, session, d));
+    col.append(quotaLine(adm, session), laneLine(adm, session, d, trace));
     return col;
   }
 
@@ -863,9 +917,13 @@
     if (Array.isArray(adm.shifted)) for (const s of adm.shifted) moves.push(human(s.rule || "?") + " " + human(s.question || "") + " " + cfg(s.base) + " → " + cfg(s.effective) + (s.provider ? " by " + s.provider : ""));
     if (adm.reordered === true) moves.push("route reordered");
     if (counterfactualDiffers(adm)) moves.push("without quota " + adm.counterfactual);
+    // Kept is a finding only where something was recorded to compare: the
+    // zero-pressure choice, or the admission's own flag. A null is a gap.
+    const known = !!adm.counterfactual || adm.quota_changed_choice === false;
     if (moves.length) box.append(el("span", "steer", "steered"));
-    else if (session.quota_changed_choice === true) box.append(gap("steered · detail not recorded"));
-    else box.append(el("span", "ok", "kept primary"));
+    else if (session.quota_changed_choice === true || adm.quota_changed_choice === true) box.append(gap("steered · detail not recorded"));
+    else if (known) box.append(el("span", "ok", "kept primary"));
+    else box.append(gap("not recorded"));
     const snap = adm.quota_snapshot;
     const prov = el("span", "pressures");
     if (!snap || typeof snap !== "object" || !Object.keys(snap).length) prov.append(gap("no reading"));
@@ -881,10 +939,15 @@
     return box;
   }
 
-  function laneLine(adm, session, d) {
-    const lane = d.quality_lane || session.quality_lane || adm.quality_lane;
+  function laneLine(adm, session, d, trace) {
     const box = el("div", "resline");
     box.append(el("span", "k", "Lane"));
+    // A fallback bound a route, not a lane; the lane column then holds the route's name.
+    if (d.fallback || adm.fallback) { box.append(gap("no lane · fallback")); return box; }
+    let lane = d.quality_lane || session.quality_lane || adm.quality_lane;
+    const lanes = I.cfg && I.cfg.quality_lanes;
+    const route = (trace && trace.route) || d.route || adm.route;
+    if (lane && lanes && !(lane in lanes) && lane === route) lane = null;
     if (!lane) { box.append(el("span", "faint", "none")); return box; }
     const ev = adm.evidence;
     add(box, el("span", "mono", lane), absent(ev) ? gap("evidence") : el("span", ev === "weak" ? "gap" : ev === "qualified" ? "ok" : "faint", ev));
@@ -966,18 +1029,16 @@
       add(big, was, el("span", "faint", " → "), el("span", dir === " ▲" ? "up" : "down", d.effort + dir));
     } else add(big, d.effort ? d.effort : el("span", "faint", "no effort"));
     col.append(big);
-    col.append(el("p", "fixed", "Fixed effort · no plan"));
+    const moved = was && d.effort && was !== d.effort;
+    const fb = moved ? lastFeedbackBefore(ctx, t) : null;
+    if (!moved) col.append(el("p", "fixed", "Fixed effort · no plan"));
+    else if (fb) col.append(add(el("p", "stepped"), "Stepped by feedback · ", verdictBadge(fb.verdict)));
+    else col.append(gap("moved · cause not recorded"));
     const admTurn = ctx.turns.find((x) => x.kind === "admission");
     const rule = (admTurn && admTurn.decision && admTurn.decision.rule) || (ctx.adm && ctx.adm.rule) || ctx.session.decision_rule;
     const why = el("div", "resline");
     add(why, el("span", "k", "Rule"), rule ? el("span", "mono", rule) : gap(), note("at admission"));
     col.append(why);
-    if (was && d.effort && was !== d.effort) {
-      const fb = lastFeedbackBefore(ctx, t);
-      const line = el("div", "resline");
-      add(line, el("span", "k", "Changed by"), fb ? add(el("span"), "feedback ", verdictBadge(fb.verdict)) : gap("cause not recorded"));
-      col.append(line);
-    }
     return col;
   }
 
@@ -1029,7 +1090,7 @@
     const box = el("details", "calls");
     box.open = I.calls;
     box.addEventListener("toggle", () => { I.calls = box.open; });
-    const sum = el("summary", null, "HTTP calls");
+    const sum = el("summary", null, "Tool loop · " + calls.length + (calls.length === 1 ? " call" : " calls"));
     sum.dataset.fk = "calls";
     box.append(sum);
     const table = el("div", "ctable");
@@ -1117,7 +1178,7 @@
     const stateBox = I.drawer.querySelector(".dstate");
     I.probe = {
       turn: t, row: t ? t.decision_row : null, stored: !!(t && t.state),
-      stateInitial: t ? stateText(t) : "", running: false, result: null, error: null, errorMs: null, dirty: false,
+      stateInitial: t ? stateText(t) : "", running: false, result: null, error: null, dirty: false,
     };
     I.drawer.querySelector(".dtarget").textContent = t ? label(t) : "";
     stateBox.value = I.probe.stateInitial;
@@ -1143,7 +1204,8 @@
     box.hidden = true;
     const head = el("div", "dhead");
     const close = button("ghost dclose", "Close", () => { closeDrawer(); render("pane"); });
-    add(head, add(el("h2", "dtitle"), "Jev sandbox ", el("span", "dtarget")), close);
+    add(head, add(el("div", "dtt"), add(el("h2", "dtitle"), "Jev sandbox ", el("span", "dtarget")),
+      el("p", "dnote", "One live Jev call on the text below. Nothing is stored or rerouted.")), close);
     const form = el("div", "dbody");
     const st = el("label", "dlab", "State");
     const area = el("textarea", "dta dstate");
@@ -1174,27 +1236,45 @@
   function fillQuestions() {
     if (!I.drawer || !I.probe) return;
     const qs = I.drawer.querySelector(".dqs");
-    const old = new Map([...qs.querySelectorAll("textarea")].map((a) => [a.dataset.qid, a.value]));
+    const old = new Map([...qs.querySelectorAll("textarea")].map((a) => [a.dataset.kind + ":" + a.dataset.qid, a.value]));
+    const opened = new Set([...qs.querySelectorAll("details[open]")].map((d) => d.dataset.qid));
     qs.replaceChildren();
     const t = I.probe.turn;
     if (!t) return;
     for (const qid of activeQuestions(t)) {
       const q = I.cfg && I.cfg.questions ? I.cfg.questions[qid] : null;
       const lab = el("label", "dlab", cap(qid));
-      const area = el("textarea", "dta dq");
-      area.dataset.qid = qid;
-      area.rows = 4;
-      area.spellcheck = false;
-      area.setAttribute("aria-label", cap(qid) + " instructions");
       const original = q && typeof q.instructions === "string" ? q.instructions : null;
-      area.dataset.original = original === null ? "" : original;
-      area.value = old.has(qid) ? old.get(qid) : (original || "");
-      area.disabled = original === null;
-      area.addEventListener("input", () => { if (I.probe) I.probe.dirty = true; });
-      area.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); area.blur(); } });
+      const area = editor("dq", qid, 4, cap(qid) + " instructions", original, old);
       qs.append(lab, area);
       if (original === null) qs.append(gap(I.cfg ? "wording not in the running config" : "loading"));
+      // The labels or levels Jev chooses between, as JSON, folded away.
+      if (q && q.criteria && typeof q.criteria === "object") {
+        const box = el("details", "dcrit");
+        box.dataset.qid = qid;
+        box.open = opened.has(qid);
+        const sum = el("summary", null, "Criteria");
+        sum.dataset.fk = "crit-" + qid;
+        add(box, sum, editor("dc", qid, 10, cap(qid) + " criteria", JSON.stringify(q.criteria, null, 2), old));
+        qs.append(box);
+      }
     }
+  }
+
+  function editor(kind, qid, rows, name, original, old) {
+    const area = el("textarea", "dta " + kind);
+    area.dataset.qid = qid;
+    area.dataset.kind = kind;
+    area.rows = rows;
+    area.spellcheck = false;
+    area.setAttribute("aria-label", name);
+    area.dataset.original = original === null ? "" : original;
+    const key = kind + ":" + qid;
+    area.value = old.has(key) ? old.get(key) : (original || "");
+    area.disabled = original === null;
+    area.addEventListener("input", () => { if (I.probe) I.probe.dirty = true; });
+    area.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); area.blur(); } });
+    return area;
   }
 
   async function runProbe() {
@@ -1210,15 +1290,26 @@
         body.state = parsed;
       } catch (error) {
         p.error = "State is not a JSON object · " + (error && error.message ? error.message : "parse error");
-        p.errorMs = null;
         p.result = null;
         paintResult();
         return;
       }
     }
     const questions = {};
+    const change = (qid) => (questions[qid] = questions[qid] || {});
     for (const area of I.drawer.querySelectorAll(".dq")) {
-      if (!area.disabled && area.value !== area.dataset.original) questions[area.dataset.qid] = {instructions: area.value};
+      if (!area.disabled && area.value !== area.dataset.original) change(area.dataset.qid).instructions = area.value;
+    }
+    for (const area of I.drawer.querySelectorAll(".dc")) {
+      if (area.disabled || area.value === area.dataset.original) continue;
+      try {
+        change(area.dataset.qid).criteria = JSON.parse(area.value);
+      } catch (error) {
+        p.error = cap(area.dataset.qid) + " criteria are not JSON · " + (error && error.message ? error.message : "parse error");
+        p.result = null;
+        paintResult();
+        return;
+      }
     }
     if (Object.keys(questions).length) body.questions = questions;
     p.running = true;
@@ -1230,18 +1321,24 @@
       const json = await response.json().catch(() => ({}));
       if (I.probe !== p) return;
       if (response.ok) p.result = json;
-      else {
-        p.error = json.error || "HTTP " + response.status;
-        p.errorMs = absent(json.jev_ms) ? null : json.jev_ms;
-      }
+      else p.error = probeError(json, response.status);
     } catch {
-      if (I.probe === p) p.error = "router unreachable";
+      if (I.probe === p) p.error = "Router unreachable";
     } finally {
       if (I.probe === p) {
         p.running = false;
         paintResult();
       }
     }
+  }
+
+  // A failed probe in a few words: where to look when Jev cannot be reached,
+  // else the error's own short name. No latency: nothing was measured.
+  function probeError(json, status) {
+    if (json && json.reason === "unreachable") return "Jev unreachable · check settings.jev_url";
+    const text = String((json && json.error) || "HTTP " + status).replace(/^jev call failed: /, "").replace(/^jev error: /, "");
+    const short = text.replace(/^jev\b/, "Jev");
+    return short.charAt(0).toUpperCase() + short.slice(1);
   }
 
   function paintResult() {
@@ -1256,10 +1353,7 @@
     run.textContent = p && p.running ? "Running…" : "Run";
     if (!p) return;
     if (p.error) {
-      const line = el("p", "gaprow");
-      add(line, p.error);
-      box.append(line);
-      if (!absent(p.errorMs)) msNode.append(el("span", "mono", "Jev " + ms(p.errorMs)));
+      box.append(el("p", "gaprow", p.error));
       return;
     }
     if (!p.result) return;
