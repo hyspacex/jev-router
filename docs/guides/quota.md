@@ -77,12 +77,14 @@ does not. The same config reads both. A provider that reports no usage at all
 has no quota source: `source: none`, and its pressure comes from the circuit
 breaker alone.
 
-Ollama publishes its usage on the ollama.com settings page, not in its API, so
-the shipped `ollama` source runs `codexbar usage --provider ollama --source web`.
-That reads the page with the browser's ollama.com session cookie. Sign in to
-ollama.com in Chrome on the machine that runs the router, then import the
-cookie once from a terminal on that machine, where macOS can show the Keychain
-prompt:
+Ollama publishes its usage on the ollama.com settings page, not in its API.
+The shipped `ollama` provider reads it through the [CodexBar
+source](#the-codexbar-source): CodexBar.app reads the page with its own
+ollama.com session and writes the numbers to its snapshot. To read it with a
+`command` source instead, run `codexbar usage --provider ollama --source web`,
+which needs the browser's ollama.com session cookie. Sign in to ollama.com in
+Chrome on the machine that runs the router, then import the cookie once from a
+terminal on that machine, where macOS can show the Keychain prompt:
 
 ```sh
 codexbar cookie refresh --provider ollama --allow-keychain-prompt
@@ -114,14 +116,17 @@ providers:
 CodexBar.app writes every subscription it watches to
 `~/Library/Group Containers/<team>.com.steipete.codexbar/widget-snapshot.json`
 about once a minute, web-cookie providers such as Ollama included. The
-`codexbar` source reads one subscription out of that file:
+`codexbar` source reads one subscription out of that file. It takes two
+switches: the top-level `codexbar` block, and the provider's own quota block.
 
 ```yaml
 codexbar:
-  enabled: true
+  enabled: true                     # off in the shipped router.yaml
   cli_binary: codexbar              # "" turns the CLI fallback off
   cli_fallback_after_seconds: 300
   include_external_subscriptions: true
+  poll_interval_seconds: 60         # tracked subscriptions only
+  stale_after_seconds: 1800         # tracked subscriptions only
 
 providers:
   openai:
@@ -133,24 +138,50 @@ providers:
       stale_after_seconds: 900
 ```
 
+An enabled `codexbar` source needs `codexbar.enabled: true`; with the block
+off, `check-config` refuses the file. A CodexBar id may be linked to one
+provider only, so one allowance is never counted twice. The shipped
+router.yaml links `openai` to `codex` and `ollama` to `ollama`, with the block
+and both sources off. `snapshot_path` is optional: unset, the router looks in
+CodexBar's default container, then in any other CodexBar container that has
+the file.
+
 Each window CodexBar reports (`primary`, `secondary`, `tertiary`) becomes a
 window record of its own, so pressure, exhaustion and pace work exactly as
 they do for a `command` source. A reading is dated by when CodexBar measured
-it, not when the file was read.
+it, not when the file was read, so a snapshot CodexBar has stopped refreshing
+goes stale like any other reading.
 
 When the file is missing, older than `cli_fallback_after_seconds`, or has no
 entry for the subscription, the source runs `codexbar usage --provider <id>
 --json-only` through the `command` machinery, at most once per that many
 seconds. A missing file with no CLI installed is `unknown`; a CLI that fails
-is an `error`. Both are pressure 0.
+is an `error`. Both are pressure 0. The CLI has no browser session, so for a
+web-cookie provider such as Ollama it usually finds nothing; the snapshot is
+the source that works there.
 
-An enabled `codexbar` source needs `codexbar.enabled: true`, and a CodexBar id
-may be linked to one provider only. With `include_external_subscriptions`,
-every subscription CodexBar watches that no enabled provider links to is read
-as well, every `poll_interval_seconds`, and shown on the dashboard overview
-under `subscriptions.tracked`. Those never produce pressure. CodexBar's own
-`config_path` is read for provider ids and `enabled` flags only; it can hold
-API keys, and nothing else in it is kept.
+#### Tracked subscriptions
+
+CodexBar may watch subscriptions the router does not route to, such as a
+Claude or Antigravity plan. With `codexbar.enabled` and
+`include_external_subscriptions` both on, every subscription CodexBar watches
+that no enabled provider links to is read too, every `poll_interval_seconds`,
+through the same snapshot-then-CLI path. The list comes from the snapshot and
+from CodexBar's own config; when both can be read, a subscription has to be
+enabled in both.
+
+A tracked subscription is for looking at. It is shown on the dashboard
+overview and returned under `subscriptions.tracked` by
+`GET /router/audit/overview` and `GET /router/quota`: its windows with pace,
+plan rows, CodexBar's token and cost rollups, and whether the reading is fresh
+(older than `codexbar.stale_after_seconds` is stale). It is never pressure,
+never counts as spent, never refuses a binding and never changes a route. A
+subscription becomes routed only by linking it to a provider with
+`codexbar_provider`.
+
+CodexBar's own `config_path` is read for provider ids and `enabled` flags
+only; it can hold API keys, and nothing else in it is kept. Only numbers and
+short labels come out of the snapshot.
 
 To add a source, write a class with `async def fetch() -> QuotaSnapshot` in
 `src/jev_router/quota.py` and register a factory with

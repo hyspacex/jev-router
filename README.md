@@ -180,8 +180,12 @@ and `auto-session` examples require custom configurations.
 
 ## Inspect, deploy, and extend
 
-- [Operations](docs/guides/operations.md): inspect decisions, record feedback,
-  understand storage and privacy, and manage retention.
+- [Operations](docs/guides/operations.md): the dashboard at `/dashboard` on the
+  router's own address, with an Overview (quota, router overhead against
+  upstream latency, routing quality), a searchable Sessions list, a page per
+  session that explains each user turn's route and effort, and a Rules view
+  that previews a router.yaml edit against recent admissions before applying
+  it. Also feedback, storage and privacy, and retention.
 - [Deployment](docs/DEPLOYMENT.md): service setup, upgrades, backup, and rollback.
 - [API and CLI reference](docs/reference/api.md): endpoints, headers, environment
   variables, and commands.
@@ -205,9 +209,15 @@ uv run jev-router check-config
   overflow. The client must handle the error and decide what to do next.
 - Keep the router on loopback unless you have authenticated ingress and HTTPS or
   a trusted encrypted tunnel. Upstream authentication alone does not protect Jev quota.
-- Keep `log_state: false`. Request excerpts go to Jev when classification is on;
-  feedback notes are stored verbatim. This is a single-owner tool, not a
-  multi-tenant authorization system.
+- `settings.log_state` is on by default, so the database keeps message text:
+  session titles, each user turn's prompt, the state Jev was shown, and a short
+  summary of each turn's tool calls. All of it is scrubbed first (API keys and
+  tokens, private keys, `KEY=value` secrets, image data and long encoded blobs)
+  and capped at `turn_text_max_chars`. The scrubber is a filter, not a
+  guarantee; set `log_state: false` to store no text. API keys and the
+  `Authorization` header are never stored. Request excerpts go to Jev when
+  classification is on. This is a single-owner tool, not a multi-tenant
+  authorization system.
 - Live evaluations and model replies spend quota. Existing benchmarks do not
   establish savings or equivalent quality for another deployment.
 

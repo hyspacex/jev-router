@@ -1,7 +1,56 @@
 # `jev-router` Observability Platform v2 — Design Specification
 
-**Status:** Draft Design for Next Iteration  
+**Status:** Implemented, 2026-10-27. The code is the reference where it and this document disagree; see the notes below. How to use it: [operations guide](guides/operations.md#live-audit-dashboard). Endpoints: [API reference](reference/api.md).  
 **Scope:** `jev-router` Core Telemetry (`features.py`, `state.py`, `pins.py`, `sessions.py`, `quota.py`, `config.py`, `app.py`) + Observability UI (`dashboard.py`, `static/dashboard.{html,css,js}`)
+
+## Implementation notes
+
+What was built differs from the design below in these deliberate ways.
+
+- **Stored text.** Message text is stored only after `scrub.py` and a hard cap
+  (`settings.turn_text_max_chars`, 2,048 by default), only in the named
+  columns, and only while `settings.log_state` is on (now the default).
+  `scrub_secrets: false` is a config error. API keys and the `Authorization`
+  header are never stored.
+- **Endpoint paths.** Every `GET /router/audit/*` endpoint writes nothing.
+  The endpoints that write or call a provider live outside `/router/audit`:
+  `POST /router/sessions/{id}/feedback`, `GET /router/config`,
+  `POST /router/config/preview`, `POST /router/config/apply`,
+  `POST /router/sandbox/jev` and `POST /router/eval-cases`. The session detail
+  is `GET /router/audit/sessions/{id}`.
+- **The Rules view edits YAML text.** There is no generated visual editor and
+  no drag-to-reorder: router.yaml is heavily commented and its question text is
+  literal, so it is never regenerated from a parsed structure. The ladder is
+  read-only and links each rule into the YAML editor. The view is called
+  Rules, not Rules & Config. The preview replays admissions only, not turn
+  plans. There is no "Copy rubric to Rules" button in the Jev sandbox.
+- **Assistant summaries and tool calls** come from the client's next request,
+  which carries what the assistant did, never from the reply stream. They are
+  stored as `assistant_summary` and `tool_calls_json` (with `files_touched`),
+  not as one `turn_summary_json`.
+- **Quota steering labels** (`calm`, `elevated`, `demoting`, `exhausted`) use
+  the configured `quota_policy` numbers (`demote_above`, `exhausted_at`), not
+  fixed 0.35 / 0.60 / 0.85. A reading that is not fresh gets no label. The
+  CodexBar CLI is a fallback for a missing or old snapshot, not a pace
+  enrichment step: pace comes from each window's length and reset time.
+- **Model, route and rule names** in this document are examples. The real ones
+  come from router.yaml, and nothing in the code or the page names a model.
+- **Knife-edge share** checks the rule an admission matched and both
+  neighbouring rules on the ladder, under the running config only; other rows
+  are counted as unassessed.
+- **Quota saved** counts only models whose `quota_cost` router.yaml writes
+  down. Calls on unpriced models are counted apart, not treated as cost 1.0.
+- **`GET /router/config`** serves the text the process loaded (or the file,
+  when it still hashes the same), never a stored config snapshot.
+- **Session feedback** adds a row per verdict; the newest one is the session's
+  verdict, and the page does not edit an earlier row. The `/jev more` and
+  `/jev less` step moves the base, effective, expected and confirmed effort
+  together on the same model, and is refused on a session whose effort the
+  adaptive experiment owns.
+- **Not built:** the bounce-rate metric. The overview API returns knife-edge
+  share, early escalation and feedback counts, but the page does not draw them
+  yet. New session counters are nullable rather than `NOT NULL DEFAULT`, to
+  keep migrations additive.
 
 ---
 
