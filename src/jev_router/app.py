@@ -1718,7 +1718,10 @@ class Router:
             if prior is not None:
                 _check_prior_attempt(prior, body_fingerprint)
                 self.sessions.finish_request(session_id, request_id, "in_flight")
-            row_id = self._log_execution(row, request_id, features, check)
+            row_id = self._log_execution(
+                row, request_id, features, check,
+                turn_id=self._planned_turn(request, row, pending),
+            )
         except BaseException:
             self.sessions.release(session_id)
             raise
@@ -2080,6 +2083,8 @@ class Router:
         request_id: str,
         features: Features,
         check: Any,
+        *,
+        turn_id: str | None = None,
     ) -> int:
         """A managed request is logged exactly like an alias request."""
         row_id = self.store.log_decision(
@@ -2113,10 +2118,30 @@ class Router:
             row_id,
             event_type=S.EVENT_EXECUTION,
             session_id=row["session_id"],
+            turn_id=turn_id,
             request_id=request_id,
             quality_lane=row["quality_lane"],
         )
         return row_id
+
+    def _planned_turn(
+        self, request: Request, row: dict[str, Any], pending: dict[str, Any] | None
+    ) -> str | None:
+        """The turn this execution belongs to, as the ledger already names it.
+
+        The plan it carries says so; a later request in the same turn names it
+        in `X-Router-Turn`, which is kept only when this session holds a plan
+        for that turn, so no client text reaches the log. Telemetry only:
+        nothing reads it back to route or to plan.
+        """
+        if pending is not None:
+            return str(pending["turn_id"])
+        if (row.get("adaptation_mode") or "off") == "off":
+            return None
+        turn = request.headers.get("x-router-turn", "")
+        if turn and self.sessions.get_plan(row["session_id"], turn_id=turn):
+            return turn
+        return None
 
     async def forward_session(
         self,

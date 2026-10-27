@@ -430,8 +430,17 @@ async def test_plans_keep_expected_and_confirmed_effort_apart(tmp_path, strict_e
                 "confirmed_effort": confirmed, "request_id": f"plan-req-{n}",
                 "request_fingerprint": "f" * 64, "anchor_prefix_hash": "a" * 64,
                 "reason": "medium -> high: the work is harder than its effort",
+                "decision_id": f"plan-{n}",
                 "facts": {
                     "strategy": "native_configuration_update",
+                    "evidence": {
+                        "difficulty": 2.48, "p_hard": 0.48, "harm_if_wrong": "high",
+                        "corrective_followup": 0.21, "failure_mode": None,
+                        "short_continuation": False, "missing": ["turn_history", MARKER + " x"],
+                        "error": f"timeout quoting {MARKER}",
+                    },
+                    "thresholds": {"upgrade_difficulty": 1.8, "note": MARKER},
+                    "ladder": ["low", "medium", "high"],
                     "shadow_counterfactual": {
                         "question": "failure_mode", "answer": "reasoning_problem",
                         "action": "change", "to_effort": "xhigh", "recommendation": "up",
@@ -439,11 +448,33 @@ async def test_plans_keep_expected_and_confirmed_effort_apart(tmp_path, strict_e
                     },
                 },
             })
+        # The turn's own Jev call, as app.turn_plan logs it.
+        row = svc.store.log_decision(
+            decision_id="plan-1", alias="auto", client="pi", conversation_key=MARKER,
+            state_builder="turn_state_v1",
+            answers={"difficulty": {"type": "score", "score": 2.48, "confidence": 0.52}},
+            features={"tool_names": [TOOL]}, config_hash="h", model="m", effort="low",
+            rule="effort_keep", mode="active", fallback=False, pinned=False, jev_ms=61.8,
+            jev_tokens=1317, est_tokens=10, message_count=1,
+        )
+        svc.sessions.annotate_decision(row, event_type="effort_plan", session_id=sid, turn_id="turn-1")
         response = await inspect(svc, sid, token=ADMIN)
     finally:
         await svc.close()
-    assert MARKER not in response.text
+    assert MARKER not in response.text and TOOL not in response.text
     assert "request_fingerprint" not in response.text and "anchor_prefix_hash" not in response.text
+    first = response.json()["plans"][0]
+    assert first["judgment"]["answers"]["difficulty"]["score"] == 2.48
+    assert first["judgment"]["jev_ms"] == 61.8
+    assert "state_shape" in first["judgment"]
+    assert "conversation_key" not in first["judgment"]
+    evidence = first["evidence"]
+    assert evidence["difficulty"] == 2.48 and evidence["harm_if_wrong"] is None
+    assert evidence["missing"] == ["turn_history"]
+    assert evidence["error"] is True
+    assert evidence["thresholds"] == {"upgrade_difficulty": 1.8}
+    assert evidence["ladder"] == ["low", "medium", "high"]
+    assert response.json()["plans"][1]["judgment"] is None
     plans = response.json()["plans"]
     assert [(p["expected_effort"], p["confirmed_effort"]) for p in plans] == [
         ("high", "high"), ("xhigh", None),

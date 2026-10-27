@@ -371,6 +371,10 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   under another config, and never a fallback admission, where no rule ran.
   Its endpoints write nothing and project by allowlist: no conversation key,
   owner, fingerprint, tool or language names, state text or usage contents.
+  An execution row's `turn_id` is the turn the ledger already holds (the plan
+  it carries, or an `X-Router-Turn` that names a plan of that session), never
+  raw client text, and nothing reads it back to route or plan. Rows written
+  before it are joined to turns by log order, and the page says so.
 - Do not touch the streamed response bytes. `app._stream` may buffer for usage
   on non-streamed replies, and must yield chunks unchanged. An upstream
   fallback is chosen on the response status, before anything is streamed;

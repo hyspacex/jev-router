@@ -61,7 +61,10 @@ const int = (n) => Math.round(Number(n)).toLocaleString("en-US");
 const num2 = (n) => Number(n).toFixed(2);
 const secs = (ms) => (Number(ms) / 1000).toFixed(2) + " s";
 const size = (b) => (b >= 1e6 ? (b / 1e6).toFixed(2) + " MB" : Math.max(1, Math.round(b / 1000)) + " KB");
-const pct = (p) => { const v = Number(p) * 100; return (v === 0 ? "0" : v < 10 ? v.toFixed(2) : v.toFixed(0)) + "%"; };
+const num1 = (n) => { const v = Number(n); return v > 0 && v < 0.1 ? "<0.1" : v.toFixed(v >= 10 ? 0 : 1); };
+// Pressure is 0 to 1, not a share of the allowance.
+const pressureText = (p) => { const v = Number(p); return v > 0 && v < 0.01 ? "<0.01" : v.toFixed(2); };
+const windowSpan = (m) => (m >= 1440 ? Math.round(m / 1440) + " d" : m >= 60 ? Math.round(m / 60) + " h" : Math.round(m) + " min");
 const human = (s) => String(s).replaceAll("_", " ");
 const cap = (s) => { const t = String(s).replaceAll("_", " ").replaceAll("-", " "); return t.charAt(0).toUpperCase() + t.slice(1); };
 function pad(x) { return String(x).padStart(2, "0"); }
@@ -325,25 +328,41 @@ function context() {
   const index = reqs.findIndex((r) => r.seq === S.sel);
   const req = index >= 0 ? reqs[index] : null;
   const trace = d.trace || {available: false, reason: null};
-  const ladder = LADDER.slice();
-  const extend = (e) => { if (e && !ladder.includes(e)) ladder.push(e); };
   const planList = plans().slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+  // The plan's own ladder when it recorded one; the generic order otherwise.
+  const recorded = planList.map((p) => p.evidence && p.evidence.ladder).find((l) => Array.isArray(l) && l.length);
+  const ladder = recorded ? recorded.slice() : LADDER.slice();
+  const extend = (e) => { if (e && !ladder.includes(e)) ladder.push(e); };
   for (const p of planList) [p.from_effort, p.to_effort, p.recommendation, p.expected_effort, p.confirmed_effort].forEach(extend);
   [session.base_effort, session.expected_effort, session.confirmed_effort].forEach(extend);
-  // Plans join requests by request_id, else the first free request after them.
+  // Each request's turn. Recorded on its row since the router began logging
+  // it; before that, inferred from log order (a plan's row precedes its turn).
+  const turnOf = new Map();
+  const byTurn = new Map(planList.filter((p) => p.turn_id).map((p) => [p.turn_id, p]));
+  const rowOf = (p) => (p.judgment && !absent(p.judgment.id) ? p.judgment.id : null);
+  const before = (p, r) => (rowOf(p) !== null && !absent(r.row) ? rowOf(p) < r.row : !absent(p.created) && !absent(r.created) && p.created <= r.created);
+  reqs.forEach((r, i) => {
+    if (r.turn_id && byTurn.has(r.turn_id)) { turnOf.set(i, {plan: byTurn.get(r.turn_id), inferred: false}); return; }
+    const named = r.request_id ? planList.find((p) => p.request_id === r.request_id) : null;
+    if (named) { turnOf.set(i, {plan: named, inferred: false}); return; }
+    let owner = null;
+    for (const p of planList) if (before(p, r)) owner = p;
+    if (owner) turnOf.set(i, {plan: owner, inferred: true});
+  });
+  // The first request of each turn is where its plan sits on the lane.
   const planAt = new Map();
-  const unjoined = [];
-  for (const p of planList) {
-    let i = p.request_id ? reqs.findIndex((r) => r.request_id && r.request_id === p.request_id) : -1;
-    if (i < 0 && !absent(p.created)) i = reqs.findIndex((r, k) => !planAt.has(k) && !absent(r.created) && r.created >= p.created);
-    if (i >= 0 && !planAt.has(i)) planAt.set(i, p);
-    else unjoined.push(p);
-  }
   const planIndex = new Map();
-  for (const [i, p] of planAt) planIndex.set(p, i);
+  for (const [i, t] of turnOf) {
+    if (planIndex.has(t.plan)) continue;
+    planIndex.set(t.plan, i);
+    planAt.set(i, t.plan);
+  }
+  for (const [i, t] of turnOf) t.first = planIndex.get(t.plan) === i;
   const t0 = adm && !absent(adm.ts) ? adm.ts : session.created;
-  return {session, adm, reqs, index, req, trace, ladder, planList, planAt, planIndex, unjoined, t0};
+  return {session, adm, reqs, index, req, trace, ladder, planList, planAt, planIndex, turnOf, t0};
 }
+
+function turnNumber(ctx, plan) { return ctx.planList.indexOf(plan) + 1; }
 
 function planMark(p) {
   if (p.mode !== "shadow" && p.status !== "rejected") {
@@ -375,14 +394,14 @@ function hero(ctx, still) {
   const h1 = el("h1", "model");
   const name = el("span");
   add(name, prov ? el("span", "prov", prov) : null, show(model));
-  const pill = el("span", "pill");
-  add(pill, show(session.base_effort));
+  // A bound session with no base effort sends none: the model takes no setting.
+  const pill = absent(session.base_effort) ? el("span", "pill soft", "no effort") : el("span", "pill", session.base_effort);
   add(h1, name, pill);
   const conf = session.confirmed_effort;
   const exp = session.expected_effort;
   if (conf && conf !== session.base_effort) add(h1, add(el("span", "pill soft"), glyph("confirmed"), conf));
   if (exp && exp !== conf && exp !== session.base_effort) add(h1, add(el("span", "pill soft"), glyph("expected"), exp));
-  root.append(meta, h1);
+  root.append(add(el("div", "htop"), h1, meta));
 
   const tl = el("div", "tl");
   if (ctx.planList.length) tl.append(...effortLane(ctx));
@@ -413,7 +432,8 @@ function hero(ctx, still) {
     add(caption, "Admission · ", absent(t0) ? gap() : clock(t0) + " " + zone(t0));
   }
   const tlr = el("div", "tlr");
-  add(tlr, el("span", null, reqs.length + (reqs.length === 1 ? " request" : " requests")), caption);
+  const count = el("span", null, reqs.length + (reqs.length === 1 ? " request" : " requests") + (reqs.length ? " · height is input size" : ""));
+  add(tlr, count, ctx.planList.length ? laneLegend(ctx) : null, caption);
   add(tl, admb, ticks, el("div", "tlx", "Admission"), tlr);
   root.append(tl);
   return root;
@@ -470,15 +490,40 @@ function effortLane(ctx) {
   return [labels, box];
 }
 
+const KIND_WORDS = {confirmed: "confirmed", expected: "sent, not confirmed", recommended: "recommended only"};
+
+function laneLegend(ctx) {
+  const kinds = new Set([...ctx.planAt.values()].map((p) => planMark(p).kind));
+  const box = el("span", "legend");
+  for (const kind of ["confirmed", "expected", "recommended"]) {
+    if (kinds.has(kind)) add(box, add(el("span"), glyph(kind), KIND_WORDS[kind]));
+  }
+  return box;
+}
+
 function pick(seq) {
   if (S.sel === seq) return;
   S.sel = seq;
   render("pane");
+  reveal();
 }
 function setStage(k) {
   if (S.stage === k) return;
   S.stage = k;
   render("pane");
+  reveal();
+}
+
+// After a choice, keep the stage cards and the open pane on screen together.
+function reveal() {
+  const spineNode = document.querySelector(".spine");
+  const detailNode = document.querySelector(".detail");
+  if (!spineNode || !detailNode) return;
+  const shown = window.innerHeight - detailNode.getBoundingClientRect().top;
+  if (shown >= window.innerHeight * 0.4) return;
+  const top = spineNode.getBoundingClientRect().top + window.scrollY - 16;
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({top, behavior: still ? "auto" : "smooth"});
 }
 
 // --- stage cards -----------------------------------------------------------
@@ -501,12 +546,16 @@ function cardData(ctx) {
   if (trace.available) {
     const rules = Array.isArray(trace.rules) ? trace.rules : [];
     const hit = rules.find((r) => r.outcome === "hit");
+    const gate = trace.gate || {};
     const quota = quotaMoved(adm, session) ? "quota moved it" : "quota no effect";
-    ruleSub = (hit ? "rule " + hit.index + " of " + rules.length + " · " : "") + quota;
+    ruleSub = (hit ? "rule " + hit.index + " of " + rules.length + " · " : gate.applies && !gate.passed ? "gate fired · " : "") + quota;
   } else ruleSub = gap("not replayed");
   const [, model] = splitModel(session.model);
   const status = {completed: 0, outcome_unknown: 0, rejected: 0};
   for (const r of reqs) status[r.status] = (status[r.status] || 0) + 1;
+  const effortWord = absent(session.adaptation_mode) ? gap("effort mode not recorded")
+    : session.adaptation_mode !== "off" ? "adaptive · " + session.adaptation_mode
+    : absent(session.base_effort) ? "no effort" : "effort fixed";
   if (!req) {
     const facts = (adm && adm.facts) || {};
     const outSub = el("span");
@@ -514,27 +563,47 @@ function cardData(ctx) {
     if (status.rejected) add(outSub, " · " + status.rejected + " rejected");
     return [
       jev,
-      [session.quality_lane || (adm && adm.quality_lane) || "no lane", headroomText(facts)],
+      [eligibility(adm), headroomText(facts)],
       [rule || gap(), ruleSub],
-      [(model || "") + (session.base_effort ? " · " + session.base_effort : ""), add(el("span"), session.provider ? session.provider + " · " : null, absent(session.adaptation_mode) ? gap("effort mode not recorded") : session.adaptation_mode !== "off" ? "adaptive · " + session.adaptation_mode : "effort fixed")],
+      [(model || "") + (session.base_effort ? " · " + session.base_effort : ""), add(el("span"), session.provider ? session.provider + " · " : null, effortWord)],
       [status.completed + " / " + reqs.length, outSub],
     ];
   }
   const f = req.facts || {};
-  const p = [...ctx.planAt.entries()].find(([i]) => i === ctx.index);
+  const turn = ctx.turnOf.get(ctx.index);
   const bindSub = el("span");
-  add(bindSub, "base " + (session.base_effort || "?"));
-  if (p) { const m = planMark(p[1]); add(bindSub, " · ", glyph(m.kind), " ", m.effort || gap()); }
+  add(bindSub, absent(session.base_effort) ? "no effort" : "base " + session.base_effort);
+  if (turn) { const m = planMark(turn.plan); add(bindSub, " · ", glyph(m.kind), " ", m.effort || gap()); }
   const outV = !absent(req.upstream_status) ? String(req.upstream_status) : human(req.status || "unknown");
   const outS = el("span");
   add(outS, human(req.status || ""), !absent(req.response_ms) ? " · " + secs(req.response_ms) : null);
+  let jevCard = [jev[0], "from admission"];
+  if (turn) {
+    const j = turn.plan.judgment;
+    jevCard = ["Turn " + turnNumber(ctx, turn.plan), turn.first ? (j ? numbersOf(answers(j)) || "judged" : gap("answers not recorded")) : "from turn start"];
+  }
   return [
-    [jev[0], "from admission"],
+    jevCard,
     [absent(f.headroom) ? gap() : f.headroom >= 0 ? "Within budget" : "Over budget", headroomText(f)],
     [rule || gap(), "from admission"],
     [model || gap(), bindSub],
     [outV, outS],
   ];
+}
+
+function numbersOf(ans) {
+  return Object.entries(ans).filter(([, a]) => a && (a.type === "score" || a.type === "noul") && !absent(a[a.type]))
+    .map(([k, a]) => human(k).split(" ")[0] + " " + num2(a[a.type])).join(" · ");
+}
+
+// What eligibility removed before any rule ran. NULL on a row with a packet
+// version means the list was empty; without one it was never recorded.
+function eligibility(adm) {
+  if (!adm) return gap();
+  const ex = adm.exclusions;
+  if (Array.isArray(ex) && ex.length) return ex.length + " excluded";
+  if (absent(ex) && absent(adm.packet_version)) return gap("exclusions not recorded");
+  return "All eligible";
 }
 
 function headroomText(f) {
@@ -558,7 +627,8 @@ function spine(ctx, still) {
   const data = cardData(ctx);
   data.forEach((c, i) => {
     const k = i + 1;
-    const inherited = ctx.req && (k === 1 || k === 3);
+    const turn = ctx.req ? ctx.turnOf.get(ctx.index) : null;
+    const inherited = ctx.req && ((k === 1 && !(turn && turn.first)) || k === 3);
     const card = button("card" + (S.stage === k ? " sel" : "") + (inherited ? " inh" : ""), "", () => setStage(k));
     card.dataset.fk = "card-" + k;
     card.setAttribute("aria-pressed", S.stage === k ? "true" : "false");
@@ -602,21 +672,67 @@ function kv(a, b, cls) {
   return row;
 }
 
-function inherited(pane, title, line, values) {
+function inherited(pane, title, line, values, open) {
   const box = el("div", "inherit");
   add(box, el("p", "big2", title), el("p", "note", line));
   const row = el("div", "inhvals");
   for (const [label, value] of values) row.append(add(el("div", "inhv"), el("div", "qn", label), add(el("div", "qv"), value)));
   box.append(row);
-  const b = button("link", "Open admission", () => pick(null));
-  b.dataset.fk = "open-adm";
+  const [text, seq] = open || ["Open admission", null];
+  const b = button("link", text, () => pick(seq));
+  b.dataset.fk = "open-src";
   box.append(b);
   pane.append(box);
 }
 
+const STATUS_WORDS = {planned: "planned", accepted: "accepted, not confirmed", confirmed: "confirmed", rejected: "rejected", outcome_unknown: "outcome unknown"};
+
+// What a plan did, in words that keep a recommendation apart from a change.
+function planWords(p) {
+  const m = planMark(p);
+  const from = p.from_effort || "?";
+  const status = STATUS_WORDS[p.status] || human(p.status || "");
+  if (p.mode === "shadow") {
+    if (m.effort && m.effort !== from) return {effort: "recommended " + m.effort, status: "shadow · not applied"};
+    return {effort: "keep " + from, status: "shadow"};
+  }
+  if (p.action === "change_effort") return {effort: from + " → " + (p.to_effort || "?"), status};
+  if (p.action === "blocked") return {effort: "blocked at " + from, status};
+  if (m.effort && m.effort !== from) return {effort: "keep " + from, status: "recommended " + m.effort};
+  return {effort: "keep " + from, status: p.status === "confirmed" ? "" : status};
+}
+
+function turnPane(pane, ctx, turn) {
+  const p = turn.plan;
+  const n = turnNumber(ctx, p);
+  const note = el("span");
+  if (turn.inferred) add(note, gap("turn not on the request row · matched by log order"));
+  if (!turn.first) {
+    const k = ctx.planIndex.get(p);
+    const j = p.judgment ? answers(p.judgment) : {};
+    const value = (q) => (j[q] ? show(answerValue(j[q]), num2) : gap());
+    head(pane, "Jev", note);
+    return inherited(pane, "No Jev call on this request", "Judged at the start of turn " + n + ", before request " + (k + 1) + ".", [
+      ["Difficulty", value("difficulty")],
+      ["Harm if wrong", value("harm_if_wrong")],
+    ], ["Open request " + (k + 1), ctx.reqs[k].seq]);
+  }
+  head(pane, "Jev · turn " + n, note);
+  if (!p.judgment) pane.append(el("p", "gaprow", "this turn's answers not recorded"));
+  else jevBody(pane, p.judgment, ctx, false);
+  const w = planWords(p);
+  const line = el("div", "planline");
+  add(line, glyph(planMark(p).kind), add(el("span", "pe"), w.effort), w.status ? el("span", "ps", w.status) : null);
+  pane.append(line);
+  if (p.reason) pane.append(el("p", "reason", p.reason));
+  if (p.evidence && p.evidence.error) pane.append(el("p", "gaprow", "Jev failed on this turn · the current effort was kept"));
+}
+
 function jevPane(pane, ctx) {
-  const {adm, session} = ctx;
+  const {adm} = ctx;
   if (ctx.req) {
+    const turn = ctx.turnOf.get(ctx.index);
+    if (turn) return turnPane(pane, ctx, turn);
     const ans = answers(adm);
     const choice = firstOf(ans, "choice");
     const score = firstOf(ans, "score");
@@ -627,14 +743,19 @@ function jevPane(pane, ctx) {
   }
   head(pane, "Jev", null);
   if (!adm) { pane.append(el("p", "gaprow", "admission not recorded")); return; }
+  jevBody(pane, adm, ctx, true);
+}
+
+// One recorded Jev call: what it was shown, as shape only, and what it said.
+function jevBody(pane, row, ctx, admission) {
+  const {session} = ctx;
   const cols = el("div", "cols2");
-  // Left: what Jev was shown, as shape only.
   const left = el("div");
   left.append(el("div", "qn", "Shown to Jev"));
-  const shape = adm.state_shape;
+  const shape = row.state_shape;
   if (!shape || typeof shape !== "object") {
     left.append(el("div", "gaprow", "not recorded for this decision"));
-    const read = readByRules(ctx.trace);
+    const read = admission ? readByRules(ctx.trace) : [];
     if (read.length) {
       left.append(add(el("div", "qn sub"), "Read by the rules"));
       const kvs = el("div", "kvs");
@@ -657,25 +778,26 @@ function jevPane(pane, ctx) {
   }
   // Right: active answers, shadow answers, call metadata.
   const right = el("div");
-  const ans = answers(adm);
+  const ans = answers(row);
   if (!Object.keys(ans).length) {
-    right.append(el("div", "gaprow", adm.fallback || session.decision_source === "fallback" ? "fallback admission · no answers" : "answers not recorded"));
+    const fellBack = admission && (row.fallback || session.decision_source === "fallback");
+    right.append(el("div", "gaprow", fellBack ? "fallback admission · no answers" : "answers not recorded"));
   } else {
     const grid = el("div", "answers");
     for (const [name, a] of Object.entries(ans)) grid.append(answerBlock(name, a));
     right.append(grid);
   }
   const sh = el("div", "shadowbox");
-  const shadow = adm.shadow_answers;
+  const shadow = row.shadow_answers;
   if (!shadow || typeof shadow !== "object" || !Object.keys(shadow).length) {
     add(sh, add(el("div", "sh"), el("span", null, "Shadow"), el("span", null, "none asked")));
   } else {
-    sh.append(add(el("div", "sh"), el("span", null, "Shadow"), el("span", "mono", adm.shadow_packet_version || "")));
+    sh.append(add(el("div", "sh"), el("span", null, "Shadow"), el("span", "mono", row.shadow_packet_version || "")));
     for (const [name, a] of Object.entries(shadow)) sh.append(kv(human(name), show(answerText(a))));
   }
   right.append(sh);
   const jm = el("div", "jmeta");
-  add(jm, show(adm.jev_ms, (v) => Math.round(v) + " ms"), " · ", show(adm.jev_tokens, (v) => int(v) + " tokens"), " · ", show(session.jev_model));
+  add(jm, show(row.jev_ms, (v) => Math.round(v) + " ms"), " · ", show(row.jev_tokens, (v) => int(v) + " tokens"), " · ", show(session.jev_model));
   right.append(jm);
   add(cols, left, right);
   pane.append(cols);
@@ -815,16 +937,17 @@ function constraintsPane(pane, ctx) {
     check("Output asked", show(f.max_tokens, int));
   }
   pane.append(checks);
-  if (!req) {
-    const lane = session.quality_lane || adm.quality_lane;
-    const row = el("div", "lanerow");
-    const laneNode = add(el("div"), el("div", "qn", "Quality lane"), add(el("div", "ln"), lane || "none"));
-    const evid = adm.evidence;
-    const evNode = add(el("div"), el("div", "qn", "Evidence"), add(el("div", "ev " + (evid === "weak" ? "gap" : "ok")), lane ? show(evid) : (evid || "none")));
-    const refNode = add(el("div", "ref"), el("div", "qn", "Qualification"), add(el("div", "mono"), lane ? show(adm.qualification_ref) : (adm.qualification_ref || "none")));
-    add(row, laneNode, evNode, refNode);
-    pane.append(row);
-  }
+}
+
+// The lane the matched rule names, and the evidence that the pair is adequate.
+function laneRow(adm, session) {
+  const lane = session.quality_lane || adm.quality_lane;
+  const row = el("div", "lanerow");
+  const laneNode = add(el("div"), el("div", "qn", "Quality lane"), add(el("div", "ln"), lane || "none"));
+  const evid = adm.evidence;
+  const evNode = add(el("div"), el("div", "qn", "Evidence"), add(el("div", "ev " + (evid === "weak" ? "gap" : "ok")), lane ? show(evid) : (evid || "none")));
+  const refNode = add(el("div", "ref"), el("div", "qn", "Qualification"), add(el("div", "mono"), lane ? show(adm.qualification_ref) : (adm.qualification_ref || "none")));
+  return add(row, laneNode, evNode, refNode);
 }
 
 // --- rule and quota ----------------------------------------------------------
@@ -904,22 +1027,30 @@ function rulePane(pane, ctx) {
   };
   if (trace.available) {
     const gate = trace.gate || {};
-    if (gate.applies) line("", "confidence gate", gate.passed ? "passed" : "failed", gate.passed ? "miss" : "hit");
+    const fired = gate.applies && !gate.passed;
+    if (gate.applies) {
+      const q = gate.fired_by;
+      const c = q && gate.questions ? gate.questions[q] : null;
+      const why = fired ? "fired · " + (q ? human(q) + " " + (absent(c) ? "" : num2(c) + " < " + num2(gate.min_confidence)) : "") : "passed";
+      line("", "confidence gate", why, fired ? "fired" : "miss");
+    }
     for (const r of Array.isArray(trace.rules) ? trace.rules : []) {
       const cls = r.outcome === "hit" ? "hit" : r.outcome === "miss" ? "miss" : "skip";
       line(String(r.index), r.name || "?", ruleWhy(r), cls);
     }
+    if (fired && trace.matched === "low_confidence") line("", "low_confidence", "the gate's route", "hit");
     if (trace.matched === "default") line("", "default", "no rule matched", "hit");
     left.append(list);
     const res = el("div", "res");
-    add(res, el("span", "note", "route "), el("span", "mono", trace.route || stored.route || ""), (trace.replayed && trace.replayed.lane) ? add(el("span", "note"), " · lane ", el("span", "mono", trace.replayed.lane)) : null);
+    add(res, el("span", "note", "route "), el("span", "mono", trace.route || stored.route || "direct"));
     left.append(res);
   } else {
     left.append(el("div", "qn", "Recorded"));
     const kvs = el("div", "kvs");
-    kvs.append(kv("rule", show(recordedRule)), kv("route", show(adm.route)), kv("lane", adm.quality_lane || session.quality_lane || "none"));
+    kvs.append(kv("rule", show(recordedRule)), kv("route", show(adm.route)));
     left.append(kvs);
   }
+  left.append(laneRow(adm, session));
   const right = el("div");
   if (trace.available) {
     const thr = thresholdBlock(trace, adm);
@@ -1037,8 +1168,12 @@ function quotaBlock(adm, session) {
       const label = el("span");
       add(label, provider);
       if (status === "fresh") {
-        add(label, " ", el("span", "note", absent(q.pressure) ? "" : pct(q.pressure)));
-        kvs.append(kv(label, "fresh"));
+        kvs.append(kv(label, add(el("span"), "pressure ", show(q.pressure, pressureText))));
+        // Each window beside its own numbers; never one window's usage with another's reset.
+        for (const w of Array.isArray(q.windows) ? q.windows : []) {
+          const name = [w.name, absent(w.window_minutes) ? null : windowSpan(w.window_minutes)].filter(Boolean).join(" · ");
+          kvs.append(kv(add(el("span", "wn"), name || "window"), absent(w.used_percent) ? gap("usage not reported") : num1(w.used_percent) + "% used"));
+        }
       } else {
         kvs.append(kv(label, (status || "unknown") === "unknown" ? "unreadable · counted as 0" : status + " · unreadable · counted as 0", "gap"));
       }
@@ -1067,7 +1202,8 @@ function quotaBlock(adm, session) {
 function bindingPane(pane, ctx) {
   const {session, adm, req, trace, planList, planIndex, ladder} = ctx;
   const note = el("span", "mono");
-  add(note, "decision ", show(session.decision_id, (v) => String(v).slice(0, 12)), " · binding v", show(session.version));
+  // The version is the binding's now; a request row does not record the one it ran under.
+  add(note, "decision ", show(session.decision_id, (v) => String(v).slice(0, 12)), req ? null : " · binding v", req ? null : show(session.version));
   head(pane, req ? "Request " + (ctx.index + 1) : "Binding", note);
   const cols = el("div", "cols2 even");
   const facts = el("div", "facts");
@@ -1083,43 +1219,50 @@ function bindingPane(pane, ctx) {
   fact(absent(session.compaction_epoch) ? "none" : String(session.compaction_epoch), "compaction epoch");
   const right = el("div");
   right.append(el("div", "qn", "Effort"));
-  const ladderNode = el("div", "ladder");
   const base = session.base_effort;
-  const reqPlan = req ? ctx.planAt.get(ctx.index) : null;
+  const turn = req ? ctx.turnOf.get(ctx.index) : null;
+  // Shadow and fixed sessions send the base effort on every request by construction.
+  const sendsBase = absent(session.adaptation_mode) ? false : session.adaptation_mode !== "active";
   const marks = new Map();
-  if (!planList.length) {
+  if (!planList.length || (req && sendsBase)) {
     if (base) marks.set(base, "confirmed");
-  } else if (reqPlan) {
-    const m = planMark(reqPlan);
-    if (m.effort) marks.set(m.effort, m.kind);
-  } else if (!req) {
+  }
+  if (turn) {
+    const m = planMark(turn.plan);
+    if (m.effort && !(m.kind === "recommended" && marks.has(m.effort))) marks.set(m.effort, m.kind);
+  } else if (!req && planList.length) {
     if (session.expected_effort && session.expected_effort !== session.confirmed_effort) marks.set(session.expected_effort, "expected");
     if (session.confirmed_effort) marks.set(session.confirmed_effort, "confirmed");
   }
-  for (const name of ladder) {
-    const rung = el("div", "rung" + (name === base ? " base" : "") + (marks.has(name) ? " lit" : ""));
-    add(rung, el("i", marks.has(name) ? "g-" + marks.get(name) : null), el("span", null, name));
-    ladderNode.append(rung);
+  if (absent(base)) {
+    right.append(add(el("div", "noeffort"), "No effort sent", el("span", "note", "this model takes no effort setting")));
+  } else {
+    const ladderNode = el("div", "ladder");
+    for (const name of ladder) {
+      const rung = el("div", "rung" + (name === base ? " base" : "") + (marks.has(name) ? " lit" : ""));
+      add(rung, el("i", marks.has(name) ? "g-" + marks.get(name) : null), el("span", null, name));
+      ladderNode.append(rung);
+    }
+    right.append(ladderNode);
   }
-  right.append(ladderNode);
-  if (!base) right.append(gap("base effort not recorded"));
   if (!planList.length) {
     const box = el("div", "shadowbox");
-    box.append(add(el("div", "sh"), el("span", null, "Plans"), add(el("span"), absent(session.adaptation_mode) ? gap("effort mode not recorded") : session.adaptation_mode !== "off" ? "none yet · adaptive " + session.adaptation_mode : "effort fixed · adaptive effort off")));
+    box.append(add(el("div", "sh"), el("span", null, "Plans"), add(el("span"), absent(session.adaptation_mode) ? gap("effort mode not recorded") : session.adaptation_mode !== "off" ? "none yet · adaptive " + session.adaptation_mode : "adaptive effort off")));
     right.append(box);
   } else {
     const list = el("div", "plans");
+    const inferred = [...ctx.turnOf.values()].some((t) => t.inferred);
     for (const p of planList) {
       const i = planIndex.has(p) ? planIndex.get(p) : null;
-      const m = planMark(p);
-      const row = el("div", "plan" + (req && i === ctx.index ? " on" : ""));
-      const effort = el("span", "pe");
-      if (p.action === "change_effort") add(effort, show(p.from_effort), " → ", show(m.effort || p.to_effort));
-      else add(effort, human(p.action || "plan") + " ", show(p.from_effort), m.kind === "recommended" && m.effort && m.effort !== p.from_effort ? ", recommended " + m.effort : null);
-      add(row, el("span", "pn", i === null ? "–" : "#" + (i + 1)), glyph(m.kind), effort, el("span", "ps", [human(p.status || "?"), p.mode].filter(Boolean).join(" · ")));
+      const w = planWords(p);
+      const on = turn && turn.plan === p;
+      const row = el("div", "plan" + (on ? " on" : ""));
+      const pn = el("span", "pn" + (inferred && i !== null ? " inf" : ""), i === null ? "–" : "#" + (i + 1));
+      add(row, pn, glyph(planMark(p).kind), el("span", "pe", w.effort), el("span", "ps", w.status));
       list.append(row);
     }
     right.append(list);
+    if (inferred) right.append(add(el("p", "fine"), gap("turns matched to requests by log order")));
   }
   add(cols, add(el("div"), facts), right);
   pane.append(cols);

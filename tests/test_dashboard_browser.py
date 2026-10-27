@@ -393,7 +393,9 @@ def test_browser_session_inspector(monkeypatch):
                 shot("a-jev")
                 page.keyboard.press("ArrowRight")
                 assert "1,000,000 token window" in body_text(page)
-                assert "evals/reports/2026-09-20-glm-effort/summary.md" in body_text(page)
+                # Constraints headline eligibility; the lane belongs to the rule.
+                assert page.locator(".card").nth(1).locator(".cv").inner_text() == "1 excluded"
+                assert "Quality lane" not in body_text(page)
                 shot("a-constraints")
                 page.keyboard.press("ArrowRight")
                 text = body_text(page)
@@ -406,6 +408,7 @@ def test_browser_session_inspector(monkeypatch):
                 assert "0.07 below hard" in text
                 assert "No threshold moved" in text and "· chosen" not in text
                 assert "quota no effect" in page.locator(".card").nth(2).inner_text()
+                assert "evals/reports/2026-09-20-glm-effort/summary.md" in text
                 # Only thresholds that decided a rule, named after it.
                 assert page.locator(".ticksx span").all_inner_texts() == ["1.4 moderate_tools", "2.4 hard", "3 very_hard"]
                 tops = page.evaluate("[...document.querySelectorAll('.ticksx span')].map(e => e.getBoundingClientRect())"
@@ -414,7 +417,7 @@ def test_browser_session_inspector(monkeypatch):
                     assert a[1] <= b[0] or a[2] != b[2], tops  # no two labels collide on one row
                 shot("a-rule")
                 page.keyboard.press("ArrowRight")
-                assert "effort fixed · adaptive effort off" in body_text(page)
+                assert "adaptive effort off" in body_text(page)
                 shot("a-binding")
                 page.keyboard.press("ArrowRight")
                 assert "usage not reported · 37 of 37" in body_text(page)
@@ -482,7 +485,8 @@ def test_browser_session_inspector(monkeypatch):
                 assert page.locator(".tick.on.unknown").count() == 1
                 shot("b-unknown-outcome")
                 page.keyboard.press("ArrowLeft")
-                assert page.locator(".plan.on").count() == 0
+                # Every request belongs to the turn its plan opened.
+                assert page.locator(".plan.on").count() == 1
                 page.locator(".tick").nth(8).click()
                 assert page.locator(".plan.on").count() == 1
                 assert page.locator(".rung > i.g-expected").count() == 1
