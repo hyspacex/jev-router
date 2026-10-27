@@ -39,6 +39,7 @@ from .dashboard import (
     dashboard,
     live_quota,
 )
+from .workbench import ROUTES as WORKBENCH_ROUTES
 from .deciders import build_decider
 from .deciders.base import Decision
 from .features import Features, estimate_input, extract_features
@@ -274,6 +275,72 @@ class Router:
 
     def decider_for(self, alias: str):
         return self._alias_deciders.get(alias, self.decider)
+
+    # Settings this process read once, at startup. A new value is written to
+    # the file and reported, and takes effect on the next start.
+    RESTART_SETTINGS = (
+        "host", "port", "sqlite_path", "admin_token_env", "max_body_bytes",
+        "max_concurrent_requests", "upstream_connect_timeout_s",
+        "upstream_read_timeout_s",
+    )
+
+    def restart_required(self, config: RouterConfig) -> list[str]:
+        """What a hot swap to `config` cannot change in this process."""
+        old, new = self.config.settings, config.settings
+        out = [
+            f"settings.{name}" for name in self.RESTART_SETTINGS
+            if getattr(old, name) != getattr(new, name)
+        ]
+        if self.config.session_routing.enabled != config.session_routing.enabled:
+            out.append("session_routing.enabled")
+        return out
+
+    async def replace_config(self, config: RouterConfig) -> None:
+        """Swap in a new config without dropping a request in flight.
+
+        A request already under way keeps the objects it holds; the next one
+        reads the new config. Breaker state is kept, as a fact about the
+        provider rather than about the file. Quota readings are kept for a
+        provider whose source did not change, and its poller is restarted
+        under the new settings. The new config is snapshotted the way startup
+        does it, so its decisions replay under it.
+        """
+        old_quota = self.quota
+        quota = QuotaMonitor(config)
+        for name, state in quota.states.items():
+            before = old_quota.states.get(name)
+            if (
+                before is not None
+                and before.enabled
+                and state.enabled
+                and self.config.quota_cfg(name) == config.quota_cfg(name)
+            ):
+                quota.states[name] = before
+        deps: dict[str, Any] = {"jev_client": self.jev_client, "pressures": self.pressures}
+        decider = build_decider(config.settings.decider, config, deps)
+        alias_deciders = {
+            alias: build_decider(acfg.decider, config, deps)
+            for alias, acfg in config.aliases.items()
+            if acfg.decider
+        }
+        self.config = config
+        self.quota = quota
+        self.decider = decider
+        self._alias_deciders = alias_deciders
+        self.breakers.config = config
+        for name in config.provider_names():
+            self.breakers.state_for(name)
+        self.sessions.cfg = config.session_routing
+        self.store.log_state = config.settings.log_state
+        self.store.snapshot_running_config(config)
+        try:
+            await old_quota.stop()
+        except Exception:  # noqa: BLE001 - quota may never fail a request
+            log.exception("could not stop the old quota poller")
+        try:
+            quota.start()
+        except Exception:  # noqa: BLE001 - quota may never stop the router
+            log.exception("could not start the quota poller, routing without it")
 
     # --- forwarding ----------------------------------------------------
 
@@ -3395,6 +3462,7 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/router/sessions", list_sessions, methods=["GET"]),
         Route("/router/sessions/{session_id}", show_session, methods=["GET"]),
         Route("/router/sessions/{session_id}/close", close_session, methods=["POST"]),
+        *(Route(path, handler, methods=verbs) for path, handler, verbs in WORKBENCH_ROUTES),
         Route("/{path:path}", passthrough, methods=methods),
     ]
 

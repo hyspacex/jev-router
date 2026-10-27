@@ -707,15 +707,26 @@ def _is_fallback(row: dict[str, Any]) -> bool:
     return row.get("rule") == ADMISSION_FALLBACK or bool(row.get("fallback"))
 
 
-def build_overview(raw: dict[str, list[dict[str, Any]]], window: str, since: float) -> dict[str, Any]:
+def build_overview(
+    raw: dict[str, list[dict[str, Any]]],
+    window: str,
+    since: float,
+    config: RouterConfig | None = None,
+    breakers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Counts, rates, percentiles and buckets. Pure: rows in, numbers out.
 
     Strict-session metrics come from session rows only. Legacy alias rows
     (no event type) are counted on their own and never mixed in.
+
+    `config` is the running config. The metrics that compare a row with a
+    cutoff or a price read it; without it they say what they could not
+    assess rather than guess. `breakers` is the breaker report the caller
+    already read from memory.
     """
     span, step = WINDOWS[window]
     series: list[dict[str, Any]] = [
-        {"t": since + i * step, "requests": 0, "problems": 0, "_ms": []}
+        {"t": since + i * step, "requests": 0, "problems": 0, "_ms": [], "_fb": []}
         for i in range(span // step)
     ]
 
@@ -757,6 +768,8 @@ def build_overview(raw: dict[str, list[dict[str, Any]]], window: str, since: flo
             slot = _slot(series, since, step, row.get("ts"))
             if slot is not None and _is_number(row.get("response_ms")):
                 slot["_ms"].append(row["response_ms"])
+            if slot is not None and _is_number(row.get("first_byte_ms")):
+                slot["_fb"].append(row["first_byte_ms"])
         elif kind is None:
             legacy.append(row)
 
@@ -810,6 +823,7 @@ def build_overview(raw: dict[str, list[dict[str, Any]]], window: str, since: flo
         times = slot.pop("_ms")
         slot["timed"] = len(times)
         slot["response_p50_ms"] = percentiles(times)["p50"]
+        slot["first_byte_p50_ms"] = percentiles(slot.pop("_fb"))["p50"]
 
     return {
         "window": window,
@@ -862,6 +876,442 @@ def build_overview(raw: dict[str, list[dict[str, Any]]], window: str, since: flo
             "first_byte_ms": percentiles([r.get("first_byte_ms") for r in legacy]),
             "response_ms": percentiles([r.get("response_ms") for r in legacy]),
         },
+        "router_tax": _router_tax(admissions, plans, total),
+        "upstream": _upstream(executions),
+        "quality": _quality(
+            admissions, plans, sessions, raw.get("feedback") or [],
+            raw.get("decisions") or [], config,
+        ),
+        "efficiency": _efficiency(executions, config),
+        "matrix": _matrix(admissions, plans, config),
+        "reliability": _reliability(admissions, breakers),
+    }
+
+
+# --- the overview, v2: router tax, upstream, quality, value, reliability -----
+#
+# Each block is computed from the rows `Sessions.audit_overview` returns,
+# which are already reduced to numbers and labels. Every rate carries its
+# numerator and denominator, and a value no row recorded is None.
+
+KNIFE_EDGE = 0.10
+FEEDBACK_VERDICTS = ("right", "too_weak", "too_strong", "too_slow")
+BREAKER_NUMBERS = (
+    "consecutive_failures", "retry_in_seconds", "opens", "successes", "failures",
+    "breaker_pressure", "cooldown_seconds",
+)
+
+
+def _rate(numerator: int, denominator: int) -> dict[str, Any]:
+    return {
+        "numerator": numerator,
+        "denominator": denominator,
+        "rate": numerator / denominator if denominator else None,
+    }
+
+
+def _value(row: dict[str, Any], qid: str) -> Any:
+    """The number or label one reduced answer carries, or None."""
+    values = row.get("values") if isinstance(row.get("values"), dict) else {}
+    answer = values.get(qid)
+    return answer.get("value") if isinstance(answer, dict) else None
+
+
+def quota_costs(config: RouterConfig | None) -> dict[str, float]:
+    """Each model's `quota_cost`, only where router.yaml writes one down.
+
+    The schema defaults it to 1.0, but a model nobody priced is not thereby
+    as dear as the dearest model. It is unknown, and counted apart.
+    """
+    if config is None:
+        return {}
+    return {
+        name: float(model.quota_cost)
+        for name, model in config.models.items()
+        if "quota_cost" in model.model_fields_set
+    }
+
+
+def quota_saved(models: list[Any], costs: dict[str, float]) -> dict[str, Any]:
+    """1 minus the mean quota_cost over the priced rows; unpriced rows apart."""
+    priced = [costs[m] for m in models if isinstance(m, str) and m in costs]
+    total = sum(priced)
+    return {
+        "saved_rate": 1 - total / len(priced) if priced else None,
+        "quota_cost_sum": total if priced else None,
+        "priced": len(priced),
+        "unpriced": len(models) - len(priced),
+    }
+
+
+def _router_tax(
+    admissions: list[dict[str, Any]], plans: list[dict[str, Any]], requests: int
+) -> dict[str, Any]:
+    # Every Jev call's time is router tax, a failed one's included. The
+    # admission percentiles leave fallbacks out, as `latency` always has.
+    spent = [r.get("jev_ms") for r in admissions] + [p.get("jev_ms") for p in plans]
+    timed = [v for v in spent if _is_number(v)]
+    amortized = None
+    if requests and (timed or not (admissions or plans)):
+        amortized = sum(timed) / requests
+    return {
+        "admission_ms": percentiles([r.get("jev_ms") for r in admissions if not _is_fallback(r)]),
+        "plan_ms": percentiles([p.get("plan_ms") for p in plans]),
+        "plan_jev_ms": percentiles([p.get("jev_ms") for p in plans]),
+        "jev_calls_timed": len(timed),
+        "jev_ms_total": sum(timed) if timed else None,
+        "execution_requests": requests,
+        "amortized_ms_per_request": amortized,
+    }
+
+
+def _upstream(executions: list[dict[str, Any]]) -> dict[str, Any]:
+    by_pair: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in executions:
+        key = (_label(row.get("model")) or "", _label(row.get("effort")) or "")
+        by_pair.setdefault(key, []).append(row)
+    pairs = []
+    ranked = sorted(by_pair.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:TOP]
+    for (model, effort), rows in ranked:
+        tps = []
+        for row in rows:
+            usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+            output = usage.get("output")
+            first, total = row.get("first_byte_ms"), row.get("response_ms")
+            if _is_number(output) and _is_number(first) and _is_number(total):
+                tps.append(output / max(total - first, 1) * 1000)
+        streamed = percentiles(tps)
+        response = percentiles([r.get("response_ms") for r in rows])
+        pairs.append({
+            "model": model or None,
+            "effort": effort or None,
+            "n": len(rows),
+            "first_byte_ms": percentiles([r.get("first_byte_ms") for r in rows]),
+            "tps": {"n": streamed["n"], "p50": streamed["p50"]},
+            "response_ms": {"n": response["n"], "p50": response["p50"]},
+        })
+    return {"pairs": pairs}
+
+
+def _corrective_threshold(config: RouterConfig | None) -> float:
+    if config is not None:
+        return config.adaptive_effort().thresholds.corrective_followup
+    from .config import EffortThresholds
+
+    return EffortThresholds().corrective_followup
+
+
+def _admission_rules(
+    admissions: list[dict[str, Any]], sessions: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Session id -> the rule its admission matched."""
+    out: dict[str, Any] = {}
+    for row in sessions:
+        if row.get("session_id"):
+            out[row["session_id"]] = row.get("decision_rule")
+    for row in sorted(admissions, key=lambda r: r.get("id") or 0, reverse=True):
+        if row.get("session_id"):
+            out[row["session_id"]] = row.get("rule")
+    return out
+
+
+def _grouped(pairs: list[tuple[Any, bool]]) -> list[dict[str, Any]]:
+    """(rule, hit) pairs as one rate per rule, biggest group first."""
+    counts: dict[Any, list[int]] = {}
+    for group, hit in pairs:
+        slot = counts.setdefault(group, [0, 0])
+        slot[0] += int(hit)
+        slot[1] += 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1][1], str(kv[0])))[:TOP]
+    return [{"rule": _label(group), **_rate(hits, n)} for group, (hits, n) in ranked]
+
+
+def _knife_edge(admissions: list[dict[str, Any]], config: RouterConfig | None) -> dict[str, Any]:
+    """Admissions whose answer sits within KNIFE_EDGE of a nearby cutoff.
+
+    Nearby means the rule the admission matched and its two neighbours on the
+    ladder. Only under the running config: a row taken under another config
+    was judged against other cutoffs, so it is counted as unassessed.
+    """
+    from .policy import FEATURE_CONDITIONS
+
+    edge = assessed = 0
+    unassessed: dict[str, int] = {}
+
+    def skip(why: str) -> None:
+        unassessed[why] = unassessed.get(why, 0) + 1
+
+    for row in admissions:
+        recorded = row.get("config_hash")
+        if config is None or not recorded or recorded != config.config_hash:
+            skip("config_changed")
+            continue
+        alias_cfg = config.aliases.get(str(row.get("alias") or ""))
+        if alias_cfg is None:
+            skip("alias_not_in_config")
+            continue
+        rules = config.ruleset_for(alias_cfg).rules
+        names = [rule.name for rule in rules]
+        if row.get("rule") not in names:
+            # A fallback, the confidence gate or the default: no cutoff decided it.
+            skip("no_ladder_rule")
+            continue
+        at = names.index(row["rule"])
+        near = False
+        for rule in rules[max(0, at - 1): at + 2]:
+            for key, cond in rule.when.items():
+                if key in FEATURE_CONDITIONS or not isinstance(cond, dict):
+                    continue
+                value = _value(row, key)
+                if not _is_number(value):
+                    continue
+                for op in ("gte", "lte"):
+                    operand = cond.get(op)
+                    if _is_number(operand) and abs(value - operand) <= KNIFE_EDGE + 1e-9:
+                        near = True
+        assessed += 1
+        edge += int(near)
+    return {
+        "margin": KNIFE_EDGE,
+        **_rate(edge, assessed),
+        "unassessed": sum(unassessed.values()),
+        "unassessed_by_reason": unassessed,
+    }
+
+
+def verdicts_by_admission(
+    admissions: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+    sessions: list[dict[str, Any]] | None = None,
+) -> dict[Any, str]:
+    """Admission row id -> the newest verdict about it.
+
+    Joined by the admission's decision id, or by its session id when the
+    feedback table has that column, or from the session row's own verdict
+    when the sessions table has one.
+    """
+    by_decision: dict[str, str] = {}
+    by_session: dict[str, str] = {}
+    for item in feedback:  # oldest first, so the newest wins
+        verdict = item.get("verdict")
+        if verdict not in FEEDBACK_VERDICTS:
+            continue
+        if item.get("decision_id"):
+            by_decision[item["decision_id"]] = verdict
+        if item.get("session_id"):
+            by_session[item["session_id"]] = verdict
+    for row in sessions or []:
+        verdict = row.get("feedback_verdict")
+        if verdict in FEEDBACK_VERDICTS and row.get("session_id"):
+            by_session.setdefault(row["session_id"], verdict)
+    out: dict[Any, str] = {}
+    for row in admissions:
+        verdict = by_decision.get(row.get("decision_id") or "") or by_session.get(
+            row.get("session_id") or ""
+        )
+        if verdict:
+            out[row.get("id")] = verdict
+    return out
+
+
+def _shadow(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    """Each shadow choice question's answers, counted, overall and by pair."""
+    out: dict[str, dict[str, Any]] = {}
+    for row in decisions:
+        values = row.get("shadow_values") if isinstance(row.get("shadow_values"), dict) else {}
+        for qid, answer in values.items():
+            if not isinstance(answer, dict) or answer.get("type") != "choice":
+                continue
+            label = _label(answer.get("value"))
+            if label is None or _label(qid) is None:
+                continue
+            block = out.setdefault(qid, {"n": 0, "counts": {}, "_pairs": {}})
+            block["n"] += 1
+            block["counts"][label] = block["counts"].get(label, 0) + 1
+            per = block["_pairs"].setdefault(
+                (_label(row.get("model")), _label(row.get("effort"))), {}
+            )
+            per[label] = per.get(label, 0) + 1
+    for block in out.values():
+        pairs = block.pop("_pairs")
+        ranked = sorted(pairs.items(), key=lambda kv: (-sum(kv[1].values()), str(kv[0])))
+        block["by_pair"] = [
+            {"model": model, "effort": effort, "n": sum(c.values()), "counts": c}
+            for (model, effort), c in ranked[:TOP]
+        ]
+    return out
+
+
+def _quality(
+    admissions: list[dict[str, Any]],
+    plans: list[dict[str, Any]],
+    sessions: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    config: RouterConfig | None,
+) -> dict[str, Any]:
+    threshold = _corrective_threshold(config)
+    rule_of = _admission_rules(admissions, sessions)
+
+    corrective = [
+        (rule_of.get(p.get("session_id")), p["corrective_followup"] >= threshold)
+        for p in plans if _is_number(p.get("corrective_followup"))
+    ]
+    first: dict[str, dict[str, Any]] = {}
+    for plan in sorted(plans, key=lambda p: p.get("created") or 0):
+        if plan.get("session_id") and plan["session_id"] not in first:
+            first[plan["session_id"]] = plan
+    early = [(rule_of.get(sid), plan.get("direction") == "up") for sid, plan in first.items()]
+
+    verdicts = verdicts_by_admission(admissions, feedback, sessions)
+    counts = dict.fromkeys(FEEDBACK_VERDICTS, 0)
+    for verdict in verdicts.values():
+        counts[verdict] += 1
+    counts["unrated"] = len(admissions) - len(verdicts)
+
+    return {
+        "corrective_followup": {
+            "threshold": threshold,
+            **_rate(sum(hit for _, hit in corrective), len(corrective)),
+            "by_rule": _grouped(corrective),
+        },
+        "early_escalation": {
+            **_rate(sum(hit for _, hit in early), len(early)),
+            "by_rule": _grouped(early),
+        },
+        "knife_edge": _knife_edge(admissions, config),
+        "feedback": {"admissions": len(admissions), "counts": counts},
+        "shadow": _shadow(decisions),
+    }
+
+
+def _cache(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Cached over input tokens, from rows that reported both."""
+    both = [
+        r["usage"] for r in rows
+        if isinstance(r.get("usage"), dict)
+        and _is_number(r["usage"].get("input")) and _is_number(r["usage"].get("cached"))
+    ]
+    cached = sum(u["cached"] for u in both)
+    total = sum(u["input"] for u in both)
+    return {
+        "rows": len(both),
+        "cached_tokens": cached if both else None,
+        "input_tokens": total if both else None,
+        "rate": cached / total if total else None,
+    }
+
+
+def _efficiency(executions: list[dict[str, Any]], config: RouterConfig | None) -> dict[str, Any]:
+    by_model: dict[str, list[dict[str, Any]]] = {}
+    for row in executions:
+        by_model.setdefault(_label(row.get("model")) or "", []).append(row)
+
+    def count(key: str) -> int:
+        return sum(
+            1 for r in executions
+            if isinstance(r.get("usage"), dict) and _is_number(r["usage"].get(key))
+        )
+
+    ranked = sorted(by_model.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:TOP]
+    return {
+        "quota_saved": quota_saved([r.get("model") for r in executions], quota_costs(config)),
+        "cache": {
+            **_cache(executions),
+            "by_model": [{"model": model or None, **_cache(rows)} for model, rows in ranked],
+        },
+        "usage_reported": {
+            "executions": len(executions),
+            "reported": sum(1 for r in executions if r.get("usage_reported")),
+            "input": count("input"),
+            "output": count("output"),
+            "cached": count("cached"),
+        },
+    }
+
+
+def task_question(config: RouterConfig | None) -> str:
+    """The choice question the matrix is drawn over: the first one asked."""
+    if config is not None:
+        for qid in [*config.semantic_policy.active_questions, *config.questions]:
+            if (config.questions.get(qid) or {}).get("type") == "choice":
+                return qid
+    return "task"
+
+
+def _matrix(
+    admissions: list[dict[str, Any]],
+    plans: list[dict[str, Any]],
+    config: RouterConfig | None,
+) -> dict[str, Any]:
+    qid = task_question(config)
+    threshold = _corrective_threshold(config)
+    criteria = (config.questions.get(qid) or {}).get("criteria") if config else None
+    tasks = [t for t in criteria if _label(t)] if isinstance(criteria, dict) else []
+    cell_of: dict[str, tuple[Any, Any, Any]] = {}
+    cells: dict[tuple[Any, Any, Any], dict[str, int]] = {}
+    for row in admissions:
+        task = _label(_value(row, qid))
+        key = (task, _label(row.get("model")), _label(row.get("effort")))
+        cell = cells.setdefault(key, {"n": 0, "hits": 0, "plans": 0})
+        cell["n"] += 1
+        if row.get("session_id"):
+            cell_of[row["session_id"]] = key
+        if task and task not in tasks:
+            tasks.append(task)
+    for plan in plans:
+        key = cell_of.get(plan.get("session_id") or "")
+        if key is None or not _is_number(plan.get("corrective_followup")):
+            continue
+        cells[key]["plans"] += 1
+        cells[key]["hits"] += int(plan["corrective_followup"] >= threshold)
+    pairs: dict[tuple[Any, Any], int] = {}
+    for (_, model, effort), cell in cells.items():
+        pairs[(model, effort)] = pairs.get((model, effort), 0) + cell["n"]
+    ranked = sorted(cells.items(), key=lambda kv: (-kv[1]["n"], str(kv[0])))
+    return {
+        "question": qid,
+        "tasks": tasks,
+        "pairs": _top(pairs, "model", "effort"),
+        "cells": [
+            {
+                "task": task, "model": model, "effort": effort, "n": cell["n"],
+                "corrective": _rate(cell["hits"], cell["plans"]),
+            }
+            for (task, model, effort), cell in ranked
+        ],
+    }
+
+
+def project_breakers(report: Any) -> dict[str, Any]:
+    """Breaker state per provider: a word and numbers. No error text."""
+    if not isinstance(report, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for provider, row in report.items():
+        if _label(provider) is None or not isinstance(row, dict):
+            continue
+        state = row.get("state")
+        item: dict[str, Any] = {
+            "state": state if state in ("closed", "open", "half_open") else None,
+            "healthy": row.get("healthy") if isinstance(row.get("healthy"), bool) else None,
+        }
+        for key in BREAKER_NUMBERS:
+            item[key] = row.get(key) if _is_number(row.get(key)) else None
+        out[provider] = item
+    return out
+
+
+def _reliability(
+    admissions: list[dict[str, Any]], breakers: dict[str, Any] | None
+) -> dict[str, Any]:
+    return {
+        "fallback": _rate(sum(1 for r in admissions if _is_fallback(r)), len(admissions)),
+        "low_confidence": _rate(
+            sum(1 for r in admissions if r.get("rule") == "low_confidence"), len(admissions)
+        ),
+        # In memory and per process. None when the caller did not read it.
+        "breakers": project_breakers(breakers) if breakers is not None else None,
     }
 
 
@@ -876,7 +1326,10 @@ async def audit_overview(request: Request) -> Response:
     span, step = WINDOWS[window]
     # Buckets end at the next boundary, so the answer changes only with the data.
     since = (math.floor(time.time() / step) + 1) * step - span
-    body = build_overview(router.sessions.audit_overview(since), window, since)
+    body = build_overview(
+        router.sessions.audit_overview(since), window, since,
+        config=router.config, breakers=router.breakers.report(),
+    )
     body["config_hash"] = router.config.config_hash
     body["subscriptions"] = live_quota(router.quota, router.quota.clock())
     return JSONResponse(body, headers=HEADERS)

@@ -1,4 +1,4 @@
-"""Command line: serve, adapter, check-config, explain, decisions, config-snapshots, bookmarks."""
+"""Command line: serve, adapter, check-config, explain, decisions, config, config-snapshots, bookmarks."""
 
 from __future__ import annotations
 
@@ -901,6 +901,91 @@ def cmd_bookmarks(args: argparse.Namespace) -> int:
         store.close()
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Show the running rules with their hits, or replay a draft. Writes nothing.
+
+    `apply` is not here on purpose: it hot-swaps a running server, so it is
+    an HTTP action against that server (`POST /router/config/apply`).
+    """
+    from types import SimpleNamespace
+
+    from .workbench import PREVIEW_MAX, _since, describe_config, run_preview
+
+    config = _load(args.config)
+    store, sessions = _session_store(config)
+    try:
+        if args.action == "show":
+            since = _since(args.window)
+            counts = {(a, r): n for a, r, n in sessions.admission_rule_counts(since)}
+            body = describe_config(config, counts, args.window, since)
+            if args.json:
+                body.pop("yaml", None)
+                print(json.dumps(body, indent=2, default=str))
+                return 0
+            print(f"config {body['config_hash']}  {body['admissions']} admission(s) in {args.window}")
+            for rule in body["rules"]:
+                share = "-" if rule["share"] is None else f"{rule['share']:.0%}"
+                print(
+                    f"{rule['index']:>3}. {rule['name']:<22} hits={rule['hits']:<5} "
+                    f"share={share:<5} line={rule['line'] or '-'}  {json.dumps(rule['when'])}"
+                )
+            for name in ("low_confidence", "default", "fallback"):
+                item = body.get(name)
+                if item:
+                    print(f"     {name:<22} hits={item['hits']}")
+            return 0
+        # preview
+        if not args.draft:
+            print("config preview needs a draft file", file=sys.stderr)
+            return 2
+        if not 1 <= args.limit <= PREVIEW_MAX:
+            print(f"--limit must be from 1 to {PREVIEW_MAX}", file=sys.stderr)
+            return 2
+        try:
+            text = Path(os.path.expanduser(args.draft)).read_text()
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"{args.draft}: unreadable ({type(exc).__name__})", file=sys.stderr)
+            return 2
+        router = SimpleNamespace(config=config, sessions=sessions, store=store)
+        status, body = run_preview(router, text, args.window, args.limit)
+        if args.json:
+            print(json.dumps(body, indent=2, default=str))
+            return 0 if status == 200 else 1
+        if status != 200:
+            for err in body["errors"]:
+                where = f"line {err['line']}: " if err.get("line") else ""
+                print(f"{where}{err['message']}")
+            return 1
+
+        def saved(block: dict[str, Any]) -> str:
+            rate = block.get("saved_rate")
+            return "-" if rate is None else f"{rate:.1%} ({block['unpriced']} unpriced)"
+
+        print(
+            f"{body['config_hash_running']} -> {body['config_hash_draft']}: "
+            f"{body['changed']} of {body['evaluated']} admission(s) in {args.window} would move"
+        )
+        print(f"quota saved: {saved(body['quota_saved_before'])} -> {saved(body['quota_saved_after'])}")
+        fb = body["feedback"]
+        print(
+            f"feedback: {fb['rated']} rated, {fb['resolved_too_weak']} too_weak resolved, "
+            f"{fb['resolved_too_strong']} too_strong resolved, {fb['conflicts']} conflict(s), "
+            f"{fb['right_changed']} rated right moved"
+        )
+        for diff in body["diffs"]:
+            b, a = diff["before"], diff["after"]
+            print(
+                f"  #{diff['row']} {diff.get('session_id') or '-'}  "
+                f"{b.get('rule')}:{b.get('model')}({b.get('effort') or '-'}) -> "
+                f"{a.get('rule')}:{a.get('model')}({a.get('effort') or '-'})"
+                + (f"  [{diff['feedback_verdict']}]" if diff.get("feedback_verdict") else "")
+            )
+        return 0
+    finally:
+        sessions.close()
+        store.close()
+
+
 def _session_store(config: RouterConfig):
     from .pins import Store
     from .sessions import Sessions
@@ -1254,6 +1339,16 @@ def main(argv: list[str] | None = None) -> int:
     p_book.add_argument("--slug", help="with add, [a-z0-9-]{1,40}; defaults from the label")
     p_book.add_argument("--json", action="store_true")
     p_book.set_defaults(func=cmd_bookmarks)
+
+    p_cfg = sub.add_parser(
+        "config", help="show the rules with their hits, or replay a draft against them"
+    )
+    p_cfg.add_argument("action", choices=["show", "preview"])
+    p_cfg.add_argument("draft", nargs="?", help="with preview, the draft router.yaml")
+    p_cfg.add_argument("--window", choices=["1h", "24h", "7d", "30d"], default="7d")
+    p_cfg.add_argument("--limit", type=int, default=200, help="admissions to replay")
+    p_cfg.add_argument("--json", action="store_true")
+    p_cfg.set_defaults(func=cmd_config)
 
     p_fb = sub.add_parser("feedback", help="say whether a routing decision was right")
     p_fb.add_argument("decision_id", help="a decision id from `decisions`, or 'last'")

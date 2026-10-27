@@ -22,6 +22,8 @@ uv run jev-router sessions reconcile <id> --plan <plan-id> --outcome applied
 uv run jev-router decisions -n 20             # active vs shadow answers, lane, quota
 uv run jev-router decisions replay <id>       # the deciding row: admission, else first unpinned
 uv run jev-router decisions replay '#730'     # one exact row; also --row 730
+uv run jev-router config show                 # rules, their lines and hits in a window
+uv run jev-router config preview draft.yaml   # replay recent admissions under a draft
 uv run jev-router config-snapshots list       # stored configs, scrubbed, and whether each loads
 uv run jev-router config-snapshots import old.yaml   # only a hash some decision carries
 uv run jev-router bookmarks add <session-id> --label "Debugging" [--slug debugging]
@@ -146,6 +148,12 @@ the offline comparison until a qualified deployment and live arm are available.
   admission's trace). Every field is projected by name. The page
   (`static/dashboard.*`) has two views, Overview and Sessions, and the
   session inspector; hashes `#overview?w=`, `#sessions?…`, `#s=<id>`, `#<slug>`.
+- `workbench.py` — the Rules & Config tab's backend, outside `/router/audit`:
+  `GET /router/config`, `POST /router/config/preview` (a pure replay of recent
+  admissions under a draft), `POST /router/config/apply` (backup, atomic
+  write, `Router.replace_config`), `POST /router/sandbox/jev` (one Jev call,
+  no write) and `POST /router/eval-cases` (`golden_cases.jsonl` beside the
+  database).
 - `app.py` — Starlette routes, forwarding, upstream fallbacks, streaming,
   shadow mode.
 - `security.py` — router-endpoint authentication, request-size and concurrency limits.
