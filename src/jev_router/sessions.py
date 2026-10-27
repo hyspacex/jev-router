@@ -1849,7 +1849,8 @@ def usage_counts(usage: Any) -> dict[str, int | None]:
 
     Chat completions say `prompt_tokens`, `completion_tokens` and
     `prompt_tokens_details.cached_tokens`; Responses say `input_tokens`,
-    `output_tokens` and `input_tokens_details.cached_tokens`. Both are read.
+    `output_tokens` and `input_tokens_details.cached_tokens`; the Responses
+    observer writes the flat `cached_input_tokens`. All three are read.
     A count the block did not carry is None, never zero.
     """
     out: dict[str, int | None] = {"input": None, "output": None, "cached": None}
@@ -1864,13 +1865,16 @@ def usage_counts(usage: Any) -> dict[str, int | None]:
             if value is not None:
                 out[key] = value
                 break
-    for name in ("input_tokens_details", "prompt_tokens_details"):
-        details = usage.get(name)
-        if isinstance(details, dict):
-            value = _whole(details.get("cached_tokens"))
-            if value is not None:
-                out["cached"] = value
-                break
+    # The Responses observer flattens the count to `cached_input_tokens`.
+    out["cached"] = _whole(usage.get("cached_input_tokens"))
+    if out["cached"] is None:
+        for name in ("input_tokens_details", "prompt_tokens_details"):
+            details = usage.get(name)
+            if isinstance(details, dict):
+                value = _whole(details.get("cached_tokens"))
+                if value is not None:
+                    out["cached"] = value
+                    break
     return out
 
 

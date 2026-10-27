@@ -1067,6 +1067,8 @@ def test_usage_and_answers_reduce_to_numbers_and_labels():
     assert usage_counts(chat) == {"input": 120, "output": 30, "cached": 100}
     assert usage_counts(responses) == {"input": 90, "output": 10, "cached": 0}
     assert usage_counts({"total_tokens": 42}) == {"input": None, "output": None, "cached": None}
+    # The Responses observer stores the cached count flat, not under details.
+    assert usage_counts({"input_tokens": 50, "output_tokens": 5, "cached_input_tokens": 40}) == {"input": 50, "output": 5, "cached": 40}
     assert usage_counts("nonsense") == {"input": None, "output": None, "cached": None}
     stored = {
         "difficulty": {"type": "score", "score": 1.2, "confidence": 0.8},
