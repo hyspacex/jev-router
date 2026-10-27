@@ -145,9 +145,14 @@ the offline comparison until a qualified deployment and live arm are available.
   allowlisted `client`, `model`, `rule`, `state`, `adaptive`, `problem`,
   `pinned`, `q` and `window`; facets; bookmarks) and
   `/router/audit/sessions/{id}` (binding, admission, requests, plans, and the
-  admission's trace). Every field is projected by name. The page
-  (`static/dashboard.*`) has two views, Overview and Sessions, and the
-  session inspector; hashes `#overview?w=`, `#sessions?…`, `#s=<id>`, `#<slug>`.
+  admission's trace, plus `turns[]`: one entry per user turn with its
+  scrubbed prompt, state, Jev answers, plan and execution rollup). Every field
+  is projected by name. The page (`static/dashboard.js` shell and Sessions
+  list, `overview.js`, `inspector.js`, `rules.js`, one `dashboard.css`) has
+  three views, Overview, Sessions and Rules, and the session inspector;
+  hashes `#overview?w=`, `#sessions?…`, `#s=<id>`, `#<slug>`, `#rules`.
+- `scrub.py` — the text scrubber and the session title, preview, workspace
+  hint and transcript-turn summary. Pure.
 - `workbench.py` — the Rules & Config tab's backend, outside `/router/audit`:
   `GET /router/config`, `POST /router/config/preview` (a pure replay of recent
   admissions under a draft), `POST /router/config/apply` (backup, atomic
@@ -230,8 +235,15 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   builder, decider or quota source needs Python.
 - `policy.py`, `features.py` and `effort.py` stay pure. No I/O, no randomness,
   no clock. Quota pressure arrives as an argument, never as a lookup.
-- Never log or store message text, prompts or API keys. The conversation key
-  hashes the `Authorization` header. `settings.log_state` is for debugging only.
+- Never store API keys or the `Authorization` header; the conversation key
+  hashes it. Message text is stored only through `scrub.py` (secrets, PEM
+  keys, env-style assignments, data URIs and long blobs redacted), capped at
+  `settings.turn_text_max_chars`, in the named text columns (`state`,
+  `user_prompt`, `assistant_summary`, `tool_calls_json`, the session `title`,
+  `prompt_preview` and `workspace_hint`), and only while `settings.log_state`
+  is on (the shipped default). `scrub_secrets: false` is a config error. The
+  per-turn assistant summary and tool calls come from the client's own next
+  request, never from the streamed reply.
 - A Jev failure must never fail a request. Every path through `deciders/jev.py`
   returns a `Decision`.
 - A quota failure must never fail a request either, and must never change one.
@@ -385,7 +397,11 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
   matches, else its snapshot, else `available: false` with the reason. Never
   under another config, and never a fallback admission, where no rule ran.
   Its endpoints write nothing and project by allowlist: no conversation key,
-  owner, fingerprint, tool or language names, state text or usage contents.
+  owner, fingerprint or raw usage contents; the stored, scrubbed text fields
+  and tool names pass by name, nothing else does. Endpoints that write or
+  call a provider (session feedback, config preview and apply, the Jev
+  sandbox, eval-case export) live outside `/router/audit`, in `workbench.py`
+  and the session routes, behind the same credential.
   Every query parameter is allowlisted and bounded, and an unknown one is a
   400. The overview returns numbers and router-made labels only; a value no
   row recorded is null and shown as a gap, never as zero.
