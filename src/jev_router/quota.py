@@ -1267,10 +1267,15 @@ class QuotaMonitor:
         """
         now = self.clock() if now is None else now
         knobs = self.knobs
-        models_of: dict[str, list[dict[str, Any]]] = {}
+        # `quota_cost` is reported only where router.yaml writes it down; an
+        # unpriced model is None here, as quota saved counts it. Its pressure
+        # still uses the schema default, as routing does.
+        models_of: dict[str, list[tuple[dict[str, Any], float]]] = {}
         for model, mcfg in self.config.models.items():
+            priced = "quota_cost" in mcfg.model_fields_set
             models_of.setdefault(self.config.provider_of(model), []).append(
-                {"model": model, "quota_cost": mcfg.quota_cost}
+                ({"model": model, "quota_cost": mcfg.quota_cost if priced else None},
+                 mcfg.quota_cost)
             )
         routed = []
         for name, state in self.states.items():
@@ -1301,8 +1306,8 @@ class QuotaMonitor:
                 "demote_above": knobs.demote_above,
                 "exhausted_at": knobs.exhausted_at,
                 "models": [
-                    {**m, "pressure": round(state.pressure * m["quota_cost"], 4)}
-                    for m in models_of.get(name, [])
+                    {**m, "pressure": round(state.pressure * cost, 4)}
+                    for m, cost in models_of.get(name, [])
                 ],
                 "polls": state.polls,
                 "errors": state.errors,

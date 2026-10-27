@@ -54,19 +54,44 @@ function quotaPanel(ov) {
   const routed = Array.isArray(subs.routed) ? subs.routed : [];
   const tracked = Array.isArray(subs.tracked) ? subs.tracked : [];
   const list = el("div", "subs");
-  for (const r of routed) list.append(subRow(r, false, subs));
-  for (const t of tracked) list.append(subRow(t, true, subs));
+  // A provider with bars gets a row; one with nothing to draw gets a line.
+  for (const r of routed) list.append(hasReading(r, false) ? subRow(r, false, subs) : subLine(r, false));
+  for (const t of tracked) list.append(hasReading(t, true) ? subRow(t, true, subs) : subLine(t, true));
   if (!routed.length && !tracked.length) list.append(el("p", "empty", "No provider"));
-  box.append(list);
+  box.append(list, quotaFooter(ov));
   return box;
+}
+
+function hasReading(r, tracked) {
+  const windows = Array.isArray(r.windows) ? r.windows.length : 0;
+  const plans = tracked && Array.isArray(r.plans) ? r.plans.length : 0;
+  return windows > 0 || plans > 0 || (!tracked && r.status === "fresh" && !absent(r.used_percent));
 }
 
 // Why a provider shows no bars. One chip, never a row of empty numbers.
 function readingGap(r) {
-  if (r.enabled === false) return "not polled";
+  if (r.enabled === false) return "disabled";
   if (r.status === "stale") return "stale reading";
   if (r.status === "error") return "reading failed";
+  if (!r.status || r.status === "unknown") return "not polled";
   return "no reading";
+}
+
+// One line: the provider, the models it carries, why there are no bars.
+function subLine(r, tracked) {
+  const row = el("div", "sub flat" + (tracked ? " tracked" : ""));
+  const models = !tracked && Array.isArray(r.models) ? r.models.map((m) => m.model).join(" · ") : "";
+  add(row, el("span", "subp", tracked ? r.id : r.provider), el("span", "subm mono", models), gap(readingGap(r)));
+  return row;
+}
+
+// The window's admissions: how often quota moved the choice.
+function quotaFooter(ov) {
+  const d = ov.decisions || {};
+  const line = el("div", "qfoot");
+  add(line, el("span", "kl", "Quota changed the choice"),
+    d.quota_recorded ? el("span", "mono", int(d.quota_changed || 0) + " of " + int(d.quota_recorded)) : gap());
+  return line;
 }
 
 function subRow(r, tracked, subs) {
@@ -136,24 +161,28 @@ function kpiStrip(ov) {
   const big = (label, value, sub) => strip.append(add(el("div", "bigk"), el("span", "kl", label), add(el("span", "bigv"), value), sub ? add(el("span", "ks"), sub) : null));
   const eff = ov.efficiency || {};
   const qs = eff.quota_saved || {};
-  const calls = (qs.priced || 0) + (qs.unpriced || 0);
-  big("Quota saved",
-    absent(qs.saved_rate) ? gap(calls ? "no priced model" : "no calls") : pct(qs.saved_rate),
-    calls ? int(qs.priced || 0) + " of " + int(calls) + " calls priced" : null);
+  const calls = (qs.counted || 0) + (qs.unknown || 0);
+  big("Frontier quota saved",
+    qs.counted && !absent(qs.saved_rate) ? pct(qs.saved_rate)
+      : gap(!calls ? "no calls" : qs.baseline_model ? "no call counted" : "no priced model"),
+    qs.baseline_model && calls ? "vs every call on " + qs.baseline_model + " · " + int(qs.counted || 0) + " of " + plural(calls, "call") : null);
   const tax = ov.router_tax || {};
   const adm = tax.admission_ms || {};
   big("Router tax",
-    adm.n ? ms(adm.p50) : gap("no admission timed"),
+    adm.n ? add(el("span"), ms(adm.p50), el("span", "bigu", "at admission")) : gap("no admission timed"),
     absent(tax.amortized_ms_per_request) ? (tax.execution_requests ? gap("per call not recorded") : null)
-      : ms(tax.amortized_ms_per_request) + " per call · " + int(tax.execution_requests) + " calls");
+      : ms(tax.amortized_ms_per_request) + " per call across " + plural(tax.execution_requests, "call"));
   const cf = (ov.quality || {}).corrective_followup || {};
   big("Clean turns",
     cf.denominator ? pct(1 - cf.rate) : gap("no turn assessed"),
-    cf.denominator ? int(cf.denominator - cf.numerator) + " of " + int(cf.denominator) + " turns" : null);
+    cf.denominator ? int(cf.denominator - cf.numerator) + " of " + plural(cf.denominator, "planned turn") : null);
   const cache = eff.cache || {};
+  const usage = eff.usage_reported || {};
+  const reported = usage.executions ? int(usage.reported || 0) + " of " + plural(usage.executions, "call") + " reported" : null;
   big("Cache hit",
     absent(cache.rate) ? gap("not reported") : pct(cache.rate),
-    absent(cache.input_tokens) ? null : ovTokens(cache.cached_tokens || 0) + " of " + ovTokens(cache.input_tokens) + " input tokens");
+    absent(cache.input_tokens) ? reported
+      : ovTokens(cache.cached_tokens || 0) + " of " + ovTokens(cache.input_tokens) + " input tokens" + (reported ? " · " + reported : ""));
   return strip;
 }
 
@@ -168,9 +197,10 @@ function ovPair(model, effort) {
 
 function matrixPanel(ov) {
   const m = ov.matrix || {};
-  const box = panel(m.question ? cap(m.question) : "Task", null);
   const pairs = Array.isArray(m.pairs) ? m.pairs : [];
   const cells = Array.isArray(m.cells) ? m.cells : [];
+  const admissions = cells.reduce((sum, c) => sum + (c.n || 0), 0);
+  const box = panel("Admissions by " + (m.question ? human(m.question) : "task"), admissions ? plural(admissions, "admission") : null, "mxp");
   if (!pairs.length || !cells.length) {
     box.append(el("p", "empty", "No admission in this window"));
     return box;
@@ -200,15 +230,23 @@ function matrixPanel(ov) {
         cell.style.backgroundColor = "rgba(123, 224, 195, " + (0.1 + 0.55 * c.n / max).toFixed(3) + ")";
         cell.append(el("span", "mxn mono", int(c.n)));
         const cr = c.corrective || {};
-        if (cr.denominator) cell.append(el("span", "mxr mono" + (cr.numerator ? " hot" : ""), pct(cr.rate)));
+        if (cr.denominator) cell.append(el("span", "mxr" + (cr.numerator ? " hot" : ""), pct(cr.rate) + " corrective"));
       }
       grid.append(cell);
     }
   }
   scroll.append(grid);
+  scroll.addEventListener("scroll", () => mxEdge(scroll), {passive: true});
+  requestAnimationFrame(() => mxEdge(scroll));
   box.append(scroll);
   return box;
 }
+
+// A grid wider than its panel fades at the right edge until scrolled to the end.
+function mxEdge(scroll) {
+  scroll.classList.toggle("more", scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 2);
+}
+window.addEventListener("resize", () => { for (const s of document.querySelectorAll(".mxs")) mxEdge(s); });
 
 // A p50 with its own count: fewer recorded than ran is a gap beside it.
 function ovP50(p, rows, format) {
@@ -220,18 +258,34 @@ function ovP50(p, rows, format) {
   return cell;
 }
 
+// Fewer calls than this and a p50 is a hint, not a measurement: its count is muted.
+const FEW_CALLS = 5;
+
+// The slowest first byte first; a pair with no first byte recorded last.
+function byFirstByte(a, b) {
+  const x = a.first_byte_ms && a.first_byte_ms.n ? a.first_byte_ms.p50 : null;
+  const y = b.first_byte_ms && b.first_byte_ms.n ? b.first_byte_ms.p50 : null;
+  if (absent(x) || absent(y)) return absent(x) ? (absent(y) ? 0 : 1) : -1;
+  return y - x;
+}
+
 function latencyPanel(ov) {
-  const pairs = ((ov.upstream || {}).pairs) || [];
+  const pairs = (((ov.upstream || {}).pairs) || []).slice().sort(byFirstByte);
   const box = panel("Latency", null);
   const table = el("div", "lt");
   const head = el("div", "ltr lth");
-  add(head, el("span", null, "Model · effort"), el("span", "num", "Calls"), el("span", "num", "First byte"), el("span", "num", "tok/s"));
+  add(head, el("span", null, "Model · effort"), el("span", "num", "Calls"),
+    add(el("span", "num"), "First byte", el("span", "p95", "p50 · p95")), el("span", "num", "tok/s"));
   table.append(head);
   if (!pairs.length) table.append(el("p", "empty", "No calls in this window"));
   for (const p of pairs) {
     const row = el("div", "ltr");
-    add(row, ovPair(p.model, p.effort), el("span", "num mono", int(p.n || 0)),
-      ovP50(p.first_byte_ms, p.n, ms), ovP50(p.tps, p.n, (v) => num1(v)));
+    const fb = ovP50(p.first_byte_ms, p.n, ms);
+    if (p.first_byte_ms && p.first_byte_ms.n && !absent(p.first_byte_ms.p95)) {
+      fb.insertBefore(el("span", "p95", ms(p.first_byte_ms.p95)), fb.childNodes[1] || null);
+    }
+    add(row, ovPair(p.model, p.effort), el("span", "num mono" + ((p.n || 0) < FEW_CALLS ? " few" : ""), int(p.n || 0)),
+      fb, ovP50(p.tps, p.n, (v) => num1(v)));
     table.append(row);
   }
   box.append(table);
@@ -257,7 +311,7 @@ function seriesPanel(ov, within) {
   series.forEach((b, i) => {
     const when = bucketLabel(b.t, step);
     const col = el("div", "sb");
-    col.title = when + " · " + b.requests + " requests" + (b.problems ? " · " + b.problems + " problems" : "");
+    col.title = when + " · " + plural(b.requests, "request") + (b.problems ? " · " + plural(b.problems, "problem") : "");
     const good = el("i");
     good.style.height = ((b.requests - b.problems) / maxReq * 100) + "%";
     const bad = el("i", "bad");

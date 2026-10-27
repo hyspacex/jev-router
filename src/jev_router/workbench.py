@@ -43,6 +43,8 @@ from .dashboard import (
     WINDOWS,
     _is_number,
     _label,
+    knife_edge_of,
+    knife_edge_rate,
     project_facts,
     quota_costs,
     quota_saved,
@@ -474,6 +476,7 @@ def rated_admissions(
     rows: list[dict[str, Any]],
     feedback: list[dict[str, Any]],
     labels: dict[str, dict[str, Any]] | None = None,
+    config: RouterConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Each admission's numeric scores beside the verdict about it, if any.
 
@@ -481,21 +484,53 @@ def rated_admissions(
     noul answers, and the newest verdict (None when nobody rated it). An
     admission with no numeric answer, such as a fallback, is left out.
     Pure. The Rules tab plots these on its threshold rulers.
+
+    `knife_edge` is True when a score sits within the overview's margin of a
+    cutoff near the rule it matched, under `config` (the running one); None
+    when the row cannot be judged, such as one taken under another config.
     """
-    sessions = [{"session_id": sid, **item} for sid, item in (labels or {}).items()]
+    labels = labels or {}
+    sessions = [{"session_id": sid, **item} for sid, item in labels.items()]
     verdicts = verdicts_by_admission(rows, feedback, sessions)
     out = []
     for row in rows:
         scores = _numbers(row.get("answers"))
         if not scores:
             continue
+        title = (labels.get(row.get("session_id") or "") or {}).get("title")
         out.append({
             "session_id": _label(row.get("session_id")),
+            "title": title if isinstance(title, str) else None,
             "alias": _label(row.get("alias")),
             "rule": _label(row.get("rule")),
             "verdict": verdicts.get(row.get("id")),
             "scores": scores,
+            "knife_edge": _knife(row, scores, config),
         })
+    return out
+
+
+def _knife(row: dict[str, Any], scores: dict[str, float], config: RouterConfig | None) -> bool | None:
+    judged = knife_edge_of(row, scores, config)
+    return judged if isinstance(judged, bool) else None
+
+
+def knife_edge(rows: list[dict[str, Any]], config: RouterConfig) -> dict[str, Any]:
+    """The overview's knife-edge rate over these admission rows. Pure."""
+    return knife_edge_rate([knife_edge_of(r, _numbers(r.get("answers")), config) for r in rows])
+
+
+def quota_sources(config: RouterConfig) -> list[str]:
+    """The providers whose quota source is switched on, in config order.
+
+    On means `enabled: true` and a source other than `none`, as the quota
+    monitor decides it. Read from the config only: nothing is polled.
+    """
+    out = []
+    for name, provider in config.providers.items():
+        quota = provider.quota
+        if quota is not None and quota.enabled and quota.source != "none":
+            out.append(name)
     return out
 
 
@@ -514,11 +549,15 @@ async def get_config(request: Request) -> Response:
         (alias, rule): n for alias, rule, n in router.sessions.admission_rule_counts(since)
     }
     body = describe_config(router.config, counts, window, since)
+    rows = router.sessions.admissions_since(since, PREVIEW_MAX)
     body["rated"] = rated_admissions(
-        router.sessions.admissions_since(since, PREVIEW_MAX),
+        rows,
         router.sessions.admission_feedback(since),
         router.sessions.session_labels(since),
+        router.config,
     )
+    body["knife_edge"] = knife_edge(rows, router.config)
+    body["quota_sources"] = quota_sources(router.config)
     return _json(body)
 
 
@@ -628,6 +667,38 @@ def _share_by_model(routes: list[dict[str, Any]]) -> dict[str, float]:
     return {m: n / len(models) for m, n in sorted(counts.items(), key=lambda kv: -kv[1])}
 
 
+def draft_ladders(config: RouterConfig) -> dict[str, list[dict[str, Any]]]:
+    """Every ladder in `config`, each rule as its name, `when` and line.
+
+    Named as `describe_config` names its rulesets: `policy`, each named
+    ruleset, and `alias:<name>` for an alias with rules of its own. The line
+    is the rule's `name:` line in the config's own text, or None.
+    """
+    text, _source = running_text(config)
+    root = _compose(text) if text else None
+    ladders: list[tuple[str, Any, list[Any]]] = [("policy", config.policy, ["policy"])]
+    ladders += [
+        (name, ruleset, ["rulesets", name]) for name, ruleset in config.rulesets.items()
+    ]
+    ladders += [
+        (f"alias:{alias}", acfg.rules, ["aliases", alias, "rules"])
+        for alias, acfg in config.aliases.items()
+        if not isinstance(acfg.rules, str)
+    ]
+    return {
+        name: [
+            {
+                "index": index,
+                "name": rule.name,
+                "when": rule.when,
+                "line": node_line(root, [*path, "rules", index - 1, "name"], value=True),
+            }
+            for index, rule in enumerate(ruleset.rules, start=1)
+        ]
+        for name, ruleset, path in ladders
+    }
+
+
 def preview(
     running: RouterConfig,
     draft: RouterConfig,
@@ -693,10 +764,12 @@ def preview(
         "running_reproduces": reproduces,
         "tier_share_before": _share_by_model(befores),
         "tier_share_after": _share_by_model(afters),
-        "quota_saved_before": quota_saved([r.get("model") for r in befores], quota_costs(running)),
-        "quota_saved_after": quota_saved([r.get("model") for r in afters], quota_costs(draft)),
+        "quota_saved_before": quota_saved([r.get("model") for r in befores], running),
+        "quota_saved_after": quota_saved([r.get("model") for r in afters], draft),
         "feedback": summary,
         "diffs": diffs,
+        "draft_thresholds": config_thresholds(draft),
+        "draft_rules": draft_ladders(draft),
     }
 
 

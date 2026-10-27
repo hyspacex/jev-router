@@ -506,6 +506,7 @@ def listing(details, params=None):
             "created": s["created"], "last_seen": s["last_seen"], "closed_at": s["closed_at"],
             "model": s["model"], "effective_effort": s["effective_effort"],
             "effort": s["base_effort"], "rule": s["decision_rule"], "quality_lane": s["quality_lane"],
+            "admitted_effort": (item["admission"] or {}).get("effort"),
             "config_hash": s["config_hash"], "config_matches": s["config_hash"] == RUNNING,
             "adaptation_mode": s["adaptation_mode"], "tombstone": False, "requests": counts,
             "problems": problems,
@@ -1283,8 +1284,8 @@ def rules_config(window, yaml_text, config_hash=RUNNING):
     policy = {"name": "policy", "aliases": ["auto"], "admissions": 10, "rules": rules,
               "low_confidence": gate, "default": default, "fallback": {"hits": 0, "share": 0.0}}
     rated = [
-        {"session_id": A_ID, "alias": "auto", "rule": "moderate_tools", "verdict": "too_weak",
-         "scores": {"difficulty": 2.33, "harm_if_wrong": 0.27}},
+        {"session_id": A_ID, "title": "Getting this on startup", "alias": "auto", "rule": "moderate_tools",
+         "verdict": "too_weak", "scores": {"difficulty": 2.33, "harm_if_wrong": 0.27}, "knife_edge": True},
         {"session_id": B_ID, "alias": "auto", "rule": "hard", "verdict": "too_strong",
          "scores": {"difficulty": 2.5, "harm_if_wrong": 0.2}},
         {"session_id": C_ID, "alias": "auto", "rule": "easy", "verdict": "right",
@@ -1296,7 +1297,14 @@ def rules_config(window, yaml_text, config_hash=RUNNING):
         "config_hash": config_hash, "path": "/srv/router.yaml", "yaml": yaml_text, "yaml_source": "loaded",
         "window": window, "since": 0, "admissions": 10, "rules": rules, "low_confidence": gate,
         "default": default, "fallback": {"hits": 0, "share": 0.0}, "rulesets": {"policy": policy},
-        "routes": {}, "quality_lanes": {}, "models": {},
+        "routes": {
+            name: {"description": None, "primary": {"model": model, "effort": effort}, "fallbacks": [], "line": None}
+            for name, model, effort in (
+                ("frontier_xhigh", "gpt-6-astra", "xhigh"), ("frontier_high", "gpt-6-astra", "high"),
+                ("frontier_medium", "gpt-6-astra", "medium"), ("mid_tools", "ollama/glm-5.3", "high"),
+                ("fast", "ollama/glm-5.3-flash", "none"))
+        },
+        "quality_lanes": {}, "models": {},
         "quota_policy": {"enabled": True, "demote_above": 0.6, "exhausted_at": 100.0},
         "adaptive_effort": {"mode": "off", "line": None, "ladder": [], "thresholds": {}},
         "questions": {"difficulty": {"type": "score", "levels": 4, "max": 3, "line": 2},
@@ -1304,6 +1312,9 @@ def rules_config(window, yaml_text, config_hash=RUNNING):
         "thresholds": {"difficulty": [1.4, 2.4, 3.0], "harm_if_wrong": [0.8]},
         "effort_order": ["none", "low", "medium", "high", "xhigh", "max"],
         "rated": rated,
+        "knife_edge": {"margin": 0.1, "numerator": 1, "denominator": 9, "rate": 1 / 9,
+                       "unassessed": 1, "unassessed_by_reason": {"no_ladder_rule": 1}},
+        "quota_sources": [],
     }
 
 
@@ -1312,8 +1323,10 @@ PREVIEW = {
     "evaluated": 10, "changed": 2, "unreplayable": 1, "running_reproduces": 10,
     "tier_share_before": {"gpt-6-astra": 0.4, "ollama/glm-5.3": 0.6},
     "tier_share_after": {"gpt-6-astra": 0.6, "ollama/glm-5.3": 0.4},
-    "quota_saved_before": {"saved_rate": 0.42, "quota_cost_sum": 5.8, "priced": 10, "unpriced": 0},
-    "quota_saved_after": {"saved_rate": 0.3, "quota_cost_sum": 7.0, "priced": 10, "unpriced": 0},
+    "quota_saved_before": {"saved_rate": 0.42, "baseline_model": "gpt-6-astra", "provider": "openai",
+                           "counted": 10, "unknown": 0, "quota_cost_sum": 5.8},
+    "quota_saved_after": {"saved_rate": 0.3, "baseline_model": "gpt-6-astra", "provider": "openai",
+                          "counted": 10, "unknown": 0, "quota_cost_sum": 7.0},
     "feedback": {"rated": 2, "resolved_too_weak": 1, "resolved_too_strong": 0, "conflicts": 0,
                  "right_changed": 0, "unranked": 0},
     "diffs": [
@@ -1330,6 +1343,15 @@ PREVIEW = {
          "direction": "unranked", "feedback_verdict": None, "feedback_effect": None},
     ],
     "window": "7d", "since": 0, "limit": 200,
+    # The draft lowers `hard` from 2.4 to 2.0; everything else is as running.
+    "draft_thresholds": {"difficulty": [1.4, 2.0, 3.0], "harm_if_wrong": [0.8]},
+    "draft_rules": {"policy": [
+        {"index": 1, "name": "very_hard", "when": {"difficulty": {"gte": 3.0}}, "line": 128},
+        {"index": 2, "name": "hard", "when": {"difficulty": {"gte": 2.0}}, "line": 135},
+        {"index": 3, "name": "high_harm", "when": {"harm_if_wrong": {"gte": 0.8}}, "line": 142},
+        {"index": 4, "name": "moderate_tools", "when": {"has_tools": True, "difficulty": {"gte": 1.4}}, "line": 149},
+        {"index": 5, "name": "easy", "when": {}, "line": 157},
+    ]},
 }
 
 
@@ -1371,6 +1393,8 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
     monkeypatch.setenv("AUDIT_BROWSER_TOKEN", credential)
     app = create_app(make_config(settings={"admin_token_env": "AUDIT_BROWSER_TOKEN"}))
     details = {A_ID: session_a(), B_ID: session_b(), C_ID: session_c()}
+    # A feedback step took A from high to medium: the base moved with it.
+    details[A_ID]["session"].update(base_effort="medium", effective_effort="medium")
     state = {"yaml": rules_yaml(), "hash": RUNNING, "previews": [], "applied": []}
     # The rules view needs the ladder fixture, not the inspector's questions-only config.
     shared = [r for r in fixture_routes(details) if r.path != "/router/config"]
@@ -1408,7 +1432,15 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                     page.set_viewport_size({"width": 1920, "height": 1080})
                     return fits
 
+                fetched = []
+                page.on("request", lambda r: fetched.append(r.url) if "/router/" in r.url else None)
                 page.goto(f"http://127.0.0.1:{port}/dashboard")
+                page.wait_for_timeout(400)
+                # Nothing is asked of the router before a token exists.
+                assert fetched == []
+                assert page.locator("#v-overview").get_attribute("title") == "Overview (o)"
+                page.get_by_role("button", name="Connect", exact=True).click()
+                assert fetched == [] and "Admin token required" in page.locator("#error").inner_text()
                 page.locator("#token").fill(credential)
                 page.get_by_role("button", name="Connect", exact=True).click()
                 page.wait_for_function("() => document.querySelectorAll('.bigk').length === 4")
@@ -1418,15 +1450,30 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                 assert subs.count() == 3
                 assert "calm" in subs.nth(0).inner_text() and "−17" in subs.nth(0).inner_text()
                 assert subs.nth(0).locator(".qtrack b").count() == 1  # the pace tick
-                assert subs.nth(1).locator(".gapchip").inner_text() == "not polled"
+                # A disabled source is one line: name, models, why there are no bars.
+                assert subs.nth(1).locator(".gapchip").inner_text() == "disabled"
+                assert "flat" in subs.nth(1).get_attribute("class")
                 assert subs.nth(1).locator(".qbar").count() == 0
+                assert page.locator(".qfoot").inner_text().split("\n") == ["Quota changed the choice", "1 of 2"]
                 tracked = subs.nth(2)
                 assert "tracked" in tracked.get_attribute("class")
                 assert tracked.locator(".ql").all_inner_texts() == ["Session", "Weekly"]
                 assert "$812" in tracked.inner_text()
                 labels = page.locator(".bigk .kl").all_inner_texts()
-                assert labels == ["Quota saved", "Router tax", "Clean turns", "Cache hit"]
+                assert labels == ["Frontier quota saved", "Router tax", "Clean turns", "Cache hit"]
+                tiles = page.locator(".bigk")
+                assert "at admission" in tiles.nth(1).locator(".bigv").inner_text()
+                assert "per call across 22 calls" in tiles.nth(1).locator(".ks").inner_text()
+                assert "of 20 calls reported" in tiles.nth(3).inner_text()
+                # The fixture overview has no config, so nothing is priced: a gap, never 0%.
+                assert tiles.nth(0).locator(".gapchip").count() == 1
                 assert page.locator(".mxv .mxn").count() >= 1
+                assert page.locator(".mxp .pt").inner_text() == "Admissions by task"
+                assert page.locator(".mxp .note").inner_text() == "2 admissions"
+                # Latency: the slowest first byte first, p95 beside p50.
+                firsts = page.locator(".lt .ltr:not(.lth)").all_inner_texts()
+                assert "glm-5.3" in firsts[0] or "gpt-6-astra" in firsts[0]
+                assert page.locator(".lt .ltr:not(.lth) .p95").count() == 2
                 assert narrow_fits()
                 shot("rules-overview")
 
@@ -1436,7 +1483,11 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                 row_a = page.locator(f".srow[data-sid='{A_ID}']")
                 assert row_a.locator(".stt").inner_text().startswith("Getting this on startup")
                 assert row_a.locator(".sprev").inner_text() == "Traceback (most recent call last):"
-                assert row_a.locator(".vbadge").inner_text() == "↑ more"
+                assert row_a.locator(".vbadge").inner_text() == "↑ too weak"
+                # A step down shows where it came from, in blue; B's step up in mint.
+                assert row_a.locator(".c5").inner_text().endswith("high → medium")
+                assert row_a.locator(".earr.down").count() == 1
+                assert page.locator(f".srow[data-sid='{B_ID}'] .earr.up").count() == 1
                 assert row_a.locator(".wchip").inner_text() == "inventory-service"
                 # A title that is the whole prompt shows no second line.
                 assert page.locator(f".srow[data-sid='{B_ID}'] .sprev").count() == 0
@@ -1453,9 +1504,16 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                 names = page.locator(".lad .lnm").all_inner_texts()
                 assert names == ["confidence gate", "very_hard", "hard", "high_harm", "moderate_tools", "easy", "default"]
                 assert "difficulty ≥ 2.4" in page.locator(".lad .lr").nth(2).inner_text()
+                # Each route says where it lands.
+                assert "frontier_high → gpt-6-astra · high" in page.locator(".lad .lr").nth(2).inner_text()
+                assert "mid_tools → glm-5.3 · high" in page.locator(".lad .lr").nth(4).inner_text()
+                assert "no source enabled" in page.locator(".sets").inner_text()
+                assert page.locator(".rfield .rdot.edge").count() == 2  # A's dot, on each ruler
+                assert " ".join(page.locator(".rknife").inner_text().split()) == "1 of 9 admissions within 0.10 of a threshold"
+                assert page.locator(".rfield .rdot.v-too_weak").first.get_attribute("title") == "Difficulty 2.33 · Getting this on startup"
                 assert page.locator(".rfield .rdot.v-too_weak").count() == 2  # one per ruler
                 assert page.locator(".rfield .rdot.v-none").count() == 2
-                assert page.locator(".rleg").inner_text().split() == ["✓", "right", "↑", "more", "↓", "less"]
+                assert page.locator(".rleg").inner_text().split() == ["✓", "good", "↑", "too", "weak", "↓", "too", "strong", "unrated"]
                 shot("rules-ladder")
 
                 # A ladder row scrolls the editor to its line and marks it.
@@ -1477,6 +1535,8 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                 draft = state["yaml"].replace("          gte: 2.4", "          gte: 2.0")
                 page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", draft)
                 assert "edited" in page.locator(".edp .ph").inner_text()
+                # Apply waits for a Check or Preview on this exact text.
+                assert page.locator(".edt").get_by_role("button", name="Apply", exact=True).is_disabled()
                 state["hash"] = "0123456789abcdef"
                 page.wait_for_function("() => document.querySelector('.edmoved') && !document.querySelector('.edmoved').hidden", timeout=8000)
                 assert page.locator(".yta").input_value() == draft
@@ -1499,9 +1559,22 @@ def test_browser_overview_sessions_and_rules(monkeypatch):
                 page.wait_for_function("() => document.querySelector('.prv')")
                 assert state["previews"][-1] == {"yaml": draft, "window": "7d"}
                 assert page.locator(".pvk").inner_text() == "2 of 10"
-                assert "1 not replayable" in page.locator(".pvh").inner_text()
+                head = page.locator(".pvh").inner_text()
+                assert "1 not replayable" in head and "admissions would change" in head
+                assert "▲ stronger · ▼ weaker · → no order" in page.locator(".pvkey").inner_text()
+                assert page.locator(".shof").inner_text().strip() == "of 10 admissions"
                 assert page.locator(".shrow.moved").count() == 3  # two models and quota saved
-                assert "1 resolved ↑ more" in page.locator(".fbm").inner_text()
+                assert "1 resolved ↑ too weak" in page.locator(".fbm").inner_text()
+                # The draft's cutoff in amber beside the running one, and one quiet ladder line.
+                assert page.locator(".rscale .mk.draft").count() == 1
+                assert page.locator(".ticksx span.draft").inner_text() == "2 hard"
+                assert page.locator(".ldraft").all_inner_texts() == ["draft differs: difficulty ≥ 2"]
+                apply_button = page.locator(".edt").get_by_role("button", name="Apply", exact=True)
+                assert apply_button.is_enabled()
+                page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", draft + "#\n")
+                assert apply_button.is_disabled()
+                page.evaluate("(text) => { const t = document.querySelector('.yta'); t.value = text; t.dispatchEvent(new Event('input')); }", draft)
+                assert apply_button.is_enabled()
                 rows = page.locator(".dfr")
                 assert rows.count() == 2
                 assert "resolved" in rows.nth(0).locator(".dff").inner_text()

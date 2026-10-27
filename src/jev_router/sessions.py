@@ -1380,7 +1380,9 @@ class Sessions:
         """Recent sessions, newest first, each with per-status request counts.
 
         `requests` maps each `session_requests` status present to its count;
-        `response_ms` lists the recorded execution times, oldest first.
+        `response_ms` lists the recorded execution times, oldest first;
+        `admitted_effort` is the effort the admission chose, which a later
+        feedback step does not rewrite (None when no admission row exists).
         `filters` is the validated set `audit_where` understands.
         """
         where, args = audit_where(filters or {})
@@ -1393,6 +1395,7 @@ class Sessions:
             ids = [row["session_id"] for row in rows]
             counts: dict[str, dict[str, int]] = {sid: {} for sid in ids}
             times: dict[str, list[float]] = {sid: [] for sid in ids}
+            admitted: dict[str, Any] = {}
             if ids:
                 marks = ", ".join("?" for _ in ids)
                 for row in self._conn.execute(
@@ -1408,9 +1411,16 @@ class Sessions:
                     (*ids, EVENT_EXECUTION),
                 ).fetchall():
                     times[row["session_id"]].append(float(row["response_ms"]))
+                for row in self._conn.execute(
+                    "SELECT session_id, effort FROM decisions"
+                    f" WHERE session_id IN ({marks}) AND event_type = ? ORDER BY id DESC",
+                    (*ids, EVENT_ADMISSION),
+                ).fetchall():
+                    admitted[row["session_id"]] = row["effort"]
         out = []
         for row in rows:
             item = _public_session(_session_row(row))
+            item["admitted_effort"] = admitted.get(item["session_id"])
             item["requests"] = counts.get(item["session_id"], {})
             item["response_ms"] = times.get(item["session_id"], [])
             out.append(item)
