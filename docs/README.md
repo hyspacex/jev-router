@@ -39,6 +39,7 @@ on its fixed model. Legacy aliases and adaptive effort have separate guides.
 | [Development and tests](development/testing.md) | Offline checks and regression coverage. |
 | [Evaluation guide](development/evaluation.md) | Classification, controls, live outcomes, isolation, and tuning. |
 | [Design](../DESIGN.md) | Architecture, trade-offs, and rejected alternatives. |
+| [Observability v2 design](OBSERVABILITY_V2_DESIGN.md) | Next-iteration design for CodexBar quota, session/turn text capture, causal turn inspector, rules & config tab, and system-level metrics. |
 | [Test plan](../TESTPLAN.md) | Measurement methodology and acceptance-case mapping. |
 | [Session and effort specification](R2_SPEC.md) | C01–C34 and F01–F20 contracts, with later owner decisions marked in place. |
 | [Experiment log](../evals/EXPERIMENTS.md) | Changes tried and their before/after evidence. |
