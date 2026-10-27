@@ -1,14 +1,21 @@
 "use strict";
 
-// Rules. The ladder as the running config has it, the score rulers with the
-// admissions in the window on them, and router.yaml as text: check, preview
-// (a pure replay of stored admissions) and apply. The editor is built once
-// and never rebuilt by the live refresh, so a draft survives it.
+// Rules. The ladder is the page: the running config's rules with their hits,
+// the score rulers with the window's admissions on them and the settings in a
+// side column, and router.yaml as text on demand: check, preview (a pure
+// replay of stored admissions) and apply. The editor is built once and never
+// rebuilt by the live refresh, so a draft survives it.
 
 const RULE_OPS = {gte: "≥", gt: ">", lte: "≤", lt: "<", eq: "=", ne: "≠", conf_gte: "confidence ≥"};
 const EDITOR_LH = 20;  // px; the editor's line height, as dashboard.css sets it
 const EDITOR_PAD = 10; // px; its top padding
 const RATED_ORDER = [null, "too_slow", "right", "too_weak", "too_strong"];
+// workbench.PREVIEW_LIMIT: a preview replays at most this many admissions.
+const PREVIEW_LIMIT = 200;
+const WINDOW_WORDS = {"1h": "in the last hour", "24h": "in the last 24 h", "7d": "this week", "30d": "in the last 30 days"};
+// Cutoffs closer than this share of a ruler draw as one tick.
+const TICK_MERGE = 0.02;
+const LABEL_ROW = 12; // px between label rows under a ruler
 
 function rulesetNow() {
   const sets = (S.rules && S.rules.rulesets) || {};
@@ -16,24 +23,26 @@ function rulesetNow() {
   return sets[S.ruleset] || {rules: S.rules ? S.rules.rules || [] : [], low_confidence: null, default: null, fallback: null, aliases: []};
 }
 
+function windowWords() { return WINDOW_WORDS[S.rwin] || "in the last " + S.rwin; }
+
 function renderRules(kind) {
   const main = $("main");
   if (!S.rules) { main.replaceChildren(); return; }
   if (!S.rulesRoot) {
     const root = el("section", "rv");
-    const head = el("div", "ovh");
-    const top = el("div", "rtop");
+    const head = el("div", "head");
+    const top = el("div", "grid rules");
     const work = el("div", "rwork");
     const report = el("div", "rrep");
     S.editor = buildEditor();
     add(work, S.editor.panel, report);
     add(root, head, top, work);
-    S.rulesRoot = {root, head, top, work, report};
+    // open: the owner asked for the editor. A draft or a report keeps it open.
+    S.rulesRoot = {root, head, top, work, report, open: false};
   }
   const R = S.rulesRoot;
   if (main.firstChild !== R.root || main.children.length !== 1) main.replaceChildren(R.root);
-  const still = kind === "data" ? " still" : "";
-  R.top.className = "rtop" + still;
+  R.top.className = "grid rules" + (kind === "data" ? " still" : "");
   R.head.replaceChildren(...rulesHead());
   R.top.replaceChildren(ladderPanel(), add(el("div", "rside"), rulersPanel(), settingsPanel()));
   syncEditor();
@@ -43,42 +52,51 @@ function renderRules(kind) {
   requestAnimationFrame(stackLabels);
 }
 
-// Threshold labels stay inside the ruler (the first and last shift inward)
-// and drop a row where they would touch, by their drawn width.
-function stackLabels() {
-  for (const box of document.querySelectorAll(".rul .ticksx")) {
-    const edge = (box.parentElement || box).getBoundingClientRect();
-    const ends = [];
-    for (const t of [...box.children]) {
-      t.style.top = "0.4rem";
-      t.style.marginLeft = "0px";
-      const r = t.getBoundingClientRect();
-      const shift = r.left < edge.left ? edge.left - r.left : r.right > edge.right ? Math.max(edge.left - r.left, edge.right - r.right) : 0;
-      if (shift) t.style.marginLeft = shift + "px";
-      const left = r.left + shift;
-      let row = ends.findIndex((e) => left >= e + 8);
-      if (row < 0) row = ends.length;
-      ends[row] = r.right + shift;
-      t.style.top = (0.4 + row * 1.2) + "rem";
-    }
-    box.style.height = (0.5 + Math.max(1, ends.length) * 1.2) + "rem";
-  }
+// --- the editor's visibility ----------------------------------------------------
+
+function editorPinned() { return S.draft !== null || !!S.report; }
+function editorShown() { return !!S.rulesRoot && (S.rulesRoot.open || editorPinned()); }
+
+function showEditor(on) {
+  if (!S.rulesRoot) return;
+  S.rulesRoot.open = on;
+  syncShown();
+}
+
+function syncShown() {
+  const R = S.rulesRoot;
+  if (!R) return;
+  const shown = editorShown();
+  R.work.hidden = !shown;
+  const b = R.head.querySelector(".edtoggle");
+  if (!b) return;
+  b.textContent = shown ? "Hide editor" : "Edit router.yaml";
+  b.setAttribute("aria-expanded", shown ? "true" : "false");
+  b.disabled = shown && editorPinned();
+  b.title = b.disabled ? "Stays open while there is a draft or a preview; Revert to close" : "";
 }
 
 function rulesHead() {
-  const out = [el("h1", "ovt", "Rules"), windowSeg(S.rwin, rulesHash)];
+  const out = [el("h1", null, "Rules")];
   const sets = Object.keys((S.rules && S.rules.rulesets) || {});
   if (sets.length > 1) {
     const seg = el("div", "seg");
     seg.setAttribute("role", "group");
     seg.setAttribute("aria-label", "Ruleset");
     for (const name of sets) {
-      const b = button("segb" + (name === S.ruleset ? " on" : ""), name, () => { S.ruleset = name; renderRules("pane"); });
+      const b = button(name === S.ruleset ? "on" : null, name, () => { S.ruleset = name; renderRules("pane"); });
       b.setAttribute("aria-pressed", name === S.ruleset ? "true" : "false");
       seg.append(b);
     }
     out.push(seg);
   }
+  const toggle = button("ghost edtoggle", "Edit router.yaml", () => {
+    if (editorShown()) { if (!editorPinned()) showEditor(false); return; }
+    showEditor(true);
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    S.editor.panel.scrollIntoView({block: "start", behavior: still ? "auto" : "smooth"});
+  });
+  out.push(add(el("div", "right"), windowSeg(S.rwin, rulesHash), toggle));
   return out;
 }
 
@@ -102,15 +120,20 @@ function whenParts(when) {
 
 // Where a rule sends a request: `mid_tools → glm-5.3 · high`, the route's
 // primary model and effort after the route; a direct model as it stands.
+// Built as pieces that never break inside: a narrow cell wraps between the
+// route and its model, never inside an identifier.
 function useText(use) {
   if (!use) return null;
   const pair = (model, effort) => [model ? splitModel(model)[1] : null, effort].filter(Boolean).join(" · ");
+  const node = el("span");
   if (use.route) {
     const route = ((S.rules && S.rules.routes) || {})[use.route];
     const primary = route && route.primary ? pair(route.primary.model, route.primary.effort) : "";
-    return use.route + (primary ? " → " + primary : "");
+    add(node, el("span", "nw", use.route + (primary ? " →" : "")), primary ? " " : null, primary ? el("span", "nw", primary) : null);
+    return node;
   }
-  return pair(use.model, use.effort) || null;
+  const direct = pair(use.model, use.effort);
+  return direct ? add(node, el("span", "nw", direct)) : null;
 }
 
 // What the previewed draft does to the selected ladder, rule by rule:
@@ -142,59 +165,93 @@ function keyLine(key, from, step) {
   return null;
 }
 
+// A row or setting that points at a line of router.yaml: click or Enter
+// opens the editor there.
+function pointsAt(node, line, label) {
+  node.tabIndex = 0;
+  node.setAttribute("role", "button");
+  if (label) node.setAttribute("aria-label", label);
+  const pick = () => {
+    if (!editorShown()) showEditor(true);
+    focusLine(line);
+    if (node.classList.contains("tr")) node.classList.add("on");
+  };
+  node.addEventListener("click", (event) => { if (!event.target.closest("a")) pick(); });
+  node.addEventListener("keydown", (event) => {
+    if (event.target !== node) return;
+    if (event.key === "Enter" || event.key === " ") { pick(); event.preventDefault(); }
+  });
+}
+
 function ladderPanel() {
   const set = rulesetNow();
   const rules = Array.isArray(set.rules) ? set.rules : [];
   // With more than one ladder, the count says it is this ladder's share.
   const several = Object.keys(S.rules.rulesets || {}).length > 1;
-  const count = !set.admissions ? null
-    : several && S.rules.admissions ? int(set.admissions) + " of " + plural(S.rules.admissions, "admission") : plural(set.admissions, "admission");
-  const box = panel("Ladder", count, "ladderp");
-  const list = el("div", "lad");
+  const words = windowWords();
+  let count = null;
+  if (!absent(set.admissions)) {
+    if (!set.admissions) count = "no admissions " + words;
+    else if (several && !absent(S.rules.admissions)) count = int(set.admissions) + " of " + plural(S.rules.admissions, "admission") + " " + words;
+    else count = plural(set.admissions, "admission") + " " + words;
+  }
+  const box = band("Ladder", "first match wins" + (count ? " · " + count : ""), "ladderb");
+  const tbl = el("div", "tbl ladder");
+  const th = el("div", "tr th");
+  th.setAttribute("aria-hidden", "true");
+  add(th, el("span"), el("span", null, "Rule"), el("span", "when", "When"), el("span", "to", "Sends to"), el("span", "num", "Hits"));
+  tbl.append(th);
   const delta = draftDelta(rules);
-  const draftLine = (text) => list.append(add(el("div", "ldraft"), el("span", "mono", text)));
-  const within = (rule) => listHash({rule, window: S.rwin});
-  const row = (index, name, cond, use, lane, hits, share, line, cls) => {
-    const r = el("div", "lr" + (cls ? " " + cls : "") + (line ? " go" : "") + (line && S.hl === line ? " on" : ""));
-    if (line) {
-      r.tabIndex = 0;
-      r.setAttribute("role", "button");
-      r.setAttribute("aria-label", name + ", line " + line);
-      const pick = () => { focusLine(line); r.classList.add("on"); };
-      r.addEventListener("click", (event) => { if (!event.target.closest("a")) pick(); });
-      r.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { pick(); event.preventDefault(); } });
-    }
-    const conds = el("span", "lw");
-    if (cond.length) cond.forEach((c, i) => add(conds, i ? el("span", "faint", " · ") : null, c));
-    else conds.append(el("span", "faint", "always"));
-    const to = el("span", "lu");
-    add(to, use ? el("span", "mono", use) : null, lane ? el("span", "faint", " · " + lane) : null);
-    const bar = el("span", "lb");
+  const draftLine = (text) => tbl.append(el("div", "ldraft", text));
+  const row = (o) => {
+    const zero = !absent(o.hits) && !o.hits;
+    const r = el("div", "tr" + (o.cls ? " " + o.cls : zero ? " zero" : "") + (o.line ? " go" : "") + (o.line && S.hl === o.line ? " on" : ""));
+    if (o.line) pointsAt(r, o.line, o.name + ", line " + o.line + " of router.yaml");
+    const conds = el("span", "when");
+    if (o.cond.length) o.cond.forEach((c, i) => add(conds, i ? " · " : null, c));
+    else conds.append(el("span", "always", "always"));
+    conds.title = conds.textContent;
+    const to = el("span", "to");
+    if (o.use) to.append(o.use);
+    else if (o.toText) to.append(el("span", "rlane", o.toText));
+    if (o.lane) add(to, " ", el("span", "rlane nw", "· " + o.lane));
+    to.title = to.textContent;
+    const hits = el("span", "num share");
     const fill = el("i");
-    fill.style.width = (absent(share) ? 0 : Math.max(share > 0 ? 1.5 : 0, share * 100)) + "%";
-    bar.append(fill);
-    const n = hits ? link("ln mono", int(hits), within(name)) : el("span", "ln mono faint", "0");
-    add(r, el("span", "li mono", index), el("span", "lnm mono", name), conds, to, bar, n);
-    list.append(r);
+    fill.style.setProperty("--w", (absent(o.share) ? 0 : Math.max(o.share > 0 ? 2 : 0, o.share * 100)) + "%");
+    hits.append(fill);
+    if (absent(o.hits)) hits.append(gap("not counted"));
+    else if (o.hits) hits.append(link("hn", int(o.hits), listHash({rule: o.filter, window: S.rwin}), plural(o.hits, "admission") + " by " + o.name + ": open the sessions"));
+    else hits.append(el("span", "hn t3", "0"));
+    add(r, el("span", "i", o.index), el("span", "n", o.name), conds, to, hits);
+    tbl.append(r);
   };
   const first = rules.length ? rules[0].line : null;
   const last = rules.length ? rules[rules.length - 1].line : null;
   const gate = set.low_confidence;
   if (gate) {
-    const qs = Array.isArray(gate.questions) ? gate.questions.map(human).join(", ") : "";
-    row("", "confidence gate", [qs + " confidence < " + cfg(gate.min_confidence)], useText(gate.use), null, gate.hits, gate.share, keyLine("low_confidence", first, -1), "gate");
+    const qs = Array.isArray(gate.questions) ? gate.questions.map(human).join(" or ") : "";
+    row({index: "", name: "confidence gate", filter: "low_confidence", cond: [(qs ? qs + " " : "") + "confidence < " + cfg(gate.min_confidence)],
+      use: useText(gate.use), hits: gate.hits, share: gate.share, line: keyLine("low_confidence", first, -1), cls: "quiet"});
   }
   for (const r of rules) {
-    row(String(r.index), r.name, whenParts(r.when), useText(r.use), r.lane, r.hits, r.share, r.line, null);
+    row({index: String(r.index), name: r.name, filter: r.name, cond: whenParts(r.when), use: useText(r.use), lane: r.lane,
+      hits: r.hits, share: r.share, line: r.line});
     if (delta && delta.changed.has(r.name)) {
       const d = delta.changed.get(r.name);
       draftLine(d ? "draft differs: " + (whenParts(d.when).join(" · ") || "always") : "draft removes " + r.name);
     }
   }
   if (delta) for (const d of delta.added) draftLine("draft adds: " + d.name + " · " + (whenParts(d.when).join(" · ") || "always"));
-  if (set.default) row("", "default", [], useText(set.default.use), null, set.default.hits, set.default.share, keyLine("default", last, 1), "dflt");
-  if (set.fallback && set.fallback.hits) row("", "fallback", ["Jev failed"], null, null, set.fallback.hits, set.fallback.share, null, "dflt");
-  box.append(list);
+  if (set.default) {
+    row({index: "", name: "default", filter: "default", cond: [], use: useText(set.default.use), hits: set.default.hits,
+      share: set.default.share, line: keyLine("default", last, 1), cls: "quiet"});
+  }
+  if (set.fallback && set.fallback.hits) {
+    row({index: "", name: "fallback", filter: "admission_fallback", cond: ["Jev failed"], toText: "the alias's admission fallback",
+      hits: set.fallback.hits, share: set.fallback.share, line: null, cls: "quiet"});
+  }
+  box.append(tbl);
   return box;
 }
 
@@ -202,29 +259,31 @@ function ladderPanel() {
 
 function rulerKeys(set) {
   const out = new Map();
-  for (const r of set.rules || []) {
+  (set.rules || []).forEach((r, at) => {
+    const conds = Object.keys(r.when || {}).length;
     for (const [key, cond] of Object.entries(r.when || {})) {
       if (!cond || typeof cond !== "object" || Array.isArray(cond)) continue;
       for (const op of ["gte", "gt", "lte", "lt"]) {
         if (typeof cond[op] !== "number") continue;
         if (!out.has(key)) out.set(key, []);
-        out.get(key).push({value: cond[op], rule: r.name});
+        out.get(key).push({value: cond[op], rule: r.name, conds, at});
       }
     }
-  }
+  });
   return out;
 }
 
 function rulersPanel() {
   const set = rulesetNow();
   const keys = rulerKeys(set);
-  const box = panel("Scores", null);
+  const aliases = new Set(Array.isArray(set.aliases) ? set.aliases : []);
+  const rated = (Array.isArray(S.rules.rated) ? S.rules.rated : []).filter((r) => !aliases.size || aliases.has(r.alias));
+  const words = windowWords();
+  const box = band("Where admissions landed", rated.length ? int(rated.length) + " " + words : "none " + words, "rulersb");
   if (!keys.size) {
     box.append(el("p", "empty", "No score threshold in this ladder"));
     return box;
   }
-  const aliases = new Set(Array.isArray(set.aliases) ? set.aliases : []);
-  const rated = (Array.isArray(S.rules.rated) ? S.rules.rated : []).filter((r) => !aliases.size || aliases.has(r.alias));
   // The previewed draft's cutoffs, drawn beside the running ones while they differ.
   const delta = draftDelta(Array.isArray(set.rules) ? set.rules : []);
   const draft = delta ? rulerKeys({rules: delta.rules}) : new Map();
@@ -234,28 +293,49 @@ function rulersPanel() {
     const extra = (draft.get(key) || []).filter((t) => !mine.has(t.value + "|" + t.rule));
     box.append(ruler(key, ticks, rated, extra));
   }
-  const legend = el("div", "rleg");
-  for (const v of ["right", "too_weak", "too_strong"]) add(legend, add(el("span"), el("i", "rdot v-" + v), VERDICT_WORDS[v]));
-  add(legend, add(el("span"), el("i", "rdot v-none"), "unrated"));
-  box.append(legend);
+  const legend = el("div", "legend");
+  for (const v of ["right", "too_weak", "too_strong"]) legend.append(verdictDot(v));
+  legend.append(el("span", "dot t3", "unrated"));
   const k = S.rules.knife_edge;
   if (k && typeof k === "object") {
-    const line = el("div", "rknife");
-    if (k.denominator) {
-      add(line, el("i", "rdot edge"), el("span", "mono", int(k.numerator) + " of " + plural(k.denominator, "admission")),
-        " within " + num2(k.margin) + " of a threshold");
-    } else line.append(gap("no admission assessed"));
-    box.append(line);
+    const knife = el("span", "knife");
+    const near = " within " + (absent(k.margin) ? "the margin" : num2(k.margin)) + " of a threshold";
+    if (k.denominator) knife.textContent = int(k.numerator) + " of " + int(k.denominator) + near;
+    else {
+      const by = k.unassessed_by_reason && typeof k.unassessed_by_reason === "object" ? Object.entries(k.unassessed_by_reason) : [];
+      const why = "no admission assessed" + (by.length ? " · " + by.map(([r, n]) => int(n) + " " + human(r)).join(", ") : "");
+      add(knife, gap(why), near);
+    }
+    legend.append(knife);
   }
+  box.append(legend);
   return box;
+}
+
+// Near-equal cutoffs (1.399 and 1.4) draw as one tick, labelled with the
+// rule that tests nothing else, the latest such in the ladder.
+function mergeTicks(list, draft, top) {
+  const sorted = [...list].sort((a, b) => a.value - b.value);
+  const groups = [];
+  for (const t of sorted) {
+    const g = groups[groups.length - 1];
+    if (g && t.value - g[0].value <= TICK_MERGE * top) g.push(t);
+    else groups.push([t]);
+  }
+  return groups.map((g) => {
+    const shown = g.reduce((best, t) => (cfg(t.value).length < cfg(best.value).length ? t : best), g[0]);
+    const name = g.reduce((best, t) => (t.conds < best.conds || (t.conds === best.conds && t.at > best.at) ? t : best), g[0]);
+    const all = [...new Set(g.map((t) => cfg(t.value) + " " + t.rule))].join(", ");
+    return {v: shown.value, text: cfg(shown.value) + " " + name.rule, all, draft};
+  });
 }
 
 function ruler(key, ticks, rated, draftTicks) {
   const q = (S.rules.questions || {})[key] || {};
-  const top = !absent(q.max) && q.max > 0 ? q.max : Math.max(1, ...ticks.map((t) => Math.ceil(t.value)));
+  const top = !absent(q.max) && q.max > 0 ? q.max : Math.max(1, ...ticks.map((t) => Math.ceil(t.value)), ...draftTicks.map((t) => Math.ceil(t.value)));
   const x = (v) => Math.max(0, Math.min(100, v / top * 100));
   const blk = el("div", "rul");
-  blk.append(el("div", "qn", cap(key)));
+  blk.append(el("div", "name", cap(key)));
   // Dots stack upward where they would touch.
   const dots = rated.filter((r) => r.scores && typeof r.scores[key] === "number")
     .sort((a, b) => RATED_ORDER.indexOf(a.verdict || null) - RATED_ORDER.indexOf(b.verdict || null) || a.scores[key] - b.scores[key]);
@@ -264,66 +344,83 @@ function ruler(key, ticks, rated, draftTicks) {
   for (const r of dots) {
     const at = x(r.scores[key]);
     let level = 0;
-    while (placed.some((p) => p.level === level && Math.abs(p.at - at) < 1.6)) level += 1;
+    while (placed.some((p) => p.level === level && Math.abs(p.at - at) < 1.4)) level += 1;
     level = Math.min(level, 7);
     placed.push({at, level});
-    const verdict = r.verdict && VERDICT_WORDS[r.verdict] ? r.verdict : "none";
+    const verdict = VERDICT_DOTS[r.verdict] ? VERDICT_DOTS[r.verdict][0] : "v-none";
     const who = r.title || (r.session_id ? short(r.session_id) : null);
-    const label = cap(key) + " " + num2(r.scores[key]) + (who ? " · " + who : "");
-    const cls = "rdot v-" + verdict + (r.knife_edge === true ? " edge" : "");
+    const words = VERDICT_DOTS[r.verdict] ? VERDICT_DOTS[r.verdict][1] : "unrated";
+    const label = cap(key) + " " + num2(r.scores[key]) + " · " + words + (who ? " · " + who : "");
+    const cls = "rdot " + verdict + (r.knife_edge === true ? " edge" : "");
     const dot = r.session_id ? link(cls, null, sessionHash(r.session_id), label) : el("span", cls);
     dot.title = label;
     dot.style.left = at + "%";
-    dot.style.bottom = (3 + level * 9) + "px";
+    dot.style.bottom = (level * 8) + "px";
     field.append(dot);
   }
-  const levels = placed.length ? Math.max(...placed.map((p) => p.level)) + 1 : 0;
-  field.style.height = Math.max(18, 8 + levels * 9) + "px";
+  const levels = placed.length ? Math.max(...placed.map((p) => p.level)) + 1 : 1;
+  field.style.height = (levels * 8 + 2) + "px";
   const scale = el("div", "rscale");
-  const merge = (list, draft) => {
-    const merged = new Map();
-    for (const t of list) merged.set(t.value, merged.has(t.value) ? merged.get(t.value) + ", " + t.rule : t.rule);
-    return [...merged.entries()].map(([v, rule]) => ({v, rule, draft}));
-  };
-  const points = [...merge(ticks, false), ...merge(draftTicks || [], true)].sort((a, b) => a.v - b.v);
-  const labels = el("div", "ticksx");
+  scale.append(el("div", "rline"));
+  const points = [...mergeTicks(ticks, false, top), ...mergeTicks(draftTicks || [], true, top)].sort((a, b) => a.v - b.v);
+  // A first guess at the label rows, by distance; stackLabels measures them.
   const lastX = [];
-  for (const {v, rule, draft} of points) {
-    const mk = el("div", "mk thr" + (draft ? " draft" : ""));
-    mk.style.left = x(v) + "%";
-    scale.append(mk);
-    let rowAt = lastX.findIndex((p) => x(v) - p >= 22);
-    if (rowAt < 0) rowAt = lastX.length;
-    lastX[rowAt] = x(v);
-    const t = el("span", (x(v) >= 85 ? "hi" : x(v) <= 12 ? "lo" : "") + (draft ? " draft" : ""), cfg(v) + " " + rule);
-    t.style.left = x(v) + "%";
-    t.style.top = (0.4 + rowAt * 1.2) + "rem";
-    labels.append(t);
+  for (const p of points) {
+    const tk = el("i", "rtk" + (p.draft ? " draft" : ""));
+    tk.style.left = x(p.v) + "%";
+    let row = lastX.findIndex((e) => x(p.v) - e >= 22);
+    if (row < 0) row = lastX.length;
+    lastX[row] = x(p.v);
+    const lb = el("span", "rlb" + (p.draft ? " draft" : "") + (row ? " row2" : ""), p.text);
+    lb.title = (p.draft ? "draft · " : "") + p.all;
+    lb.style.left = x(p.v) + "%";
+    lb.style.top = (13 + row * LABEL_ROW) + "px";
+    lb.dataset.at = String(x(p.v));
+    scale.append(tk, lb);
   }
-  labels.style.height = (0.5 + lastX.length * 1.2) + "rem";
-  const grid = el("div", "rgrid");
-  add(grid, el("span"), field, el("span"),
-    el("span", "re mono", "0"), scale, el("span", "re mono", cfg(top)),
-    el("span"), labels, el("span"));
-  blk.append(grid);
+  scale.style.height = (14 + Math.max(1, lastX.length) * LABEL_ROW) + "px";
+  add(blk, field, scale);
   return blk;
+}
+
+// Threshold labels stay inside the ruler (the first and last shift inward)
+// and drop a row where they would touch, by their drawn width.
+function stackLabels() {
+  for (const scale of document.querySelectorAll(".rv .rscale")) {
+    const width = scale.clientWidth;
+    if (!width) continue;
+    const ends = [];
+    for (const lb of scale.querySelectorAll(".rlb")) {
+      const w = lb.offsetWidth;
+      const want = Number(lb.dataset.at) / 100 * width - w / 2;
+      const left = Math.max(0, Math.min(width - w, want));
+      let row = ends.findIndex((e) => left >= e + 8);
+      if (row < 0) row = ends.length;
+      ends[row] = left + w;
+      lb.style.left = left + "px";
+      lb.style.transform = "none";
+      lb.style.top = (13 + row * LABEL_ROW) + "px";
+      lb.classList.toggle("row2", row > 0);
+    }
+    scale.style.height = (14 + Math.max(1, ends.length) * LABEL_ROW) + "px";
+  }
 }
 
 // Quota and adaptive effort, as the YAML sets them. Read-only: edit the text.
 function settingsPanel() {
   const d = S.rules;
-  const box = panel("Settings", null);
-  const lines = el("div", "sets");
+  const box = band("Settings", null, "setb");
+  const kv = el("div", "kv sets");
   const line = (label, text, at) => {
-    const r = el("div", "setl" + (at ? " go" : ""));
+    const k = el("span", "k", label);
+    const v = el("span", "v", text);
     if (at) {
-      r.tabIndex = 0;
-      r.setAttribute("role", "button");
-      r.addEventListener("click", () => focusLine(at));
-      r.addEventListener("keydown", (event) => { if (event.key === "Enter") { focusLine(at); event.preventDefault(); } });
+      pointsAt(v, at, label + ", line " + at + " of router.yaml");
+      k.classList.add("go");
+      v.classList.add("go");
+      k.addEventListener("click", () => v.click());
     }
-    add(r, el("span", "kl", label), add(el("span", "setv"), text));
-    lines.append(r);
+    add(kv, k, v);
   };
   const q = d.quota_policy || {};
   const none = Array.isArray(d.quota_sources) && !d.quota_sources.length;
@@ -336,17 +433,20 @@ function settingsPanel() {
     const ladder = Array.isArray(a.ladder) ? a.ladder.join(" → ") : "";
     const up = [["difficulty", t.upgrade_difficulty], ["harm", t.upgrade_harm], ["corrective", t.corrective_followup]]
       .filter(([, v]) => !absent(v)).map(([k, v]) => k + " " + cfg(v)).join(", ");
-    line("Adaptive effort", a.mode + " · " + ladder + (up ? " · up at " + up : "") + (absent(a.downgrade_confirmations) ? "" : " · down after " + a.downgrade_confirmations), a.line);
+    line("Adaptive effort", [a.mode, ladder, up ? "raise at " + up : null,
+      absent(a.downgrade_confirmations) ? null : "lower after " + a.downgrade_confirmations].filter(Boolean).join(" · "), a.line);
   }
-  box.append(lines);
+  box.append(kv);
   return box;
 }
 
 // --- the editor --------------------------------------------------------------------
 
 function buildEditor() {
-  const box = panel("router.yaml", null, "edp");
-  const tools = el("div", "edt");
+  const box = band("router.yaml", null, "editor");
+  const head = box.firstChild;
+  const hash = el("span", "mono t3 edhash");
+  const tools = el("div", "acts");
   const revert = button("ghost", "Revert", () => {
     S.draft = null;
     S.edres = null;
@@ -357,14 +457,14 @@ function buildEditor() {
   });
   const check = button("ghost", "Check", () => runCheck());
   const previewB = button("ghost", "Preview", () => runPreview());
-  const apply = button("ghost danger", "Apply", () => { S.confirming = true; syncEditor(); });
+  const apply = button("ghost primary", "Apply", () => { S.confirming = true; syncEditor(); });
   add(tools, revert, check, previewB, apply);
-  box.firstChild.append(tools);
+  add(head, hash, tools);
   const moved = el("p", "edmoved");
   const ed = el("div", "ed");
   const gut = el("pre", "gut");
   gut.setAttribute("aria-hidden", "true");
-  const band = el("div", "hlb");
+  const bar = el("div", "hlb");
   const ta = el("textarea", "yta");
   ta.spellcheck = false;
   ta.setAttribute("wrap", "off");
@@ -379,14 +479,14 @@ function buildEditor() {
     if (S.edres && S.edres.kind !== "errors") S.edres = null;
     gutter();
     syncEditor();
-    const rep = document.querySelector(".prv");
+    const rep = document.querySelector(".rv .prv");
     if (rep) rep.classList.add("stale");
   });
   ta.addEventListener("scroll", () => { gut.scrollTop = ta.scrollTop; placeBand(); });
-  add(ed, gut, band, ta);
+  add(ed, gut, bar, ta);
   const res = el("div", "edres");
   box.append(moved, ed, res);
-  return {panel: box, ta, gut, band, moved, res, revert, check, preview: previewB, apply, lines: 0};
+  return {panel: box, hash, ta, gut, band: bar, moved, res, revert, check, preview: previewB, apply, lines: 0};
 }
 
 function gutter() {
@@ -415,10 +515,16 @@ function focusLine(line) {
   E.ta.scrollTop = Math.max(0, (line - 1) * EDITOR_LH - E.ta.clientHeight / 3);
   E.gut.scrollTop = E.ta.scrollTop;
   placeBand();
-  for (const r of document.querySelectorAll(".lr.on")) r.classList.remove("on");
+  for (const r of document.querySelectorAll(".rv .ladder .tr.on")) r.classList.remove("on");
   const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const box = E.ta.getBoundingClientRect();
   if (box.top < 0 || box.bottom > window.innerHeight) E.panel.scrollIntoView({block: "start", behavior: still ? "auto" : "smooth"});
+}
+
+function previewLabel() {
+  const n = S.rules ? S.rules.admissions : null;
+  if (absent(n) || !n) return "Preview";
+  return "Preview on " + plural(Math.min(n, PREVIEW_LIMIT), "admission");
 }
 
 // The editor follows the server until the owner types; then it never does.
@@ -439,19 +545,20 @@ function syncEditor(force) {
   gutter();
   placeBand();
   const dirty = S.draft !== null;
-  const note = E.panel.querySelector(".ph .note") || E.panel.firstChild.insertBefore(el("span", "note"), E.panel.firstChild.children[1]);
-  note.replaceChildren();
-  if (text === null) note.append(gap("text not available"));
-  else add(note, el("span", "mono", hash8(S.draftBase)), dirty ? el("span", "edit", " · edited") : null);
+  E.hash.replaceChildren();
+  if (text === null) E.hash.append(gap("text not available" + (d.yaml_source ? " · " + human(d.yaml_source) : "")));
+  else add(E.hash, hash8(S.draftBase), dirty ? el("span", "edited", " · edited") : null);
   E.revert.hidden = !dirty;
   // Apply waits for a Check or Preview that passed on exactly this text.
   E.apply.disabled = !dirty || !!S.busy || S.passed !== draftText();
+  E.apply.title = E.apply.disabled && dirty && !S.busy ? "Check or Preview this draft first" : "";
   E.check.disabled = E.preview.disabled = text === null || !!S.busy;
   E.check.textContent = S.busy === "check" ? "Checking…" : "Check";
-  E.preview.textContent = S.busy === "preview" ? "Replaying…" : "Preview";
+  E.preview.textContent = S.busy === "preview" ? "Replaying…" : previewLabel();
   E.moved.hidden = !(dirty && d.config_hash !== S.draftBase);
   E.moved.textContent = E.moved.hidden ? "" : "config changed on the server · now " + hash8(d.config_hash);
   E.res.replaceChildren(...editorResult());
+  syncShown();
 }
 
 function editorResult() {
@@ -459,18 +566,18 @@ function editorResult() {
   if (S.confirming) {
     const bar = el("div", "confirm");
     add(bar, el("span", null, "Replace router.yaml and reload?"),
-      button("danger solid", S.busy === "apply" ? "Applying…" : "Apply", () => runApply(false)),
+      button("ghost primary", S.busy === "apply" ? "Applying…" : "Apply", () => runApply(false)),
       button("ghost", "Cancel", () => { S.confirming = false; syncEditor(); }));
     out.push(bar);
   }
   const r = S.edres;
   if (!r) return out;
-  if (r.kind === "valid") out.push(add(el("p", "edok"), el("span", "ok", "Valid"), el("span", "faint", " · " + hash8(r.hash))));
+  if (r.kind === "valid") out.push(add(el("p", "edok"), el("span", "ok", "Valid"), el("span", "t3", " · " + hash8(r.hash))));
   if (r.kind === "errors") {
     const list = el("div", "errs");
     for (const e of r.errors || []) {
       const row = el("div", "err");
-      add(row, e.line ? button("eline mono", "line " + e.line, () => focusLine(e.line)) : el("span", "eline faint", "–"), el("span", "emsg", e.message || "invalid"));
+      add(row, e.line ? button("eline mono", "line " + e.line, () => focusLine(e.line)) : add(el("span", "eline"), gap("no line")), el("span", "emsg", e.message || "invalid"));
       list.append(row);
     }
     out.push(list);
@@ -480,15 +587,15 @@ function editorResult() {
     const p = el("div", "edok applied");
     if (b.applied) {
       add(p, el("span", "ok", "Applied"), el("span", "mono", " " + hash8(b.previous_hash) + " → " + hash8(b.config_hash)));
-      if (b.backup_path) add(p, el("span", "faint", " · backup "), el("span", "mono path", b.backup_path));
-      if (Array.isArray(b.restart_required) && b.restart_required.length) add(p, el("span", "gap", " · restart for " + b.restart_required.join(", ")));
-    } else add(p, el("span", "faint", "No change · " + hash8(b.config_hash)));
+      if (b.backup_path) add(p, el("span", "t3", " · backup "), el("span", "mono path", b.backup_path));
+      if (Array.isArray(b.restart_required) && b.restart_required.length) add(p, el("span", "warnt", " · restart for " + b.restart_required.join(", ")));
+    } else add(p, el("span", "t3", "No change · " + hash8(b.config_hash)));
     out.push(p);
   }
   if (r.kind === "refused") {
     const p = el("div", "errs");
-    const row = add(el("div", "err"), el("span", "eline gap", String(r.status || "")), el("span", "emsg", (r.body && r.body.error) || "refused"));
-    if (r.body && r.body.on_disk_hash) row.append(button("danger", "Overwrite", () => runApply(true)));
+    const row = add(el("div", "err"), add(el("span", "eline"), r.status ? String(r.status) : gap("no status")), el("span", "emsg", (r.body && r.body.error) || "refused"));
+    if (r.body && r.body.on_disk_hash) row.append(button("ghost badb", "Overwrite", () => runApply(true)));
     p.append(row);
     out.push(p);
   }
@@ -572,34 +679,40 @@ async function runApply(force) {
 
 // --- the preview report --------------------------------------------------------------
 
+// What a change does to a rated admission: [words, colour class].
 const EFFECT = {
   resolved_too_weak: ["resolved", "ok"], resolved_too_strong: ["resolved", "ok"],
-  conflicts: ["conflict", "gap"], right_changed: ["changed", "gap"], unranked: ["unranked", "faint"],
+  conflicts: ["conflict", "warnt"], right_changed: ["changed", "warnt"], unranked: ["unranked", "t3"],
 };
 
-function choiceText(c) {
+// A replayed choice: rule · model effort. Given the choice before it, each
+// part that moved is in the warning colour and each part that stayed muted.
+function choiceText(c, was) {
   const node = el("span", "ch");
   if (!c || c.error) return add(node, gap(c && c.error ? human(c.error) : "not replayed"));
   const [, name] = splitModel(c.model);
-  add(node, el("span", "mono", c.rule || "?"), el("span", "faint", " · "), el("span", "mono", name || "?"), c.effort ? el("span", "eff", " " + c.effort) : null);
+  const tone = (key) => (was === undefined ? "was" : !was || was.error || was[key] !== c[key] ? "chg" : "same");
+  const model = add(el("span", "nw"), el("span", "t3", "· "), el("span", "mono " + tone("model"), name || "?"),
+    c.effort ? el("span", tone("effort"), " " + c.effort) : null);
+  add(node, el("span", "mono nw " + tone("rule"), c.rule || "?"), " ", model);
   return node;
 }
 
 function previewPanel(r) {
-  const box = panel("Preview", "last " + (r.window || S.rwin), "prv");
-  const head = el("div", "pvh");
+  const box = band("Preview", "last " + (r.window || S.rwin), "prv");
   if (!r.evaluated) {
     box.append(el("p", "empty", "No admission in this window"));
     return box;
   }
+  const head = el("div", "pvh");
   // The preview replays every ruleset's admissions; say so when there are several.
   const several = Object.keys((S.rules && S.rules.rulesets) || {}).length > 1;
-  add(head, el("span", "pvk mono", int(r.changed) + " of " + int(r.evaluated)),
+  add(head, el("span", "pvk", int(r.changed) + " of " + int(r.evaluated)),
     el("span", "pvw", (r.evaluated === 1 ? "admission" : "admissions") + (several ? " (all rulesets)" : "") + " would change"));
-  if (r.unreplayable) head.append(gap(int(r.unreplayable) + " not replayable"));
+  if (r.unreplayable) head.append(el("span", "t3 s12", "· " + int(r.unreplayable) + " not replayable"));
   if (Array.isArray(r.diffs) && r.diffs.length) {
-    add(head, add(el("span", "pvkey"), el("span", "arr up", "▲"), " stronger · ", el("span", "arr down", "▼"), " weaker · ",
-      el("span", "arr", "→"), " no order"));
+    add(head, add(el("span", "pvkey"), el("span", "arrow up", "▲"), " stronger · ", el("span", "arrow down", "▼"), " weaker · ",
+      el("span", "arrow", "→"), " no order"));
   }
   box.append(head);
 
@@ -621,23 +734,23 @@ function previewPanel(r) {
     add(row, el("span", "mono shm", m), bars, el("span", "mono shv", pct(a) + " → " + pct(b)));
     shares.append(row);
   }
-  if (models.length) shares.append(add(el("div", "shrow shof"), el("span"), el("span", "faint", "of " + plural(r.evaluated, "admission")), el("span")));
+  if (models.length) shares.append(add(el("div", "shrow shof"), el("span"), el("span", "t3", "of " + plural(r.evaluated, "admission")), el("span")));
   const qa = r.quota_saved_before || {};
   const qb = r.quota_saved_after || {};
   const quota = el("div", "shrow" + (qa.saved_rate !== qb.saved_rate ? " moved" : ""));
-  add(quota, el("span", "shm kl", "Frontier quota saved"), el("span"),
-    add(el("span", "mono shv"), absent(qa.saved_rate) ? gap() : pct(qa.saved_rate), " → ", absent(qb.saved_rate) ? gap() : pct(qb.saved_rate)));
+  add(quota, el("span", "shm", "Frontier quota saved"), el("span"),
+    add(el("span", "mono shv"), absent(qa.saved_rate) ? gap("not recorded") : pct(qa.saved_rate), " → ", absent(qb.saved_rate) ? gap("not recorded") : pct(qb.saved_rate)));
   shares.append(quota);
   box.append(shares);
 
   const f = r.feedback || {};
   const marks = el("div", "fbm");
-  const mark = (n, text, cls) => { if (n) marks.append(el("span", "fbk " + cls, int(n) + " " + text)); };
-  mark(f.resolved_too_weak, "resolved " + VERDICT_WORDS.too_weak, "ok");
-  mark(f.resolved_too_strong, "resolved " + VERDICT_WORDS.too_strong, "ok");
-  mark(f.conflicts, f.conflicts === 1 ? "conflict" : "conflicts", "gap");
-  mark(f.right_changed, VERDICT_WORDS.right + " changed", "gap");
-  mark(f.unranked, "unranked", "faint");
+  const mark = (n, text, cls) => { if (n) marks.append(el("span", "dot " + cls, int(n) + " " + text)); };
+  mark(f.resolved_too_weak, "resolved too weak", "ok");
+  mark(f.resolved_too_strong, "resolved too strong", "ok");
+  mark(f.conflicts, f.conflicts === 1 ? "conflict" : "conflicts", "warnt");
+  mark(f.right_changed, "good changed", "warnt");
+  mark(f.unranked, "unranked", "t3");
   if (marks.children.length) box.append(marks);
 
   const diffs = Array.isArray(r.diffs) ? r.diffs : [];
@@ -645,16 +758,17 @@ function previewPanel(r) {
   if (!diffs.length) list.hidden = true;
   for (const d of diffs) {
     const row = el("div", "dfr");
-    const title = d.session_id ? link("dft", d.title || short(d.session_id), sessionHash(d.session_id)) : el("span", "dft", d.title || "–");
+    const title = d.session_id ? link("dft", d.title || short(d.session_id), sessionHash(d.session_id)) : add(el("span", "dft"), d.title || gap("no session"));
     const scores = el("span", "dfs mono");
     for (const [k, v] of Object.entries(d.answers || {})) add(scores, el("span", null, human(k) + " " + num2(v)));
     const move = el("span", "dfm");
-    const arrow = d.direction === "up" ? "▲" : d.direction === "down" ? "▼" : "→";
-    add(move, choiceText(d.before), add(el("span", "ch"), el("span", "arr" + (d.direction === "up" || d.direction === "down" ? " " + d.direction : ""), arrow + " "), choiceText(d.after)));
+    const dir = d.direction === "up" || d.direction === "down" ? d.direction : null;
+    const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "→";
+    add(move, choiceText(d.before), add(el("span", "ch"), el("span", "arrow" + (dir ? " " + dir : ""), arrow + " "), choiceText(d.after, d.before || null)));
     const fb = el("span", "dff");
-    const badge = verdictBadge(d.feedback_verdict);
-    if (badge) {
-      fb.append(badge);
+    const v = verdictDot(d.feedback_verdict);
+    if (v) {
+      fb.append(v);
       const e = EFFECT[d.feedback_effect];
       if (e) fb.append(el("span", "fe " + e[1], e[0]));
     }
