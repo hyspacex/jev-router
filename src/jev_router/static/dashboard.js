@@ -609,6 +609,21 @@ function render(kind) {
 }
 
 // --- sessions ----------------------------------------------------------------
+//
+// The list: a head with the saved views and the window, a toolbar with one
+// search box that also takes `rule:hard` style filters, the active filters as
+// chips, and a table. The head and toolbar are built once and synced; the
+// live refresh replaces only the table, so typing is never interrupted.
+
+// The filters a `key:value` token in the search box may set, the chips show
+// and the "+ Filter" popover lists. `q` lives in the box, `window` in the head.
+const CHIP_KEYS = ["client", "model", "rule", "state", "adaptive", "problem", "feedback", "pinned"];
+const FILTER_TOKEN = /^(client|model|rule|state|adaptive|problem|feedback|pinned):(.*)$/;
+// The saved views: a name and the exact filter set it stands for. A view
+// keeps the current window; the window is its own control.
+const SAVED_VIEWS = [["All", {}], ["Problems", {problem: "any"}], ["Unrated", {feedback: "unrated"}], ["Pinned", {pinned: "1"}]];
+const LIST_WINDOWS = ["24h", "7d", "30d"];
+let popWired = false;
 
 function renderSessions(kind) {
   const main = $("main");
@@ -619,9 +634,12 @@ function renderSessions(kind) {
   else main.replaceChildren(S.toolbar, table);
 }
 
-function setFilter(key, value, typing) {
+// Set several filters at once; an empty value removes one.
+function setFilters(patch, typing) {
   const next = Object.assign({}, S.filters);
-  if (value) next[key] = value; else delete next[key];
+  for (const [key, value] of Object.entries(patch)) {
+    if (value) next[key] = value; else delete next[key];
+  }
   const hash = listHash(next);
   if (typing) {
     // Typing replaces the entry rather than piling up history.
@@ -629,70 +647,218 @@ function setFilter(key, value, typing) {
     onHash();
   } else go(hash);
 }
+function setFilter(key, value, typing) { setFilters({[key]: value}, typing); }
 
-function select(id, label, onChange) {
-  const s = el("select", "fsel");
-  s.id = id;
-  s.setAttribute("aria-label", label);
-  s.addEventListener("change", () => onChange(s.value));
-  return s;
+// The 400 the shell turns into an empty list carries no config hash.
+function listRefused() { return !!S.list && !("config_hash" in S.list); }
+// Every session, any time: the feedback facet groups all of them.
+function totalSessions() {
+  const fb = S.list && S.list.facets && S.list.facets.feedback;
+  return Array.isArray(fb) ? fb.reduce((n, x) => n + (Number(x.n) || 0), 0) : null;
 }
-function fillSelect(s, options, current) {
-  const values = options.map((o) => o[0]);
-  if (current && !values.includes(current)) options = options.concat([[current, current]]);
-  s.replaceChildren(...options.map(([value, text]) => { const o = el("option", null, text); o.value = value; return o; }));
-  s.value = current || "";
+// Two filter sets with the same values, the window aside.
+function sameFilters(a, b) {
+  return FILTER_KEYS.every((k) => k === "window" || (a[k] || "") === (b[k] || ""));
+}
+
+// What a saved view would list, or null when nothing on hand says so
+// honestly. The lit view is the list on screen. With no filter but the
+// window and every row listed, the rows themselves answer for each view.
+// Otherwise, without a window, the facets and bookmarks (all time) do; the
+// Problems count is in neither.
+function viewCount(set) {
+  if (!S.list || listRefused()) return null;
+  const rows = sessions();
+  const matched = typeof S.list.matched === "number" ? S.list.matched : null;
+  if (matched !== null && sameFilters(S.filters, set)) return matched;
+  if (sameFilters(S.filters, {}) && matched !== null && rows.length === matched) {
+    if (set.problem) return rows.filter((s) => Array.isArray(s.problems) && s.problems.length).length;
+    if (set.feedback) return rows.filter((s) => !s.feedback_verdict).length;
+    if (set.pinned) return rows.filter((s) => s.pinned).length;
+    return rows.length;
+  }
+  if (S.filters.window) return null;
+  if (set.feedback) {
+    const fb = S.list.facets && S.list.facets.feedback;
+    if (!Array.isArray(fb)) return null;
+    const hit = fb.find((x) => x.value === "unrated");
+    return hit ? Number(hit.n) : 0;
+  }
+  if (set.pinned) return bookmarks().length;
+  if (set.problem) return null;
+  return totalSessions();
+}
+
+// Split the box text into filters, search words and a token still being
+// typed. A token becomes a filter once a space follows it, or on Enter
+// (final); an unfinished one is neither a filter nor search text.
+function parseSearch(text, final) {
+  const words = text.split(/\s+/);
+  const filters = {};
+  const rest = [];
+  const held = [];
+  words.forEach((w, i) => {
+    if (!w) return;
+    const m = FILTER_TOKEN.exec(w);
+    if (!m) { rest.push(w); return; }
+    const done = final || i < words.length - 1;
+    if (done && m[2]) filters[m[1]] = m[2];
+    else held.push(w);
+  });
+  return {filters, q: rest.join(" "), held: held.join(" ")};
+}
+
+// Apply what the box holds. Returns true when a token became a filter.
+function applySearch(search, final) {
+  const parsed = parseSearch(search.value, final);
+  const patch = Object.assign({}, parsed.filters);
+  const took = Object.keys(patch).length > 0;
+  if (took) {
+    // The token leaves the box; it is a chip now.
+    const left = [parsed.q, parsed.held].filter(Boolean).join(" ");
+    search.value = left && !final && !parsed.held ? left + " " : left;
+  }
+  // Text the router would refuse is never sent; the list stays as it is.
+  if (!parsed.q || SEARCH_OK.test(parsed.q)) patch.q = parsed.q;
+  if (Object.entries(patch).every(([k, v]) => (S.filters[k] || "") === (v || ""))) return took;
+  setFilters(patch, !final);
+  return took;
 }
 
 function buildToolbar() {
+  const root = el("div", "slist");
+
+  // The head: title, saved views, the window.
+  const head = el("div", "head");
+  const views = el("nav", "views");
+  views.id = "sviews";
+  views.setAttribute("aria-label", "Saved views");
+  for (const [name] of SAVED_VIEWS) {
+    const a = link(null, name, "#sessions");
+    a.dataset.view = name;
+    views.append(a);
+  }
+  const right = el("div", "right");
+  const seg = el("div", "seg");
+  seg.id = "swin";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "Last seen");
+  right.append(seg);
+  add(head, el("h1", null, "Sessions"), views, right);
+
+  // The toolbar: search, chips, + Filter, the count.
   const bar = el("div", "toolbar");
-  const search = el("input", "fsearch");
+  const box = el("label", "search");
+  const search = el("input");
   search.id = "q";
   search.type = "search";
-  search.placeholder = "Search";
+  search.placeholder = "Search titles and prompts, or filter: rule:hard model:glm-5.3 problem:any";
   search.autocomplete = "off";
   search.spellcheck = false;
-  search.maxLength = 80;
-  search.setAttribute("aria-label", "Search titles and prompts");
+  search.maxLength = 200;
+  search.setAttribute("aria-label", "Search titles and prompts, or type key:value to filter");
+  add(box, el("span", "t3", "⌕"), search);
   search.addEventListener("input", () => {
     clearTimeout(S.searchTimer);
-    S.searchTimer = setTimeout(() => {
-      const v = search.value.trim();
-      // Text the router would refuse is never sent; the list stays as it is.
-      if (!v || SEARCH_OK.test(v)) setFilter("q", v, true);
-    }, 250);
+    S.searchTimer = setTimeout(() => applySearch(search, false), 250);
   });
   search.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { search.blur(); event.stopPropagation(); }
+    if (event.key === "Escape") { search.blur(); event.stopPropagation(); return; }
+    if (event.key === "Enter") {
+      clearTimeout(S.searchTimer);
+      if (applySearch(search, true)) { event.preventDefault(); return; }
+    }
     if (event.key === "Enter" || event.key === "ArrowDown") {
       const first = document.querySelector(".srow[href]");
       if (first) { first.focus(); event.preventDefault(); }
     }
   });
-  const pinned = button("pinb", "Pinned", () => setFilter("pinned", S.filters.pinned === "1" ? "" : "1"));
-  pinned.id = "pinned";
-  const clear = button("ghost clear", "Clear", () => go("#sessions"));
-  clear.id = "clear";
+  const chips = el("div", "schips");
+  chips.id = "schips";
+  const addBtn = button("chip add", "+ Filter", () => togglePop());
+  addBtn.id = "sadd";
+  addBtn.setAttribute("aria-haspopup", "dialog");
+  addBtn.setAttribute("aria-expanded", "false");
+  const pop = el("div", "fpop");
+  pop.id = "spop";
+  pop.hidden = true;
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "Add a filter");
+  pop.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { togglePop(false); addBtn.focus(); event.stopPropagation(); }
+  });
   const count = el("span", "count");
   count.id = "count";
-  add(bar,
-    search,
-    select("f-client", "Client", (v) => setFilter("client", v)),
-    select("f-model", "Model", (v) => setFilter("model", v)),
-    select("f-rule", "Rule", (v) => setFilter("rule", v)),
-    select("f-feedback", "Feedback", (v) => setFilter("feedback", v)),
-    select("f-state", "State", (v) => setFilter("state", v)),
-    select("f-adaptive", "Adaptive effort", (v) => setFilter("adaptive", v)),
-    select("f-problem", "Problems", (v) => setFilter("problem", v)),
-    select("f-window", "Last seen", (v) => setFilter("window", v)),
-    pinned, clear, count);
-  return bar;
+  add(bar, box, chips, addBtn, count, pop);
+  add(root, head, bar);
+
+  if (!popWired) {
+    popWired = true;
+    // A click anywhere else closes the popover.
+    document.addEventListener("click", (event) => {
+      if (!S.toolbar) return;
+      const p = tb("spop");
+      if (p.hidden || p.contains(event.target) || tb("sadd").contains(event.target)) return;
+      togglePop(false);
+    });
+  }
+  return root;
 }
 
 // A toolbar control, attached to the page or not yet.
 function tb(id) { return S.toolbar.querySelector("#" + id); }
 
-const SELECTS = ["f-client", "f-model", "f-rule", "f-feedback", "f-state", "f-adaptive", "f-problem", "f-window"];
+function togglePop(open) {
+  const pop = tb("spop");
+  const btn = tb("sadd");
+  const showIt = open === undefined ? pop.hidden : open;
+  pop.hidden = !showIt;
+  btn.setAttribute("aria-expanded", showIt ? "true" : "false");
+  if (!showIt) return;
+  // Under the button, kept inside the toolbar.
+  const bar = btn.parentNode;
+  const width = Math.min(440, bar.clientWidth);
+  pop.style.width = width + "px";
+  pop.style.left = Math.max(0, Math.min(btn.offsetLeft, bar.clientWidth - width)) + "px";
+  pop.style.top = (btn.offsetTop + btn.offsetHeight + 6) + "px";
+  const first = pop.querySelector("button");
+  if (first) first.focus({preventScroll: true});
+}
+
+// The values the popover offers for a key: [value, words, count or null].
+function popValues(key, facets) {
+  if (key === "client" || key === "model" || key === "rule") return (facets[key] || []).map((x) => [x.value, x.value, x.n]);
+  if (key === "feedback") {
+    const seen = new Map((facets.feedback || []).map((x) => [x.value, x.n]));
+    return FEEDBACK_OPTIONS.filter(([v]) => seen.has(v)).map(([v]) => [v, v === "unrated" ? "unrated" : VERDICT_DOTS[v][1], seen.get(v)]);
+  }
+  if (key === "state") return STATES.map((s) => [s, s, null]);
+  if (key === "adaptive") return MODES.map((m) => [m, m, null]);
+  if (key === "problem") return Object.keys(PROBLEMS).map((p) => [p, p === "any" ? "any" : (PROBLEM_SHORT[p] || human(p)), null]);
+  return [["1", "pinned", null], ["0", "not pinned", null]];
+}
+
+function fillPop(pop, facets) {
+  const f = S.filters;
+  pop.replaceChildren();
+  for (const key of CHIP_KEYS) {
+    const row = el("div", "fprow");
+    const vals = el("div", "fpv");
+    const options = popValues(key, facets);
+    if (!options.length) vals.append(gap("no " + key + " recorded"));
+    for (const [value, words, n] of options) {
+      const on = f[key] === value;
+      const b = button("fopt" + (on ? " on" : ""), null, () => { togglePop(false); setFilter(key, on ? "" : value); });
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.title = key + ":" + value + (key === "problem" ? " · " + PROBLEMS[value] : "");
+      add(b, el("span", key === "client" || key === "model" || key === "rule" ? "mono" : null, words),
+        absent(n) ? null : el("small", null, int(n)));
+      vals.append(b);
+    }
+    add(row, el("span", "k", key), vals);
+    pop.append(row);
+  }
+}
 
 function syncToolbar() {
   const f = S.filters;
@@ -700,53 +866,79 @@ function syncToolbar() {
   const json = JSON.stringify(facets) + "|" + JSON.stringify(f);
   if (json !== S.facetsJson) {
     S.facetsJson = json;
-    const opts = (name, all) => [["", all]].concat((facets[name] || []).map((x) => [x.value, x.value]));
-    fillSelect(tb("f-client"), opts("client", "All clients"), f.client);
-    fillSelect(tb("f-model"), opts("model", "All models"), f.model);
-    fillSelect(tb("f-rule"), opts("rule", "All rules"), f.rule);
-    // The verdicts the facet saw, in a fixed order, then any the link names.
-    const seen = new Set((facets.feedback || []).map((x) => x.value));
-    const verdicts = FEEDBACK_OPTIONS.filter(([v]) => seen.has(v) || !facets.feedback);
-    fillSelect(tb("f-feedback"), [["", "Any feedback"]].concat(verdicts), f.feedback);
-    fillSelect(tb("f-state"), [["", "Any state"]].concat(STATES.map((s) => [s, cap(s)])), f.state);
-    fillSelect(tb("f-adaptive"), [["", "Any effort mode"]].concat(MODES.map((m) => [m, m === "off" ? "Adaptive off" : "Adaptive " + m])), f.adaptive);
-    fillSelect(tb("f-problem"), [["", "Any outcome"]].concat(Object.entries(PROBLEMS)), f.problem);
-    fillSelect(tb("f-window"), [["", "Any time"]].concat(WINDOWS.map((w) => [w, "Last " + w])), f.window);
+    fillPop(tb("spop"), facets);
+    // One chip per filter, other than the search text and the window.
+    const chips = tb("schips");
+    chips.replaceChildren();
+    for (const key of CHIP_KEYS) {
+      if (!f[key]) continue;
+      const x = button("x", "✕", () => setFilter(key, ""), "Remove filter " + key + " " + f[key]);
+      x.title = "Remove filter";
+      chips.append(add(el("span", "chip"), el("span", "k", key), " " + f[key], x));
+    }
   }
-  for (const id of SELECTS) tb(id).classList.toggle("set", !!tb(id).value);
+  // Saved views: the lit one is the filter set on screen.
+  for (const a of tb("sviews").children) {
+    const set = SAVED_VIEWS.find(([name]) => name === a.dataset.view)[1];
+    a.href = listHash(Object.assign({}, set, f.window ? {window: f.window} : {}));
+    const lit = sameFilters(f, set);
+    a.classList.toggle("on", lit);
+    if (lit) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+    const n = viewCount(set);
+    a.replaceChildren(document.createTextNode(a.dataset.view));
+    if (n !== null) a.append(el("small", null, int(n)));
+  }
+  // The window: any, then the spans; a hand-edited one shows as itself.
+  const cur = f.window || "";
+  const wins = [""].concat(LIST_WINDOWS, cur && !LIST_WINDOWS.includes(cur) ? [cur] : []);
+  tb("swin").replaceChildren(...wins.map((w) => {
+    const a = link(cur === w ? "on" : null, w || "any", listHash(Object.assign({}, f, {window: w})));
+    if (cur === w) a.setAttribute("aria-current", "true");
+    return a;
+  }));
   const search = tb("q");
   if (document.activeElement !== search && search.value !== (f.q || "")) search.value = f.q || "";
-  const pinned = tb("pinned");
-  pinned.setAttribute("aria-pressed", f.pinned === "1" ? "true" : "false");
-  const books = bookmarks().length;
-  pinned.textContent = "Pinned" + (books ? " " + books : "");
-  tb("clear").hidden = !FILTER_KEYS.some((k) => f[k]);
+  // "N sessions", or "N of M sessions" when a filter narrows the list.
+  const countNode = tb("count");
+  if (!S.list || listRefused()) { countNode.textContent = ""; return; }
   const shown = sessions().length;
-  const matched = S.list && typeof S.list.matched === "number" ? S.list.matched : shown;
-  tb("count").textContent = S.list ? (matched > shown ? shown + " of " + int(matched) : int(shown)) + (matched === 1 ? " session" : " sessions") : "";
+  const matched = typeof S.list.matched === "number" ? S.list.matched : shown;
+  const total = totalSessions();
+  const narrowed = FILTER_KEYS.some((k) => f[k]) && total !== null && total !== matched;
+  let text = narrowed ? int(matched) + " of " + int(total) + " sessions" : plural(matched, "session");
+  if (shown < matched) text = "first " + int(shown) + " · " + text;
+  countNode.textContent = text;
 }
 
 // [label, class]. Numbers right-aligned.
-const COLUMNS = [["Last seen", "c0"], ["Session", "c1"], ["Client", "c2"], ["Workspace", "c3"], ["Turns", "c4 num"],
-  ["Model · effort", "c5"], ["Rule", "c6"], ["Feedback", "c7"], ["Problems", "c8"]];
+const COLUMNS = [["Session", null], ["Last seen", null], ["Model · effort", null], ["Rule", null], ["Verdict", null], ["Problems", "num"]];
 
 function sessionTable(kind) {
-  const root = el("section", "stable" + (kind === "data" ? " still" : ""));
-  const rows = sessions();
+  const root = band(null, null, "slband" + (kind === "data" ? " still" : ""));
   if (!S.list) return root;
+  const rows = sessions();
   if (!rows.length) {
-    root.append(el("p", "empty", FILTER_KEYS.some((k) => S.filters[k]) ? "No session matches these filters" : "No sessions yet"));
+    const empty = el("p", "empty");
+    if (FILTER_KEYS.some((k) => S.filters[k])) add(empty, "No session matches these filters · ", link("clear", "Clear", "#sessions"));
+    else empty.textContent = "No sessions yet";
+    root.append(empty);
     return root;
   }
-  const head = el("div", "srow shead");
+  const tbl = el("div", "tbl sessions");
+  const head = el("div", "tr th");
   head.setAttribute("aria-hidden", "true");
   for (const [label, cls] of COLUMNS) head.append(el("span", cls, label));
-  root.append(head);
-  rows.forEach((s, i) => root.append(sessionRow(s, i)));
+  tbl.append(head);
+  for (const s of rows) tbl.append(sessionRow(s));
+  root.append(tbl);
+  // Explained once, under the table, only when some row needs it.
+  if (rows.some((s) => !s.title && absent(s.turn_count))) {
+    root.append(foot("Sessions from before logging was turned on have no stored prompt, title or turn count."));
+  }
   return root;
 }
 
-// The muted line under a title: what the prompt says beyond it. A title cut
+// The muted text after a title: what the prompt says beyond it. A title cut
 // short with "…" already shows the prompt's start, so nothing repeats it.
 function previewLine(title, preview) {
   if (!preview) return null;
@@ -758,58 +950,71 @@ function previewLine(title, preview) {
   return preview.slice(base.length).trim() || null;
 }
 
-function sessionRow(s, i) {
-  const row = link("srow", null, sessionHash(s.session_id));
+// The problems as one count badge: amber, red when a request was refused or
+// a stream broke. Its title names each problem with its count.
+function problemBadge(s) {
+  const list = Array.isArray(s.problems) ? s.problems : [];
+  if (!list.length) return null;
+  const counts = s.requests || {};
+  const words = list.map((p) => {
+    const k = p === "unknown" || p === "rejected" || p === "stream_failed" ? counts[p] : null;
+    return (k ? int(k) + " " : "") + (PROBLEM_SHORT[p] || human(p));
+  });
+  const bad = list.includes("rejected") || list.includes("stream_failed");
+  const node = badge(bad ? "bad" : "warn", int(list.length), words.join(", "));
+  node.setAttribute("aria-label", plural(list.length, "problem") + ": " + words.join(", "));
+  return node;
+}
+
+function sessionRow(s) {
+  // "srow" is the hook j/k and the search box's Enter look for.
+  const row = link("tr srow", null, sessionHash(s.session_id));
   row.dataset.fk = "row-" + s.session_id;
   row.dataset.sid = s.session_id;
-  row.style.animationDelay = Math.min(300, i * 12) + "ms";
-  const when = el("span", "c0 mono");
-  add(when, absent(s.last_seen) ? (absent(s.created) ? gap() : stamp(s.created)) : stamp(s.last_seen));
+  const effortFrom = s.admitted_effort || s.effort;
+  const effortNow = s.effective_effort || s.effort;
 
   // The session as a person knows it: what they asked, then where.
-  const who = el("span", "c1");
-  const title = el("span", "stitle");
-  if (s.pinned) title.append(el("span", "pin", "◆"));
-  if (s.client) title.append(el("span", "scli", s.client + " ·")); // shown on narrow screens only
-  title.append(s.title ? el("span", "stt", s.title) : el("span", "stt sid mono", short(s.session_id, s.client)));
-  if (s.pinned) title.append(el("span", "plabel", s.pinned.label));
-  if (s.tombstone) title.append(el("span", "faint", "pruned"));
-  else if (s.state && s.state !== "active") title.append(el("span", "faint", s.state));
-  who.append(title);
-  const preview = previewLine(s.title, s.prompt_preview);
-  if (preview) who.append(el("span", "sprev", preview));
-
-  const client = add(el("span", "c2"), s.client ? s.client : gap("client"));
-  const ws = el("span", "c3");
-  if (s.workspace_hint) ws.append(el("span", "wchip mono", s.workspace_hint));
-  const turns = el("span", "c4 num mono");
-  add(turns, absent(s.turn_count) ? gap() : int(s.turn_count));
-
-  // Model · effort. A session whose effort moved, by a plan or by feedback,
-  // says from where to where: mint for up, blue for down.
-  const mdl = el("span", "c5 mono");
-  const [prov, name] = splitModel(s.model);
-  add(mdl, prov ? el("span", "faint", prov) : null, show(name));
-  const from = s.admitted_effort || s.effort;
-  const now = s.effective_effort || s.effort;
-  if (from && now && now !== from) {
-    const a = LADDER.indexOf(from);
-    const b = LADDER.indexOf(now);
-    const dir = a < 0 || b < 0 ? "" : b > a ? " up" : " down";
-    add(mdl, el("span", "eff", " · " + from + " "), el("span", "earr" + dir, "→"), el("span", "eff" + dir, " " + now));
-  } else if (now) add(mdl, el("span", "eff", " · " + now));
-  const rl = add(el("span", "c6 mono"), show(s.rule));
-  const fb = el("span", "c7");
-  const badge = verdictBadge(s.feedback_verdict);
-  if (badge) fb.append(badge);
-
-  const counts = s.requests || {};
-  const probs = el("span", "c8");
-  for (const p of Array.isArray(s.problems) ? s.problems : []) {
-    const k = p === "unknown" ? counts.unknown : p === "rejected" ? counts.rejected : p === "stream_failed" ? counts.stream_failed : null;
-    probs.append(el("span", "prob", (k ? k + " " : "") + (PROBLEM_SHORT[p] || human(p))));
+  const ti = el("span", "sti");
+  const line = el("span", "stl");
+  if (s.pinned) {
+    const note = "Pinned" + (s.pinned.label ? " · " + s.pinned.label : "");
+    const pin = el("span", "pin", "◆");
+    pin.title = note;
+    pin.setAttribute("aria-label", note);
+    line.append(pin);
   }
-  add(row, when, who, client, ws, turns, mdl, rl, fb, probs);
+  // No title: the bookmark's label when someone gave one, else the short id.
+  const name = s.title || (s.pinned && s.pinned.label) || null;
+  if (name) line.append(el("b", null, name));
+  else add(line, el("b", "mono t2 ssid", short(s.session_id, s.client)), gap("prompt not recorded before logging was on"));
+  const preview = previewLine(s.title, s.prompt_preview);
+  if (preview) line.append(el("span", "sprev", preview));
+  ti.append(line);
+
+  const bits = [s.client, s.workspace_hint, absent(s.turn_count) ? null : plural(s.turn_count, "turn"),
+    s.tombstone ? "pruned" : s.state === "closed" ? "closed" : null].filter(Boolean);
+  const sub = el("small", "smeta");
+  if (bits.length) sub.append(el("span", null, bits.join(" · ")));
+  // Narrower, the Problems column folds into this line.
+  const fold = problemBadge(s);
+  if (fold) { fold.classList.add("sfold"); sub.append(fold); }
+  if (bits.length || fold) ti.append(sub);
+  // On a phone the model and verdict ride under the title too.
+  ti.append(add(el("small", "smline"), modelNode(s.model, effortFrom, effortNow), verdictDot(s.feedback_verdict)));
+
+  const seen = absent(s.last_seen) ? s.created : s.last_seen;
+  const when = el("span", "sseen");
+  if (absent(seen)) when.append(gap("no time recorded"));
+  else { when.textContent = stamp(seen); when.title = day(seen) + " " + clock(seen); }
+
+  add(row,
+    ti,
+    when,
+    add(el("span"), modelNode(s.model, effortFrom, effortNow)),
+    add(el("span", "srule"), s.rule ? s.rule : gap("no rule recorded")),
+    add(el("span"), verdictDot(s.feedback_verdict)),
+    add(el("span", "num"), problemBadge(s)));
   return row;
 }
 
