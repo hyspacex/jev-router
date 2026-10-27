@@ -1,4 +1,12 @@
-"""Read-only audit UI. No transcripts, debug state, credentials or feedback notes."""
+"""Read-only audit UI.
+
+Every field is projected by name. No conversation key, owner, fingerprint,
+credential, raw request facts or usage contents ever leaves. Since turn
+capture, the scrubbed and capped text the router chose to keep does: a
+session's title, preview and workspace, each turn's prompt, the text fields
+of the state Jev was shown, the turn's assistant summary and tool calls, and
+notes left through session feedback (scrubbed when written).
+"""
 
 from __future__ import annotations
 
@@ -12,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from .config import RouterConfig
+from .pins import VERDICTS
 from .policy import trace
 from .semantic import ADMISSION_FALLBACK, features_from_facts, replay_decision
 from .sessions import (
@@ -19,8 +28,10 @@ from .sessions import (
     EVENT_ADMISSION,
     EVENT_EFFORT_PLAN,
     EVENT_EXECUTION,
+    EVENT_USER_TURN,
     REQUEST_PROBLEMS,
     STATES,
+    TURN_EVENTS,
 )
 
 # Explicit projection: future decision columns are private until reviewed here.
@@ -132,10 +143,13 @@ FACT_FIELDS = (
     "message_count", "est_tokens", "input_tokens", "output_tokens",
     "reserve_tokens", "headroom", "context_window", "max_tokens", "has_tools",
     "tool_count", "has_images", "has_code", "stream", "estimate_method",
-    "session_mode",
+    "session_mode", "user_turns", "tool_names", "languages",
 )
 # The two allowlisted facts that are strings. Both are written by the router.
 FACT_LABELS = frozenset(["estimate_method", "session_mode"])
+# The allowlisted facts that are lists of short labels, at most this many.
+FACT_LISTS = frozenset(["tool_names", "languages"])
+FACT_LIST_MAX = 20
 # A state-shape fact that is a string survives only under one of these keys.
 SHAPE_LABELS = frozenset(["client"])
 
@@ -148,6 +162,9 @@ SESSION_FIELDS = (
     "quality_lane", "quota_changed_choice", "config_hash", "jev_model",
     "compaction_epoch", "compaction_state", "last_input_tokens",
     "last_output_tokens", "tombstone", "state_builder",
+    # Turn capture and session feedback.
+    "title", "prompt_preview", "workspace_hint", "turn_count",
+    "escalation_count", "corrective_count", "feedback_verdict",
 )
 
 PLAN_FIELDS = (
@@ -192,6 +209,10 @@ def project_facts(raw: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key in FACT_FIELDS:
         value = raw.get(key)
+        if key in FACT_LISTS:
+            if isinstance(value, list):
+                out[key] = [v for v in value[:FACT_LIST_MAX] if _label(v) is not None]
+            continue
         typed = isinstance(value, bool) or _is_number(value)
         if typed or (key in FACT_LABELS and _label(value) is not None):
             out[key] = value
@@ -321,6 +342,8 @@ def _project_request(seq: int, row: dict[str, Any]) -> dict[str, Any]:
         else decision.get("upstream_status"),
         "row": decision.get("id"),
         "ts": decision.get("ts"),
+        # The user turn this request belongs to; NULL before turn capture.
+        "turn_index": decision.get("turn_index"),
         # The turn the router logged this request under; NULL before it did.
         "turn_id": _label(decision.get("turn_id")),
         "event_type": decision.get("event_type"),
@@ -411,16 +434,21 @@ WINDOWS = {
     "30d": (30 * 86400, 86400),
 }
 ADAPTATION_MODES = ("off", "shadow", "active")
-_SEARCH = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+# Letters in any script, digits, spaces and ordinary punctuation. No `%`,
+# backslash, angle brackets or control characters; the value only ever
+# reaches the database as a bound parameter, and only through `instr`.
+_SEARCH = re.compile(r"[\w .,:;!?'\"()\[\]/#@+=&*-]{1,80}")
+FEEDBACK_FILTERS = (*VERDICTS, "unrated")
 LIST_PARAMS = frozenset([
     "limit", "client", "model", "rule", "state", "adaptive", "problem", "pinned",
-    "q", "window",
+    "q", "window", "feedback",
 ])
 LISTED_FIELDS = (
     "session_id", "alias", "client", "state", "created", "last_seen",
     "closed_at", "model", "base_effort", "effective_effort",
     "decision_rule", "quality_lane", "config_hash", "config_matches",
-    "adaptation_mode", "tombstone",
+    "adaptation_mode", "tombstone", "title", "prompt_preview",
+    "workspace_hint", "turn_count", "feedback_verdict",
 )
 
 
@@ -478,9 +506,14 @@ def list_filters(params: Any, now: float) -> dict[str, Any]:
         filters["pinned"] = pinned == "1"
     search = params.get("q")
     if search is not None:
-        if not _SEARCH.fullmatch(search):
-            raise BadQuery("q must be 1 to 64 id characters")
-        filters["search"] = search
+        if not _SEARCH.fullmatch(search) or not search.strip():
+            raise BadQuery("q must be 1 to 80 letters, digits, spaces or punctuation")
+        filters["search"] = search.strip()
+    feedback = params.get("feedback")
+    if feedback is not None:
+        if feedback not in FEEDBACK_FILTERS:
+            raise BadQuery("feedback must be one of " + ", ".join(FEEDBACK_FILTERS))
+        filters["feedback"] = feedback
     window = params.get("window")
     if window is not None:
         if window not in WINDOWS:
@@ -753,8 +786,233 @@ async def audit_overview(request: Request) -> Response:
     return JSONResponse(body, headers=HEADERS)
 
 
+# --- user turns ----------------------------------------------------------------
+#
+# One entry per user turn: the admission, each turn plan, and each new user
+# turn an execution request opened without a plan. Execution rows join their
+# turn by `turn_index`; a row written before that column existed joins the
+# newest turn row logged before it, and the response says `by_order`.
+
+TURN_KINDS = {EVENT_ADMISSION: "admission", EVENT_EFFORT_PLAN: "plan", EVENT_USER_TURN: "user_turn"}
+# The text fields of a stored state that may be shown, and nothing else.
+STATE_TEXT_FIELDS = (
+    "latest_user_request", "material_the_user_pasted",
+    "earlier_request_in_this_conversation", "task_request",
+    "current_user_request",
+)
+STATE_LIST_FIELDS = ("user_constraints", "quoted_material", "observations")
+QUOTED_FIELDS = ("kind", "note", "content")
+OBSERVATION_FIELDS = ("source", "kind", "summary", "status")
+STATE_FACT_TEXT_MAX = 40
+FEEDBACK_FIELDS = ("verdict", "note", "source", "ts", "turn_index")
+
+
+def project_turn_state(raw: Any) -> dict[str, Any] | None:
+    """The stored state's known text fields and its facts; nothing else.
+
+    The text was scrubbed and capped when it was written. A fact survives
+    when it is a flag, a number, a short label or a list of short labels.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in STATE_TEXT_FIELDS:
+        if isinstance(raw.get(key), str):
+            out[key] = raw[key]
+    constraints = raw.get("user_constraints")
+    if isinstance(constraints, list):
+        out["user_constraints"] = [c for c in constraints if isinstance(c, str)]
+    for key, fields in (("quoted_material", QUOTED_FIELDS), ("observations", OBSERVATION_FIELDS)):
+        items = raw.get(key)
+        if isinstance(items, list):
+            out[key] = [
+                {f: item[f] for f in fields if isinstance(item.get(f), str)}
+                for item in items if isinstance(item, dict)
+            ]
+    facts: dict[str, Any] = {}
+    raw_facts = raw.get("facts") if isinstance(raw.get("facts"), dict) else {}
+    for key, value in raw_facts.items():
+        if _label(key) is None:
+            continue
+        short = isinstance(value, str) and len(value) <= STATE_FACT_TEXT_MAX and _label(value)
+        if value is None or isinstance(value, bool) or _is_number(value) or short:
+            facts[key] = value
+        elif isinstance(value, list):
+            facts[key] = [v for v in value[:FACT_LIST_MAX] if _label(v) is not None]
+    out["facts"] = facts
+    return out
+
+
+def _usage_numbers(usage: Any) -> tuple[Any, Any, Any]:
+    """(input, output, cached input) from a chat or Responses usage block."""
+    if not isinstance(usage, dict):
+        return None, None, None
+
+    def first(*keys: str) -> Any:
+        for key in keys:
+            if _is_number(usage.get(key)):
+                return usage[key]
+        return None
+
+    cached = first("cached_input_tokens")
+    for details in ("input_tokens_details", "prompt_tokens_details"):
+        block = usage.get(details)
+        if cached is None and isinstance(block, dict) and _is_number(block.get("cached_tokens")):
+            cached = block["cached_tokens"]
+    return (
+        first("input_tokens", "prompt_tokens"),
+        first("output_tokens", "completion_tokens"),
+        cached,
+    )
+
+
+def _total(values: list[Any]) -> Any:
+    """A sum, or None when no row reported the number. Never a made-up zero."""
+    numbers = [v for v in values if _is_number(v)]
+    return sum(numbers) if numbers else None
+
+
+def _tokens_per_second(row: dict[str, Any]) -> float | None:
+    output = _usage_numbers(row.get("upstream_usage"))[1]
+    total, first = row.get("response_ms"), row.get("first_byte_ms")
+    if not _is_number(output) or not _is_number(total) or not _is_number(first):
+        return None
+    return output * 1000.0 / max(total - first, 1.0)
+
+
+def _turn_calls(raw: Any) -> tuple[list[dict[str, Any]] | None, list[str] | None]:
+    """The tool calls and files a turn row recorded, checked for type."""
+    if not isinstance(raw, dict):
+        return None, None
+    calls = [
+        {"name": item["name"], "count": int(item["count"])}
+        for item in raw.get("tool_calls") or []
+        if isinstance(item, dict) and _label(item.get("name")) is not None
+        and _is_number(item.get("count"))
+    ]
+    files = [f for f in raw.get("files_touched") or [] if isinstance(f, str)]
+    return calls, files
+
+
+def execution_rollup(rows: list[dict[str, Any]], turn_row: dict[str, Any]) -> dict[str, Any]:
+    """What one turn's execution requests add up to. Gaps stay gaps."""
+    usage = [_usage_numbers(row.get("upstream_usage")) for row in rows]
+    calls, files = _turn_calls(turn_row.get("tool_calls_json"))
+    summary = turn_row.get("assistant_summary")
+    return {
+        "http_requests": len(rows),
+        "usage_reported": sum(1 for row in rows if row.get("upstream_usage")),
+        "input_tokens": _total([u[0] for u in usage]),
+        "output_tokens": _total([u[1] for u in usage]),
+        "cached_input_tokens": _total([u[2] for u in usage]),
+        "first_byte_ms_p50": percentiles([row.get("first_byte_ms") for row in rows])["p50"],
+        "tps_p50": percentiles([_tokens_per_second(row) for row in rows])["p50"],
+        "tool_calls": calls,
+        "assistant_summary": summary if isinstance(summary, str) else None,
+        "files_touched": files,
+    }
+
+
+def _jev(row: dict[str, Any]) -> dict[str, Any] | None:
+    if row.get("event_type") == EVENT_USER_TURN:
+        return None  # Jev is not called for a user turn without a plan
+    return {
+        "latency_ms": row.get("jev_ms"),
+        "tokens": row.get("jev_tokens"),
+        "answers": row.get("answers") if isinstance(row.get("answers"), dict) else {},
+        "shadow_answers": row.get("shadow_answers") if isinstance(row.get("shadow_answers"), dict) else None,
+        "packet_version": row.get("packet_version"),
+        "shadow_packet_version": row.get("shadow_packet_version"),
+    }
+
+
+def build_turns(
+    decisions: list[dict[str, Any]],
+    seqs: dict[int, int],
+    plans: list[dict[str, Any]],
+    feedback: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    """Group a session's decision rows into user turns. Pure.
+
+    `seqs` maps an execution row id to its request seq in `requests[]`.
+    Returns the turns and how executions were joined: `by_index` when every
+    execution row carries its turn, `by_order` when some predate the column.
+    """
+    openers = [d for d in decisions if d.get("event_type") in TURN_EVENTS]
+    executions = [d for d in decisions if d.get("event_type") == EVENT_EXECUTION]
+    indexed: list[tuple[int, dict[str, Any]]] = []
+    for position, row in enumerate(openers, start=1):
+        index = row.get("turn_index")
+        indexed.append((index if isinstance(index, int) else position, row))
+    indexes = [index for index, _row in indexed]
+
+    members: dict[int, list[dict[str, Any]]] = {index: [] for index in indexes}
+    by_order = False
+    for row in executions:
+        index = row.get("turn_index")
+        if isinstance(index, int) and indexes:
+            # The newest turn at or below the recorded one, so a turn row that
+            # failed to write never strands its requests.
+            target = max((i for i in indexes if i <= index), default=indexes[0])
+        else:
+            by_order = True
+            earlier = [i for i, opener in indexed if opener["id"] < row["id"]]
+            target = earlier[-1] if earlier else (indexes[0] if indexes else None)
+        if target is not None:
+            members.setdefault(target, []).append(row)
+
+    plan_of = {p.get("plan_id"): p for p in plans}
+    turns = []
+    for index, row in indexed:
+        kind = TURN_KINDS.get(row.get("event_type"), "admission")
+        rows = members.get(index, [])
+        entry: dict[str, Any] = {
+            "turn_index": index,
+            "kind": kind,
+            "ts": row.get("ts"),
+            "decision_row": row.get("id"),
+            "user_prompt": row.get("user_prompt") if isinstance(row.get("user_prompt"), str) else None,
+            "state": project_turn_state(row.get("state")),
+            "state_shape": project_state_shape(row.get("state_shape")),
+            "jev": _jev(row),
+            "decision": {
+                "model": row.get("model"),
+                "effort": row.get("effort"),
+                "rule": row.get("rule"),
+                "route": row.get("route"),
+                "quality_lane": row.get("quality_lane"),
+                "fallback": bool(row.get("fallback")),
+            },
+            "plan": None,
+            "execution_rollup": execution_rollup(rows, row),
+            "requests": sorted(seqs[r["id"]] for r in rows if r["id"] in seqs),
+            "feedback": [
+                {key: item.get(key) for key in FEEDBACK_FIELDS}
+                for item in feedback if item.get("turn_index") == index
+            ],
+        }
+        if kind == "plan":
+            plan = plan_of.get(row.get("decision_id"))
+            entry["plan"] = _project_plan(plan) if plan else None
+        turns.append(entry)
+    return turns, ("by_order" if by_order else "by_index")
+
+
+def _session_totals(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    executions = [d for d in decisions if d.get("event_type") == EVENT_EXECUTION]
+    usage = [_usage_numbers(d.get("upstream_usage")) for d in executions]
+    pairs = [(u[0], u[2]) for u in usage if _is_number(u[0]) and _is_number(u[2])]
+    inputs = sum(p[0] for p in pairs)
+    return {
+        "request_count": len(executions),
+        # Cached over input, from the rows that reported both. None, never
+        # zero, when nothing was reported.
+        "cache_hit_ratio": (sum(p[1] for p in pairs) / inputs) if pairs and inputs else None,
+    }
+
+
 async def audit_session(request: Request) -> Response:
-    """One session: binding, admission, requests, plans and the admission trace."""
+    """One session: binding, turns, admission, requests, plans and the trace."""
     router = request.app.state.router
     session_id = request.path_params["session_id"]
     row = router.sessions.audit_session(session_id)
@@ -762,22 +1020,35 @@ async def audit_session(request: Request) -> Response:
         return JSONResponse({"error": "unknown session"}, status_code=404, headers=HEADERS)
     config = router.config
     admission = router.sessions.admission_row(session_id)
+    decisions = router.sessions.decision_rows(session_id)
     judgments = {
         decision["decision_id"]: decision
-        for decision in router.sessions.decision_rows(session_id)
+        for decision in decisions
         if decision.get("event_type") == EVENT_EFFORT_PLAN
     }
+    requests = router.sessions.request_rows(session_id)
+    seqs = {
+        item["decision"]["id"]: seq
+        for seq, item in enumerate(requests, start=1)
+        if item.get("decision")
+    }
+    plans = router.sessions.all_plans(session_id)
+    feedback = router.sessions.feedback_rows(session_id)
+    turns, joined = build_turns(decisions, seqs, plans, feedback)
+    session = _project_session(row, config.config_hash)
+    session.update(_session_totals(decisions))
+    latest = feedback[-1] if feedback else None
+    session["feedback"] = {key: latest.get(key) for key in FEEDBACK_FIELDS} if latest else None
     return JSONResponse({
         "config_hash": config.config_hash,
-        "session": _project_session(row, config.config_hash),
+        "session": session,
+        "turns": turns,
+        "turn_join": joined,
         "admission": _project_admission(admission, config) if admission else None,
-        "requests": [
-            _project_request(seq, item)
-            for seq, item in enumerate(router.sessions.request_rows(session_id), start=1)
-        ],
+        "requests": [_project_request(seq, item) for seq, item in enumerate(requests, start=1)],
         "plans": [
             _project_plan(plan, judgments.get(plan.get("decision_id") or ""))
-            for plan in router.sessions.all_plans(session_id)
+            for plan in plans
         ],
         "trace": explain_admission(admission, config, router.store),
     }, headers=HEADERS)

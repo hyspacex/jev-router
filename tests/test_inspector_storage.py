@@ -381,10 +381,13 @@ def test_state_shape_has_counts_and_never_text():
 
 @respx.mock
 async def test_legacy_row_stores_the_shape_without_log_state_and_no_text(tmp_path, env):
-    path = write_config(tmp_path)
+    # log_state defaults to true since turn capture; switched off, no text.
+    raw = copy.deepcopy(BASE_CONFIG)
+    raw["settings"]["log_state"] = False
+    path = write_config(tmp_path, raw)
     cfg = load_config(path)
     assert cfg.settings.log_state is False
-    store = Store(cfg.settings.db_path)
+    store = Store(cfg.settings.db_path, cfg.settings.log_state)
     app = create_app(cfg, store)
     mock_jev()
     upstream_ok()

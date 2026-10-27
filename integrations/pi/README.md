@@ -74,6 +74,26 @@ connections use HTTPS or a trusted encrypted tunnel.
   confirmation to permit a new attempt that may duplicate work; it does not
   claim to reconcile the previous provider outcome. `/jev close` closes the
   contract. `/jev audit` prints the dashboard URL.
+- Feedback goes to `POST /router/sessions/{id}/feedback` with the admin
+  credential and names the newest request id:
+
+  | Command | Records | Effort |
+  | :--- | :--- | :--- |
+  | `/jev more [note]`, `/jev +`, `/jev up` | `too_weak` | one rung up |
+  | `/jev less [note]`, `/jev -`, `/jev down` | `too_strong` | one rung down |
+  | `/jev good [note]`, `/jev ok` | `right` | unchanged |
+  | `/jev feedback`, `/jev fb` | a picker of the three | as above |
+
+  The step is the router's: it moves the session's effort along the bound
+  model's configured efforts, inside the alias cap and the client floor, and
+  never changes the model. When it moved, the local contract takes the new
+  effort and wire model, so the next request is sent at it. At the top rung
+  Pi says so and suggests `/new` for a stronger model. The router refuses the
+  step (and still records the verdict) on a closed or blocked session and on
+  a session whose effort the adaptive experiment owns.
+- The status bar shows the bound model and effort, `(steered from <model>:
+  quota)` when quota pressure moved admission off what the rules chose, and
+  `[↑ more]` or `[↓ less]` after that feedback.
 - Client compaction, tree rewinds, imported histories and adaptive effort are
   **not supported in this first version**. They are refused rather than silently
   re-admitting work or changing models. Other providers retain their behavior.
@@ -101,6 +121,10 @@ limits, the configured origin, credential precedence and both error branches.
 `test/client.test.mjs` covers the session contract itself against the response
 shape `sessions.contract()` produces: resume, fork refusal, the retry block,
 request-id rotation, malformed bindings and the pre-acceptance code list.
+`test/feedback.test.mjs` covers the feedback commands, the session feedback
+request, the local effort step, the status bar and the optional contract
+fields; the `/jev more` and picker paths also run through the extension in
+`test/transport.test.mjs`.
 
 Typecheck against the installed Pi package before deployment. Python session
 contract tests remain in `tests/`.

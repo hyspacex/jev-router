@@ -234,3 +234,52 @@ test('compaction is cancelled for this provider', async () => {
     assert.deepEqual(h.hooks.session_before_tree({}, h.ctx), {cancel: true});
   });
 });
+
+test('/jev more steps the effort and the next request is sent at it', async () => {
+  const {calls, stub} = routerStub(({url, body}) => url.endsWith('/feedback')
+    ? Response.json({ok: true, session_id: 's', decision_id: 'd', verdict: body.verdict, turn_index: 1,
+        model_key: 'big', previous_effort: 'high', current_effort: 'xhigh', wire_model: 'big(xhigh)',
+        effort_changed: true, reason_code: null, reason: null})
+    : textResponse());
+  await withRouter(stub, async () => {
+    const h = harness();
+    const notes = [], statuses = [];
+    h.ctx.ui.notify = (text) => notes.push(text);
+    h.ctx.ui.setStatus = (_key, text) => statuses.push(text);
+    await h.provider.streamSimple(h.model, transcript, {apiKey: 'upstream-test'}).result();
+    await h.commands.jev.handler('more it missed the constraint', h.ctx);
+
+    const feedback = calls.find(call => call.url.endsWith('/feedback'));
+    assert.equal(feedback.url, `${FIXTURE_ORIGIN}/router/sessions/${h.saved().sessionId}/feedback`);
+    assert.equal(feedback.headers.get('x-router-admin-token'), 'control-test');
+    assert.deepEqual({...feedback.body, request_id: undefined},
+      {verdict: 'too_weak', adjust_effort: true, source: 'pi', note: 'it missed the constraint', request_id: undefined});
+    assert.ok(feedback.body.request_id, 'names the request it is about');
+    assert.match(notes.at(-1), /big effort high → xhigh/);
+    assert.match(statuses.at(-1), /· xhigh · strict · \[↑ more\]$/);
+
+    await h.provider.streamSimple(h.model, transcript, {apiKey: 'upstream-test'}).result();
+    const execution = calls.at(-1);
+    assert.equal(execution.url, `${FIXTURE_ORIGIN}/v1/chat/completions`);
+    assert.equal(execution.body.model, 'big(xhigh)');
+  });
+});
+
+test('/jev feedback opens the picker and records what was picked', async () => {
+  const {calls, stub} = routerStub(({url, body}) => url.endsWith('/feedback')
+    ? Response.json({ok: true, verdict: body.verdict, model_key: 'big', previous_effort: 'high',
+        current_effort: 'high', wire_model: 'big(high)', effort_changed: false, reason_code: null})
+    : textResponse());
+  await withRouter(stub, async () => {
+    const h = harness();
+    let asked;
+    h.ctx.ui.select = async (title, options) => { asked = {title, options}; return options[1]; };
+    await h.provider.streamSimple(h.model, transcript, {apiKey: 'upstream-test'}).result();
+    await h.commands.jev.handler('fb', h.ctx);
+    assert.match(asked.title, /routing for this session/);
+    assert.equal(asked.options.length, 3);
+    const feedback = calls.find(call => call.url.endsWith('/feedback'));
+    assert.equal(feedback.body.verdict, 'right');
+    assert.equal(feedback.body.adjust_effort, false);
+  });
+});
