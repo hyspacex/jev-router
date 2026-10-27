@@ -12,6 +12,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from .config import RouterConfig
 from .policy import trace
 from .semantic import ADMISSION_FALLBACK, features_from_facts, replay_decision
+from .sessions import EVENT_EFFORT_PLAN
 
 # Explicit projection: future decision columns are private until reviewed here.
 AUDIT_FIELDS = frozenset([
@@ -146,6 +147,14 @@ PLAN_FIELDS = (
     "expected_effort", "confirmed_effort", "reconciled", "compaction_epoch",
     "reason", "created", "updated",
 )
+# What Jev was asked at a turn boundary: the plan's own decision row. The same
+# fields the admission shows, never the conversation key or the state text.
+JUDGMENT_FIELDS = (
+    "id", "ts", "answers", "shadow_answers", "packet_version",
+    "shadow_packet_version", "jev_ms", "jev_tokens",
+)
+# The evidence the plan weighed and the thresholds it weighed it against.
+EVIDENCE_NUMBERS = ("difficulty", "p_hard", "harm_if_wrong", "corrective_followup")
 COUNTERFACTUAL_FIELDS = (
     "question", "answer", "action", "to_effort", "recommendation", "changed", "reason",
 )
@@ -240,9 +249,47 @@ def _project_session(row: dict[str, Any], running: str) -> dict[str, Any]:
     return item
 
 
-def _project_plan(row: dict[str, Any]) -> dict[str, Any]:
+def _project_evidence(facts: dict[str, Any]) -> dict[str, Any] | None:
+    """The numbers the plan weighed, its ladder and thresholds; no text."""
+    raw = facts.get("evidence")
+    if not isinstance(raw, dict):
+        return None
+    out: dict[str, Any] = {
+        key: raw.get(key) if _is_number(raw.get(key)) else None for key in EVIDENCE_NUMBERS
+    }
+    out["failure_mode"] = _label(raw.get("failure_mode"))
+    out["short_continuation"] = raw.get("short_continuation") is True
+    out["missing"] = [m for m in raw.get("missing") or [] if _label(m) is not None]
+    # The classifier's error text can quote anything; only that there was one.
+    out["error"] = bool(raw.get("error"))
+    thresholds = facts.get("thresholds") if isinstance(facts.get("thresholds"), dict) else {}
+    out["thresholds"] = {
+        key: value for key, value in thresholds.items()
+        if _label(key) is not None and _is_number(value)
+    }
+    out["ladder"] = [rung for rung in facts.get("ladder") or [] if _label(rung) is not None]
+    out["floor"] = _label(facts.get("floor"))
+    out["target"] = _label(facts.get("target"))
+    out["direction"] = _label(facts.get("direction"))
+    return out
+
+
+def _project_judgment(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    item = {key: row.get(key) for key in JUDGMENT_FIELDS}
+    item["state_shape"] = project_state_shape(row.get("state_shape"))
+    return item
+
+
+def _project_plan(
+    row: dict[str, Any], judgment: dict[str, Any] | None = None
+) -> dict[str, Any]:
     item = {key: row.get(key) for key in PLAN_FIELDS}
     facts = row.get("facts") if isinstance(row.get("facts"), dict) else {}
+    item["evidence"] = _project_evidence(facts)
+    # The plan's own decision row: Jev's answers for this turn, as recorded.
+    item["judgment"] = _project_judgment(judgment)
     counterfactual = facts.get("shadow_counterfactual")
     item["shadow_counterfactual"] = (
         {key: counterfactual.get(key) for key in COUNTERFACTUAL_FIELDS}
@@ -265,6 +312,8 @@ def _project_request(seq: int, row: dict[str, Any]) -> dict[str, Any]:
         else decision.get("upstream_status"),
         "row": decision.get("id"),
         "ts": decision.get("ts"),
+        # The turn the router logged this request under; NULL before it did.
+        "turn_id": _label(decision.get("turn_id")),
         "event_type": decision.get("event_type"),
         "model": decision.get("model"),
         # The base effort the request was sent with. Not the effective one.
@@ -391,6 +440,11 @@ async def audit_session(request: Request) -> Response:
         return JSONResponse({"error": "unknown session"}, status_code=404, headers=HEADERS)
     config = router.config
     admission = router.sessions.admission_row(session_id)
+    judgments = {
+        decision["decision_id"]: decision
+        for decision in router.sessions.decision_rows(session_id)
+        if decision.get("event_type") == EVENT_EFFORT_PLAN
+    }
     return JSONResponse({
         "config_hash": config.config_hash,
         "session": _project_session(row, config.config_hash),
@@ -399,6 +453,9 @@ async def audit_session(request: Request) -> Response:
             _project_request(seq, item)
             for seq, item in enumerate(router.sessions.request_rows(session_id), start=1)
         ],
-        "plans": [_project_plan(plan) for plan in router.sessions.all_plans(session_id)],
+        "plans": [
+            _project_plan(plan, judgments.get(plan.get("decision_id") or ""))
+            for plan in router.sessions.all_plans(session_id)
+        ],
         "trace": explain_admission(admission, config, router.store),
     }, headers=HEADERS)

@@ -153,6 +153,23 @@ async def test_f06_a_tool_continuation_keeps_the_turn_and_makes_no_decision(serv
     assert row["effective_effort"] == "medium"
 
 
+@respx.mock
+async def test_each_execution_row_names_the_turn_the_ledger_holds(service):
+    turn_jev(difficulty=1.9)
+    H.responses_upstream(tool_calls=True)
+    caller = await started(service)
+    plan, _ = await caller.turn("Investigate the escaped-quote failure.")
+    assert (await caller.continuation()).status_code == 200
+    # A turn header that names no plan of this session is not recorded.
+    assert (await caller.send(turn_id="client text, not a turn")).status_code == 200
+
+    executions = [
+        row for row in service.sessions.decision_rows(caller.session_id)
+        if row["event_type"] == "execution"
+    ]
+    assert [row["turn_id"] for row in executions] == [plan["turn_id"], plan["turn_id"], None]
+
+
 # --- F08, F09: full replay -----------------------------------------------
 
 
