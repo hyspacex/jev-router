@@ -951,6 +951,9 @@ function turnNumber(ctx, plan) { return ctx.planList.indexOf(plan) + 1; }
 function planMark(p) {
   if (p.mode !== "shadow" && p.status !== "rejected") {
     if (p.confirmed_effort) return {kind: "confirmed", effort: p.confirmed_effort};
+    // A keep moves nothing, so the ledger fills no confirmed column for it; its
+    // status says a provider completion carried the turn at the expected effort.
+    if (p.action === "keep" && p.status === "confirmed" && p.expected_effort) return {kind: "confirmed", effort: p.expected_effort};
     if (p.expected_effort) return {kind: "expected", effort: p.expected_effort};
   }
   const r = p.recommendation || p.to_effort;
