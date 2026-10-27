@@ -42,7 +42,7 @@ from typing import Any
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-REPORT = REPO / "docs" / "qualification" / "2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
+REPORT = REPO / "docs" / "qualification" / "2026-10-26-gpt-6-astra-responses.md"
 
 PROFILE = "gpt-6-astra-responses"
 LANE = "astra-responses-adaptive"
@@ -56,10 +56,10 @@ HEADER = """\
 #
 # This config declares one deployment as qualified and runs the experiment in
 # `active` mode against it. Read docs/ADAPTIVE_EFFORT.md and the qualification
-# report the profile names before serving it: the verdict in that report is
-# provisional and covers short personal test sessions on one day, nothing
-# more. router.yaml itself is unchanged, with the experiment off and nothing
-# verified.
+# report the profile names before serving it: it was verified by owner decision
+# with one failed check (the provider no longer refuses duplicate updates; the
+# router does) and a small Q07 effect, for short sessions. router.yaml itself
+# is unchanged, with the experiment off and nothing verified.
 """
 
 
@@ -112,7 +112,7 @@ def overlay(report: str) -> dict[str, Any]:
                         "effort": effort,
                         "qualification_ref": (
                             f"{report}: the {effort} rung of the ladder the "
-                            "provisional deployment test exercised"
+                            "deployment test exercised"
                         ),
                     }
                     for effort in ("low", "medium", "high")
