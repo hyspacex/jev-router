@@ -7,9 +7,10 @@ not expire on the pin TTL, and a request that no longer fits it is refused
 rather than sent somewhere else. The two live in separate tables and neither
 reads the other.
 
-Nothing recoverable is written here. A request fingerprint is a sha256 of the
-canonical payload, the owner is a sha256 of the control credential, and no
-message text, prompt or key is stored.
+No key is written here. A request fingerprint is a sha256 of the canonical
+payload and the owner is a sha256 of the control credential. The only text a
+session row holds is its title, prompt preview and workspace hint, written
+only with settings.log_state on and only after `scrub.py` has cleaned them.
 
 Three rules hold this together:
 
@@ -352,6 +353,34 @@ INSPECTOR_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "decisions": [("state_shape", "TEXT")],
 }
 
+# What turn text capture adds to a session (docs/OBSERVABILITY_V2_DESIGN.md
+# section 3). Same contract: nullable, additive, never dropped. The three
+# texts are scrubbed and capped before they are written, and only with
+# log_state on. The counts are kept in step with the decision log and the
+# ledger by atomic increments; NULL means the session predates them.
+SESSION_TEXT_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "sessions": [
+        ("title", "TEXT"),
+        ("prompt_preview", "TEXT"),
+        ("workspace_hint", "TEXT"),
+        ("turn_count", "INTEGER"),
+        ("escalation_count", "INTEGER"),
+        ("corrective_count", "INTEGER"),
+    ],
+}
+
+# What session-native feedback adds: the newest verdict, so the list can be
+# filtered without a join. The feedback rows themselves stay in `feedback`.
+SESSION_FEEDBACK_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "sessions": [("feedback_verdict", "TEXT")],
+}
+
+# Every per-session read of the decision log goes through `session_id`.
+# Not unique, so it is safe to create on any database.
+DECISIONS_SESSION_INDEX = (
+    "CREATE INDEX IF NOT EXISTS decisions_session ON decisions (session_id, id)"
+)
+
 # Named sessions for the inspector's start screen. A table of its own, so an
 # older file gains it without anything in it changing. A bookmark names a
 # session id and nothing else; it never holds a request.
@@ -382,6 +411,12 @@ PRIVATE_SESSION_FIELDS = ("owner", "fingerprint")
 EVENT_ADMISSION = "admission"
 EVENT_EXECUTION = "execution"
 EVENT_EFFORT_PLAN = "effort_plan"
+# A new user turn seen on an execution request when no turn plan was made for
+# it (a fixed-effort session). It records the turn and its prompt; Jev is not
+# called and it decides nothing.
+EVENT_USER_TURN = "user_turn"
+# The events that open a user turn, in the order a session can produce them.
+TURN_EVENTS = (EVENT_ADMISSION, EVENT_EFFORT_PLAN, EVENT_USER_TURN)
 
 
 # --- hashes --------------------------------------------------------------
@@ -635,6 +670,9 @@ class Sessions:
             self.migrated_compaction = migrate(self._conn, COMPACTION_COLUMNS)
             self._conn.executescript(INSPECTOR_SCHEMA)
             self.migrated_inspector = migrate(self._conn, INSPECTOR_COLUMNS)
+            self.migrated_turn_text = migrate(self._conn, SESSION_TEXT_COLUMNS)
+            self.migrated_feedback = migrate(self._conn, SESSION_FEEDBACK_COLUMNS)
+            self._conn.execute(DECISIONS_SESSION_INDEX)
             self.unique_turn_plans = self._take_turn_plan_index()
             self._conn.commit()
         store.refresh_columns()
@@ -1102,6 +1140,150 @@ class Sessions:
         )
         return epoch
 
+    # --- user turns -----------------------------------------------------
+    #
+    # The counters below are telemetry: they never decide anything, so they
+    # are atomic increments rather than conditional version writes, and they
+    # do not move `version`. A binding write that read the row a moment ago
+    # still lands.
+
+    def current_turn(self, session_id: str) -> int:
+        """The session's turn number now. A session without a count is on turn 1."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(turn_count, 1) FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return int(row[0]) if row else 1
+
+    def bump_turn(self, session_id: str) -> int:
+        """Open the next user turn and return its number."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET turn_count = COALESCE(turn_count, 1) + 1"
+                " WHERE session_id = ?",
+                (session_id,),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT turn_count FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return int(row[0]) if row and row[0] is not None else 1
+
+    def bump_counts(
+        self, session_id: str, *, escalation: int = 0, corrective: int = 0
+    ) -> None:
+        """Count an effort escalation or a corrective follow-up on the session."""
+        if not escalation and not corrective:
+            return
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET"
+                " escalation_count = COALESCE(escalation_count, 0) + ?,"
+                " corrective_count = COALESCE(corrective_count, 0) + ?"
+                " WHERE session_id = ?",
+                (int(escalation), int(corrective), session_id),
+            )
+            self._conn.commit()
+
+    def turn_row(self, session_id: str, turn_index: int) -> int | None:
+        """The decision row that opened a turn: admission, plan or user turn."""
+        marks = ", ".join("?" for _ in TURN_EVENTS)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM decisions WHERE session_id = ? AND turn_index = ?"
+                f" AND event_type IN ({marks}) ORDER BY id ASC LIMIT 1",
+                (session_id, int(turn_index), *TURN_EVENTS),
+            ).fetchone()
+        return int(row[0]) if row else None
+
+    def last_execution(self, session_id: str) -> dict[str, Any] | None:
+        """The newest execution row that counted its user messages, or None.
+
+        A compaction's row carries no count, so a few rows are read and the
+        newest one with a count wins; with none, the newest row is returned
+        as it is. Returns its id, turn and request facts, and
+        `after_maintenance` when a row without a count came after it.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, turn_index, features FROM decisions"
+                " WHERE session_id = ? AND event_type = ? ORDER BY id DESC LIMIT 8",
+                (session_id, EVENT_EXECUTION),
+            ).fetchall()
+        found = []
+        for row in rows:
+            try:
+                features = json.loads(row["features"]) if row["features"] else {}
+            except (TypeError, ValueError):
+                features = {}
+            item = {"id": row["id"], "turn_index": row["turn_index"], "features": features}
+            item["after_maintenance"] = bool(found)
+            if isinstance(features, dict) and isinstance(features.get("user_turns"), int):
+                return item
+            found.append(item)
+        return found[0] if found else None
+
+    def plan_logged_since(self, session_id: str, row_id: int) -> bool:
+        """Whether a turn plan opened a turn after this decision row."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM decisions WHERE session_id = ? AND event_type = ?"
+                " AND id > ? LIMIT 1",
+                (session_id, EVENT_EFFORT_PLAN, int(row_id)),
+            ).fetchone()
+        return row is not None
+
+    def set_turn_summary(
+        self, row_id: int, summary: str | None, tool_calls_json: str | None
+    ) -> None:
+        """Replace a turn row's assistant summary and tool calls.
+
+        The caller has already scrubbed and capped both. A None leaves that
+        column as it was, so an empty read never erases a fuller one.
+        """
+        if not row_id or (summary is None and tool_calls_json is None):
+            return
+        with self._lock:
+            self._conn.execute(
+                "UPDATE decisions SET assistant_summary = COALESCE(?, assistant_summary),"
+                " tool_calls_json = COALESCE(?, tool_calls_json) WHERE id = ?",
+                (summary, tool_calls_json, int(row_id)),
+            )
+            self._conn.commit()
+
+    def request_turn(self, session_id: str, request_id: str) -> int | None:
+        """The turn a request of this session was logged under, if any."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT turn_index FROM decisions WHERE session_id = ? AND request_id = ?"
+                " AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (session_id, request_id, EVENT_EXECUTION),
+            ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+
+    # --- feedback ---------------------------------------------------------
+
+    def set_feedback_verdict(self, session_id: str, verdict: str) -> None:
+        """The newest verdict, on the session row for filtering. A label only."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET feedback_verdict = ? WHERE session_id = ?",
+                (verdict, session_id),
+            )
+            self._conn.commit()
+
+    def feedback_rows(self, session_id: str) -> list[dict[str, Any]]:
+        """This session's feedback, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, ts, verdict, better_model, better_effort, note, source,"
+                " request_id, turn_index FROM feedback WHERE session_id = ?"
+                " ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     # --- decision log ---------------------------------------------------
 
     def annotate_decision(
@@ -1113,6 +1295,7 @@ class Sessions:
         turn_id: str | None = None,
         request_id: str | None = None,
         quality_lane: str | None = None,
+        turn_index: int | None = None,
     ) -> None:
         """Add the session facts to a decision row already written by the Store."""
         if not row_id:
@@ -1122,8 +1305,17 @@ class Sessions:
                 "UPDATE decisions SET event_type = ?,"
                 " session_id = COALESCE(?, session_id), turn_id = COALESCE(?, turn_id),"
                 " request_id = COALESCE(?, request_id),"
-                " quality_lane = COALESCE(?, quality_lane) WHERE id = ?",
-                (event_type, session_id, turn_id, request_id, quality_lane, row_id),
+                " quality_lane = COALESCE(?, quality_lane),"
+                " turn_index = COALESCE(?, turn_index) WHERE id = ?",
+                (
+                    event_type,
+                    session_id,
+                    turn_id,
+                    request_id,
+                    quality_lane,
+                    turn_index,
+                    row_id,
+                ),
             )
             self._conn.commit()
 
@@ -1247,6 +1439,14 @@ class Sessions:
                         (limit,),
                     ).fetchall()
                 ]
+            # Every verdict, and the sessions nobody rated, as their own value.
+            out["feedback"] = [
+                (row[0], int(row[1])) for row in self._conn.execute(
+                    "SELECT COALESCE(feedback_verdict, 'unrated'), COUNT(*) FROM sessions"
+                    " GROUP BY 1 ORDER BY COUNT(*) DESC, 1 ASC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            ]
         return out
 
     def table_columns(self, table: str) -> set[str]:
@@ -1547,6 +1747,10 @@ class Sessions:
             "estimated_input_tokens",
             "reserve_tokens",
             "quota_status",
+            # The only text a session row holds goes with the binding.
+            "title",
+            "prompt_preview",
+            "workspace_hint",
         ]
         sets = ", ".join(f"{name} = NULL" for name in blanked)
         with self._lock:
@@ -1696,10 +1900,21 @@ def audit_where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
             args.append(filters[key])
     if filters.get("pinned"):
         where.append("s.session_id IN (SELECT session_id FROM audit_bookmarks)")
+    feedback = filters.get("feedback")
+    if feedback == "unrated":
+        where.append("s.feedback_verdict IS NULL")
+    elif feedback is not None:
+        where.append("s.feedback_verdict = ?")
+        args.append(feedback)
     if filters.get("search"):
-        # Anywhere in the id, so the short form the list shows finds it too.
-        where.append("instr(s.session_id, ?) > 0")
-        args.append(filters["search"])
+        # Anywhere in the id, so the short form the list shows finds it too,
+        # or anywhere in the title or the prompt preview, ignoring case.
+        where.append(
+            "(instr(s.session_id, ?) > 0"
+            " OR instr(lower(COALESCE(s.title, '')), lower(?)) > 0"
+            " OR instr(lower(COALESCE(s.prompt_preview, '')), lower(?)) > 0)"
+        )
+        args.extend([filters["search"]] * 3)
     if since is not None:
         where.append("COALESCE(s.last_seen, s.created) >= ?")
         args.append(since)
@@ -1762,8 +1977,38 @@ def _session_row(row: sqlite3.Row) -> dict[str, Any]:
 # --- what a client is told ----------------------------------------------
 
 
-def contract(row: dict[str, Any], quota_status: dict[str, str]) -> dict[str, Any]:
+_PAIR = re.compile(r"^(.+)\((.*)\)$")
+
+
+def intended_pair(
+    row: dict[str, Any], admission: dict[str, Any] | None
+) -> tuple[str | None, str | None]:
+    """What the rules chose before quota had a say, from the admission row.
+
+    When quota changed the choice, that is the admission's counterfactual
+    (the route taken at pressure zero). Otherwise it is what the admission
+    bound, which a later effort step does not rewrite.
+    """
+    if admission is None:
+        return row.get("model_key"), row.get("base_effort")
+    if row.get("quota_changed_choice"):
+        match = _PAIR.match(str(admission.get("counterfactual") or ""))
+        if match:
+            effort = match.group(2)
+            return match.group(1), (None if effort in ("", "-") else effort)
+    return (
+        admission.get("model") or row.get("model_key"),
+        admission.get("effort") or row.get("base_effort"),
+    )
+
+
+def contract(
+    row: dict[str, Any],
+    quota_status: dict[str, str],
+    admission: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """The resolve response: one fixed profile and what was decided."""
+    intended_model, intended_effort = intended_pair(row, admission)
     return {
         "schema_version": "1",
         "session_id": row["session_id"],
@@ -1791,6 +2036,12 @@ def contract(row: dict[str, Any], quota_status: dict[str, str]) -> dict[str, Any
             # client that restarts needs it to know which of its recorded
             # update positions still mean anything.
             "compaction_epoch": int(row.get("compaction_epoch") or 0),
+            # Whether quota pressure moved this binding off what the rules
+            # chose, and what that was. Lets a client say "steered by quota"
+            # rather than leave the choice looking like the classifier's.
+            "quota_steered": bool(row.get("quota_changed_choice")),
+            "intended_model": intended_model,
+            "intended_effort": intended_effort,
         },
         "decision": {
             "rule": row["decision_rule"],

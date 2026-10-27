@@ -1,6 +1,8 @@
-"""The audit view is read-only, bounded, authenticated and prompt-free."""
+"""The audit view is read-only, bounded and authenticated, and shows text only where turn capture puts it."""
 
 from __future__ import annotations
+
+import json
 
 import httpx
 import pytest
@@ -132,6 +134,24 @@ async def test_strict_identifiers_survive_projection_and_reads_do_not_write(dash
 MARKER = "zqx-inspector-marker-77c1"
 TOOL = f"tool-{MARKER}"
 
+# The fields that may carry text the router chose to keep, scrubbed and
+# capped (turn capture). Everything else is still checked for the marker.
+TEXT_KEYS = frozenset([
+    "title", "prompt_preview", "workspace_hint", "user_prompt", "state",
+    "assistant_summary", "tool_names", "languages", "files_touched",
+])
+
+
+def outside_text(value):
+    """The JSON with every allowed text field removed, as one string."""
+    def strip(node):
+        if isinstance(node, dict):
+            return {k: strip(v) for k, v in node.items() if k not in TEXT_KEYS}
+        if isinstance(node, list):
+            return [strip(v) for v in node]
+        return node
+    return json.dumps(strip(value))
+
 
 def marked_request(model: str = "") -> dict:
     body = H.user_request(model, text=f"Fix the {MARKER} parser and add tests.")
@@ -250,10 +270,11 @@ async def test_allowlist_holds_and_reads_write_nothing(tmp_path, strict_env):
 
     for response in (listed, detail):
         assert response.status_code == 200
-        assert MARKER not in response.text
-        # The state shape keeps `tool_names` as a count ("names withheld"); never a list.
-        assert '"tool_names":[' not in response.text
-        for word in ("fingerprint", "owner", "conversation_key", "languages",
+        # Text is shown only in the fields turn capture names.
+        assert MARKER not in outside_text(response.json())
+        # The state shape still keeps `tool_names` as a count.
+        assert '"tool_names":1' in response.text or response is listed
+        for word in ("fingerprint", "owner", "conversation_key",
                      "system_prompt_chars", "last_user_message_chars", "total_chars",
                      "upstream_usage", "decision_reason", "unknown_parts"):
             assert f'"{word}"' not in response.text, word
@@ -461,7 +482,8 @@ async def test_plans_keep_expected_and_confirmed_effort_apart(tmp_path, strict_e
         response = await inspect(svc, sid, token=ADMIN)
     finally:
         await svc.close()
-    assert MARKER not in response.text and TOOL not in response.text
+    assert MARKER not in outside_text(response.json())
+    assert "conversation_key" not in response.text
     assert "request_fingerprint" not in response.text and "anchor_prefix_hash" not in response.text
     first = response.json()["plans"][0]
     assert first["judgment"]["answers"]["difficulty"]["score"] == 2.48
@@ -506,8 +528,11 @@ def test_quota_and_shape_projections_drop_anything_textual():
     })
     assert shape == {"builder": "summary_v1", "parts": {"latest_user_request": 12},
                      "facts": {"client": "pi", "tool_names": 3, "flag": True}}
-    assert project_facts({"has_tools": True, "estimate_method": f"a {MARKER}", "tool_names": ["x"],
-                          "session_mode": "strict"}) == {"has_tools": True, "session_mode": "strict"}
+    # Lists of short labels pass since turn capture; anything else in them does not.
+    assert project_facts({"has_tools": True, "estimate_method": f"a {MARKER}",
+                          "tool_names": ["x", f"a {MARKER}", 3], "languages": "py",
+                          "session_mode": "strict"}) == {
+        "has_tools": True, "session_mode": "strict", "tool_names": ["x"]}
 
 
 # --- the session list's filters and the overview ----------------------------
@@ -576,7 +601,7 @@ async def test_session_list_filters_narrow_and_report_aggregates(tmp_path, stric
 
 @pytest.mark.parametrize("query", [
     "state=gone", "adaptive=maybe", "problem=bad", "pinned=yes", "window=2h", "window=",
-    "q=a%25b", "q=" + "a" * 65, "client=" + "c" * 65, "model=a%20b", "rule=%3Cx%3E",
+    "q=a%25b", "q=" + "a" * 81, "q=%20%20", "q=a%3Cb", "feedback=meh", "client=" + "c" * 65, "model=a%20b", "rule=%3Cx%3E",
     "nope=1", "limit=201", "limit=0",
 ])
 async def test_session_list_filters_are_bounded(dashboard_app, query):
@@ -634,8 +659,8 @@ async def test_overview_allowlist_holds_counts_apart_and_writes_nothing(tmp_path
 
     for item in (response, listed):
         assert item.status_code == 200
-        assert MARKER not in item.text and TOOL not in item.text
-        for word in ("fingerprint", "owner", "conversation_key", "languages", "answers",
+        assert MARKER not in outside_text(item.json())
+        for word in ("fingerprint", "owner", "conversation_key", "answers",
                      "features", "state_shape", "tool_names"):
             assert f'"{word}"' not in item.text, word
     assert first.session_id not in response.text and "never-sent" not in response.text

@@ -45,6 +45,7 @@ from .deciders.base import Decision
 from .features import Features, estimate_input, extract_features
 from .feedback import FeedbackError
 from .feedback import validate as validate_feedback
+from .feedback import validate_session as validate_session_feedback
 from .pins import Store, conversation_key, new_decision_id
 from .policy import (
     PlanEntry,
@@ -62,10 +63,20 @@ from .policy import (
 from .policy import finalize as policy_finalize
 from .providers import ProviderBreakers, merge_pressures
 from .quota import QuotaMonitor
+from .scrub import (
+    PREVIEW_MAX_CHARS,
+    TITLE_MAX_CHARS,
+    WORKSPACE_MAX_CHARS,
+    extract_session_title,
+    prompt_preview,
+    summarize_transcript_turn,
+    user_turn_count,
+    workspace_hint,
+)
 from .semantic import SemanticResult
 from .security import Ingress
 from .sessions import ResolveRequest, SessionError, Sessions
-from .state import is_short_continuation, turn_state_v1
+from .state import is_short_continuation, split_request_and_material, turn_state_v1
 
 log = logging.getLogger("jev_router")
 
@@ -178,7 +189,15 @@ class ClosingStream(StreamingResponse):
 class Router:
     def __init__(self, config: RouterConfig, store: Store | None = None) -> None:
         self.config = config
-        self.store = store or Store(config.settings.db_path, config.settings.log_state)
+        self.store = store or Store(
+            config.settings.db_path,
+            config.settings.log_state,
+            config.settings.turn_text_max_chars,
+        )
+        # A store handed in keeps its own log_state, but never a looser cap.
+        self.store.text_max_chars = min(
+            self.store.text_max_chars, config.settings.turn_text_max_chars
+        )
         self.started = time.time()
         timeout = httpx.Timeout(
             config.settings.upstream_read_timeout_s,
@@ -761,6 +780,7 @@ class Router:
             pressures={k: round(v, 4) for k, v in decision.pressures.items() if v},
             shifted=[s.to_dict() for s in decision.shifts],
             reordered=decision.reordered,
+            user_prompt=features.last_user_message,
         )
         self.record_semantics(row, decision, action="pin" if pinned else "route")
         return decision, pinned, row, decision_id, key
@@ -938,7 +958,9 @@ class Router:
                 detail={"session_id": row["session_id"]},
             )
         self.sessions.touch(row["session_id"])
-        return S.contract(row, self.quota_status())
+        return S.contract(
+            row, self.quota_status(), self.sessions.admission_row(row["session_id"])
+        )
 
     async def admit(
         self, req: ResolveRequest, request: Request, owner: str
@@ -1087,6 +1109,12 @@ class Router:
                 "estimated_input_tokens": check.input_tokens,
                 "reserve_tokens": check.reserve_tokens,
                 "quota_status": json.dumps(self.quota_status()),
+                # Turn capture. The texts are scrubbed and capped, and None
+                # with log_state off; the counts start here.
+                **self.session_texts(body, features),
+                "turn_count": 1,
+                "escalation_count": 0,
+                "corrective_count": 0,
             }
         )
         row, created = self.sessions.create(binding)
@@ -1103,7 +1131,11 @@ class Router:
             state_builder=alias_cfg.state_builder,
             answers=answers,
             features=features.to_facts()
-            | {"alias": req.alias, "session_mode": "strict"}
+            | {
+                "alias": req.alias,
+                "session_mode": "strict",
+                "user_turns": user_turn_count(_transcript(body)),
+            }
             | check.to_facts(),
             config_hash=config.config_hash,
             model=model,
@@ -1121,6 +1153,8 @@ class Router:
             pressures={k: round(v, 4) for k, v in decision.pressures.items() if v},
             shifted=[s.to_dict() for s in decision.shifts],
             reordered=decision.reordered,
+            turn_index=1,
+            user_prompt=features.last_user_message,
         )
         self.store.update_decision(
             row_id, intended_model=decision.model or model, intended_effort=effort or ""
@@ -1145,7 +1179,24 @@ class Router:
             check.output_tokens,
             check.reserve_tokens,
         )
-        return S.contract(row, self.quota_status())
+        return S.contract(row, self.quota_status(), self.sessions.admission_row(req.session_id))
+
+    def session_texts(self, body: dict[str, Any], features: Features) -> dict[str, Any]:
+        """The title, preview and workspace a new session is shown under.
+
+        All three are scrubbed and capped, and all three are None when
+        log_state is off. A pasted block is not the title: the title comes
+        from what the user typed above it.
+        """
+        prompt = features.last_user_message
+        typed = split_request_and_material(prompt)[0] or prompt
+        return {
+            "title": self.store.text(extract_session_title(typed), TITLE_MAX_CHARS),
+            "prompt_preview": self.store.text(prompt_preview(prompt), PREVIEW_MAX_CHARS),
+            "workspace_hint": self.store.text(
+                workspace_hint(features.system_prompt, body), WORKSPACE_MAX_CHARS
+            ),
+        }
 
     def candidate_pool(self, req: ResolveRequest, alias_cfg: AliasCfg) -> list[str]:
         """The alias, the client and the client's candidate list, intersected."""
@@ -1363,7 +1414,8 @@ class Router:
             # this turn has; ours is discarded, never written on top (F07).
             return _stored_plan(stored, row, mode, req, evidence_fingerprint)
 
-        self._log_effort_plan(row, req, stored, plan, semantics)
+        turn_index = self.count_planned_turn(req.session_id, plan, evidence)
+        self._log_effort_plan(row, req, stored, plan, semantics, turn_index=turn_index)
         if plan.action == E.CHANGE:
             self.sessions.update(
                 row["session_id"], row["version"], expected_effort=plan.to_effort
@@ -1379,6 +1431,29 @@ class Router:
             plan.reason,
         )
         return _plan_response(stored, row, mode)
+
+    def count_planned_turn(
+        self, session_id: str, plan: E.TurnPlan, evidence: E.Evidence
+    ) -> int:
+        """Open the turn a new plan belongs to, and count what it found.
+
+        Telemetry only. An escalation is a change the plan applies upward; a
+        corrective follow-up is a turn whose `corrective_followup` answer
+        crossed the configured threshold, whatever the plan then did.
+        """
+        try:
+            turn = self.sessions.bump_turn(session_id)
+            threshold = self.config.adaptive_effort().thresholds.corrective_followup
+            corrective = evidence.corrective_followup
+            self.sessions.bump_counts(
+                session_id,
+                escalation=int(plan.action == E.CHANGE and plan.direction == "up"),
+                corrective=int(corrective is not None and corrective >= threshold),
+            )
+            return turn
+        except Exception:  # noqa: BLE001 - telemetry may never fail a plan
+            log.exception("could not count this turn")
+            return self.sessions.current_turn(session_id)
 
     def _require_settled_turn(
         self, req: S.TurnPlanRequest, row: dict[str, Any] | None = None
@@ -1632,9 +1707,13 @@ class Router:
         stored: dict[str, Any],
         plan: Any,
         semantics: SemanticResult,
+        turn_index: int | None = None,
     ) -> None:
         """One `effort_plan` row in the same decision log as everything else."""
         try:
+            # What Jev was shown. A classifier that failed before building
+            # its state still leaves the bounded turn packet to record.
+            shown = semantics.state or turn_state_v1(req.state.model_dump())
             row_id = self.store.log_decision(
                 decision_id=stored["plan_id"],
                 alias=row["alias"] or "",
@@ -1660,7 +1739,9 @@ class Router:
                 jev_tokens=semantics.jev_input_tokens,
                 est_tokens=0,
                 message_count=0,
-                state=semantics.state,
+                state=shown,
+                turn_index=turn_index,
+                user_prompt=req.state.current_user_request,
             )
             self.store.update_decision(
                 row_id,
@@ -1675,6 +1756,7 @@ class Router:
                 turn_id=req.turn_id,
                 request_id=req.request_id,
                 quality_lane=row["quality_lane"],
+                turn_index=turn_index,
             )
             self.sessions.annotate_semantics(
                 row_id,
@@ -1792,10 +1874,20 @@ class Router:
             if prior is not None:
                 _check_prior_attempt(prior, body_fingerprint)
                 self.sessions.finish_request(session_id, request_id, "in_flight")
+            # A compaction is not a user turn, and its summarising message is
+            # not a user message to count against the next request.
+            users = None if maintenance else user_turn_count(_transcript(body))
+            turn_index, new_turn = self.track_user_turn(
+                row, body, features, request_id, users or 0,
+                repeated=prior is not None or bool(maintenance),
+            )
             row_id = self._log_execution(
                 row, request_id, features, check,
                 turn_id=self._planned_turn(request, row, pending),
+                turn_index=turn_index,
+                user_turns=users,
             )
+            self.record_turn_summary(row, body, turn_index, new_turn)
         except BaseException:
             self.sessions.release(session_id)
             raise
@@ -2151,6 +2243,138 @@ class Router:
             stop("the profile no longer supports images")
         return mcfg
 
+    # --- user turns on the execution path ------------------------------------
+
+    def track_user_turn(
+        self,
+        row: dict[str, Any],
+        body: dict[str, Any],
+        features: Features,
+        request_id: str,
+        users: int,
+        *,
+        repeated: bool,
+    ) -> tuple[int, bool]:
+        """The turn this execution belongs to, and whether it opened one.
+
+        A request whose transcript holds more user messages than the last one
+        did is a new user turn. A `previous_response_id` chain sends only what
+        is new, and a client rebuilds its history after a compaction, so in
+        either case a user message in the request is the new turn. When a
+        turn plan was logged since the last execution, that plan already
+        opened the turn. Otherwise this records a `user_turn` row with the
+        turn's prompt: Jev is not called and nothing is decided. A repeated
+        request id never opens a turn. Never raises.
+        """
+        session_id = row["session_id"]
+        try:
+            current = self.sessions.current_turn(session_id)
+            if repeated:
+                return current, False
+            last = self.sessions.last_execution(session_id)
+            if last is not None:
+                before, since = last["features"].get("user_turns"), int(last["id"])
+            else:
+                admission = self.sessions.admission_row(session_id)
+                facts = (admission or {}).get("features") or {}
+                before = facts.get("user_turns") if isinstance(facts, dict) else None
+                since = int((admission or {}).get("id") or 0)
+            if body.get("previous_response_id") or (last or {}).get("after_maintenance"):
+                # Only what is new is sent, or the client rebuilt its history
+                # after a compaction: a user message here is the new turn.
+                opened = users > 0
+            else:
+                opened = isinstance(before, int) and users > before
+            if not opened:
+                return current, False
+            if self.sessions.plan_logged_since(session_id, since):
+                return current, True
+            turn = self.sessions.bump_turn(session_id)
+            self._log_user_turn(row, features, request_id, turn, users)
+            return turn, True
+        except Exception:  # noqa: BLE001 - telemetry may never fail a request
+            log.exception("could not track this session's user turn")
+            return self.sessions.current_turn(session_id), False
+
+    def _log_user_turn(
+        self,
+        row: dict[str, Any],
+        features: Features,
+        request_id: str,
+        turn: int,
+        users: int,
+    ) -> None:
+        """One `user_turn` row: the turn's number and prompt, no answers."""
+        row_id = self.store.log_decision(
+            decision_id=row["decision_id"] or new_decision_id(),
+            alias=row["alias"] or "",
+            client=row["client"] or "",
+            conversation_key="",
+            state_builder="",
+            answers={},
+            features={
+                "alias": row["alias"],
+                "session_mode": "strict",
+                "event": S.EVENT_USER_TURN,
+                "user_turns": users,
+                "message_count": features.message_count,
+                "est_tokens": features.est_tokens,
+                "has_tools": features.has_tools,
+                "has_images": features.has_images,
+            },
+            config_hash=self.config.config_hash,
+            model=row["model_key"] or "",
+            effort=row["effective_effort"] or row["base_effort"],
+            rule=S.EVENT_USER_TURN,
+            mode=self.config.settings.mode,
+            fallback=False,
+            pinned=False,
+            jev_ms=None,
+            jev_tokens=None,
+            est_tokens=features.est_tokens,
+            message_count=features.message_count,
+            turn_index=turn,
+            user_prompt=features.last_user_message,
+        )
+        self.sessions.annotate_decision(
+            row_id,
+            event_type=S.EVENT_USER_TURN,
+            session_id=row["session_id"],
+            request_id=request_id,
+            quality_lane=row["quality_lane"],
+            turn_index=turn,
+        )
+
+    def record_turn_summary(
+        self, row: dict[str, Any], body: dict[str, Any], turn: int, opened: bool
+    ) -> None:
+        """What the assistant did this turn, from the transcript the client sent.
+
+        Written onto the decision row that opened the turn and replaced as the
+        tool loop grows. A request that opens a new turn also carries the
+        previous turn in full, final answer included, so that turn's row gets
+        its last word here. Never the reply stream. Never raises.
+        """
+        if not self.store.log_state:
+            return
+        try:
+            messages = _transcript(body)
+            targets = [(-1, turn)]
+            if opened and turn > 1:
+                targets.insert(0, (-2, turn - 1))
+            for segment, index in targets:
+                target = self.sessions.turn_row(row["session_id"], index)
+                if target is None:
+                    continue
+                summary = summarize_transcript_turn(messages, segment=segment)
+                self.sessions.set_turn_summary(
+                    target,
+                    self.store.text(summary["assistant_snippet"]),
+                    _tool_calls_json(summary, self.store.text_max_chars),
+                )
+        except Exception:  # noqa: BLE001 - telemetry may never fail a request
+            log.exception("could not record the turn summary")
+
     def _log_execution(
         self,
         row: dict[str, Any],
@@ -2159,6 +2383,8 @@ class Router:
         check: Any,
         *,
         turn_id: str | None = None,
+        turn_index: int | None = None,
+        user_turns: int | None = None,
     ) -> int:
         """A managed request is logged exactly like an alias request."""
         row_id = self.store.log_decision(
@@ -2169,7 +2395,7 @@ class Router:
             state_builder=row["state_builder"] or "",
             answers={},
             features=features.to_facts()
-            | {"alias": row["alias"], "session_mode": "strict"}
+            | {"alias": row["alias"], "session_mode": "strict", "user_turns": user_turns}
             | check.to_facts(),
             config_hash=self.config.config_hash,
             model=row["model_key"] or "",
@@ -2182,6 +2408,7 @@ class Router:
             jev_tokens=None,
             est_tokens=features.est_tokens,
             message_count=features.message_count,
+            turn_index=turn_index,
         )
         self.store.update_decision(
             row_id,
@@ -2195,8 +2422,166 @@ class Router:
             turn_id=turn_id,
             request_id=request_id,
             quality_lane=row["quality_lane"],
+            turn_index=turn_index,
         )
         return row_id
+
+    # --- session feedback ---------------------------------------------------
+
+    def session_feedback(
+        self, request: Request, session_id: str, payload: Any
+    ) -> dict[str, Any]:
+        """Record what a person thought of a session, and maybe step its effort.
+
+        The feedback row names the session's admission decision, the session,
+        the request the person was looking at and the turn it belongs to.
+        `adjust_effort` steps one rung along the bound model's efforts and
+        never changes the model; see `step_session_effort` for when it may not.
+        """
+        owner = self.session_owner(request)
+        try:
+            item = validate_session_feedback(payload)
+        except FeedbackError as exc:
+            raise SessionError(S.INVALID_ROUTER_INPUT, str(exc)) from None
+        row = self.sessions.get(session_id, owner)
+        if row is None:
+            raise SessionError(S.SESSION_UNKNOWN, "this session id is unknown")
+        turn = (
+            self.sessions.request_turn(session_id, item.request_id)
+            if item.request_id
+            else None
+        )
+        if turn is None:
+            turn = self.sessions.current_turn(session_id)
+        previous = row["base_effort"]
+        step = EffortStep(current=previous, wire_model=row["wire_model"])
+        if item.adjust_effort:
+            step = self.step_session_effort(row, item.verdict)
+        changed, current = step.changed, step.current
+        feedback_id = self.store.add_feedback(
+            decision_id=row["decision_id"] or "",
+            verdict=item.verdict,
+            better_effort=current if changed else None,
+            note=item.note,
+            source=item.source,
+            session_id=session_id,
+            request_id=item.request_id,
+            turn_index=turn,
+        )
+        self.sessions.set_feedback_verdict(session_id, item.verdict)
+        log.info(
+            "session feedback session=%s verdict=%s turn=%s effort %s -> %s changed=%s",
+            session_id,
+            item.verdict,
+            turn,
+            previous,
+            current,
+            changed,
+        )
+        return {
+            "ok": True,
+            "feedback_id": feedback_id,
+            "session_id": session_id,
+            "decision_id": row["decision_id"],
+            "verdict": item.verdict,
+            "turn_index": turn,
+            "model_key": row["model_key"],
+            "previous_effort": previous,
+            "current_effort": current,
+            "wire_model": step.wire_model,
+            "effort_changed": changed,
+            # Why the effort did not move, as a stable code and in words.
+            # Both null when it moved, or when no step was asked for.
+            "reason_code": step.code,
+            "reason": step.reason,
+        }
+
+    def feedback_ladder(self, row: dict[str, Any]) -> list[str]:
+        """The efforts a person may step this session between, weakest first.
+
+        The bound model's configured efforts, inside the alias cap and the
+        client floor. A configured restriction is never stepped past.
+        """
+        mcfg = self.config.models.get(row["model_key"] or "")
+        if mcfg is None:
+            return []
+        order = self.config.settings.effort_order
+        alias_cfg = self.config.aliases.get(row["alias"] or "")
+        client_cfg = self.config.clients.get(row["client"] or "")
+        cap = alias_cfg.max_effort if alias_cfg else None
+        floor = client_cfg.min_effort if client_cfg else None
+        rungs = sorted(mcfg.efforts, key=lambda e: _rank_of(order, e))
+        return [
+            e
+            for e in rungs
+            if not (cap and _rank_of(order, e) > _rank_of(order, cap))
+            and not (floor and _rank_of(order, e) < _rank_of(order, floor))
+        ]
+
+    def step_session_effort(self, row: dict[str, Any], verdict: str) -> EffortStep:
+        """One rung up for `too_weak`, one down for `too_strong`, same model.
+
+        What moves is `base_effort`, because that is what the execution path
+        sends: `forward_session` builds its one entry from it, and the wire
+        model (`model(effort)` for a suffix-style model) is recomputed from
+        it. The effective, expected and confirmed efforts move with it, so a
+        fixed-effort session reads the same everywhere. The binding digest
+        does not cover effort, so the binding revision is unchanged. It is a
+        conditional write on the version this read; a lost race changes
+        nothing and says so.
+
+        A refusal says why with a stable code (`EFFORT_STEP_REFUSALS`) and a
+        sentence, and changes nothing.
+        """
+        current, wire = row["base_effort"], row["wire_model"]
+
+        def refuse(code: str, why: str) -> EffortStep:
+            return EffortStep(current=current, wire_model=wire, code=code, reason=why)
+
+        if verdict not in ("too_weak", "too_strong"):
+            return refuse("verdict_keeps_effort", f"verdict {verdict!r} does not move effort")
+        if row["tombstone"] or row["state"] == "closed":
+            return refuse("session_closed", "the session is closed")
+        if row["state"] == "blocked":
+            return refuse("session_blocked", "the session is blocked")
+        adaptation = row.get("adaptation_mode") or "off"
+        if adaptation == "active":
+            return refuse(
+                "adaptive_effort_active",
+                "the between-turn effort experiment owns this session's effort",
+            )
+        if adaptation != "off" and row["protocol"] == P.RESPONSES:
+            return refuse(
+                "base_effort_checked",
+                "this session's history is checked against the base effort it "
+                "was bound at",
+            )
+        ladder = self.feedback_ladder(row)
+        if current not in ladder:
+            return refuse("not_on_ladder", f"effort {current!r} is not on this model's ladder")
+        step = 1 if verdict == "too_weak" else -1
+        index = ladder.index(current) + step
+        if not 0 <= index < len(ladder):
+            end = "highest" if step > 0 else "lowest"
+            return refuse(
+                f"at_{end}", f"already at the {end} effort {row['model_key']} allows here"
+            )
+        new = ladder[index]
+        new_wire, _extra = apply_effort(self.config, row["model_key"], new)
+        written = self.sessions.update(
+            row["session_id"],
+            row["version"],
+            base_effort=new,
+            effective_effort=new,
+            expected_effort=new,
+            confirmed_effort=new,
+            wire_model=new_wire,
+        )
+        if not written:
+            return refuse(
+                "conflict", "the session changed while this was written; nothing was changed"
+            )
+        return EffortStep(current=new, wire_model=new_wire, changed=True)
 
     def _planned_turn(
         self, request: Request, row: dict[str, Any], pending: dict[str, Any] | None
@@ -2367,6 +2752,11 @@ class Router:
                 # ambiguous however tidily the transport ended.
                 settled = settled and seen.terminal
                 self.record_observation(row, seen)
+                if seen.usage:
+                    # Counts only, as the observer read them from the
+                    # terminal event: the same block a non-streamed reply
+                    # leaves on its row, so a turn's tokens can be summed.
+                    self.store.update_decision(decision_row, upstream_usage=seen.usage)
                 if pending is not None:
                     # Only a terminal `response.completed` confirms it, and a
                     # completion carrying tool calls is still a completion.
@@ -2422,7 +2812,65 @@ class Router:
         )
 
 
+# --- session feedback helpers ---------------------------------------------
+
+# Why a feedback effort step did not happen. Stable: a client may branch on them.
+EFFORT_STEP_REFUSALS = (
+    "verdict_keeps_effort",
+    "session_closed",
+    "session_blocked",
+    "adaptive_effort_active",
+    "base_effort_checked",
+    "not_on_ladder",
+    "at_highest",
+    "at_lowest",
+    "conflict",
+)
+
+
+@dataclass(frozen=True)
+class EffortStep:
+    """What a feedback effort step did, or why it did nothing."""
+
+    current: str | None
+    wire_model: str | None
+    changed: bool = False
+    code: str | None = None
+    reason: str | None = None
+
+
 # --- turn-plan helpers ---------------------------------------------------
+
+
+def _transcript(body: dict[str, Any]) -> list[Any]:
+    """The message list of a chat body, or the item list of a Responses body."""
+    for key in ("messages", "input"):
+        value = body.get(key)
+        if isinstance(value, list):
+            return value
+    if isinstance(body.get("input"), str):
+        return [{"role": "user", "content": body["input"]}]
+    return []
+
+
+def _tool_calls_json(summary: dict[str, Any], limit: int) -> str | None:
+    """The tool calls and files of one turn as JSON, within the text cap.
+
+    None when the turn made no tool call, so an empty read never replaces a
+    fuller one. Lists are shortened from the end until the JSON fits.
+    """
+    calls = list(summary.get("tool_calls") or [])
+    files = list(summary.get("files_touched") or [])
+    if not calls and not files:
+        return None
+    while True:
+        text = json.dumps({"tool_calls": calls, "files_touched": files})
+        if len(text) <= limit or (not calls and not files):
+            return text if len(text) <= limit else None
+        if files:
+            files.pop()
+        else:
+            calls.pop()
 
 
 def _usage_tokens(usage: Any) -> dict[str, int]:
@@ -3248,6 +3696,18 @@ async def reconcile_turn_plan(request: Request) -> Response:
     return JSONResponse(router.reconcile(plan, row, item.outcome))
 
 
+async def session_feedback(request: Request) -> Response:
+    """Session-native feedback, with an optional same-model effort step."""
+    router: Router = request.app.state.router
+    try:
+        payload = json.loads(await request.body())
+    except ValueError:
+        raise SessionError(S.INVALID_ROUTER_INPUT, "body must be JSON") from None
+    return JSONResponse(
+        router.session_feedback(request, request.path_params["session_id"], payload)
+    )
+
+
 async def close_session(request: Request) -> Response:
     """End a session deliberately. The row stays as a tombstone."""
     router: Router = request.app.state.router
@@ -3463,6 +3923,9 @@ def create_app(config: RouterConfig, store: Store | None = None) -> Starlette:
         Route("/router/sessions/{session_id}", show_session, methods=["GET"]),
         Route("/router/sessions/{session_id}/close", close_session, methods=["POST"]),
         *(Route(path, handler, methods=verbs) for path, handler, verbs in WORKBENCH_ROUTES),
+        Route(
+            "/router/sessions/{session_id}/feedback", session_feedback, methods=["POST"]
+        ),
         Route("/{path:path}", passthrough, methods=methods),
     ]
 
