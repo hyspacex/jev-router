@@ -12,11 +12,14 @@ in that file is qualified for it. Nothing about whether it is *worth* doing
 has been measured: no quality comparison against a fixed effort exists, at any
 rung. `evals/EXPERIMENTS.md` says so in more detail.
 
-One deployment has had a provisional protocol test —
-[`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md`](qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md),
-for short personal test sessions on one proxy on one day. It is used by the
-test config that `examples/make-adaptive-astra.py` builds, and by nothing
-else. See "Trying it with Codex" below.
+One deployment has been tested. A provisional protocol test on 2026-09-19
+([report](qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md)) was
+followed on 2026-10-26 by a run of `evals/qualify_effort.py` against the same
+profile
+([report](qualification/2026-10-26-gpt-6-astra-responses.md)), which the
+owner accepted with one failed check. The test config that
+`examples/make-adaptive-astra.py` builds names the 2026-10-26 report, and
+nothing else does. See "Trying it with Codex" below.
 
 ## The supported deployment matrix
 

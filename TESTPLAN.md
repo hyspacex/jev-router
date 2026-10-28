@@ -570,7 +570,11 @@ One deployment has been exercised live, on 2026-09-19, and the write-up is
 [`docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md`](docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md).
 `evals/qualify_effort.py` did not run: its allowlist is empty and live mode
 needs `--confirm-live` and `JEV_ROUTER_QUALIFY_LIVE=1`. The report is a hand
-test against the same template, and it calls itself provisional.
+test against the same template, and it calls itself provisional. The table
+below is that 2026-09-19 result. On 2026-10-26 `evals/qualify_effort.py` ran
+live for the first time, against the same profile, allowlisted through
+`JEV_ROUTER_QUALIFY_ALLOW`; see
+[its report](docs/qualification/2026-10-26-gpt-6-astra-responses.md).
 
 | Check | Live result |
 | --- | --- |

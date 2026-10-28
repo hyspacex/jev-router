@@ -12,8 +12,11 @@ the new page.
 ### Access
 
 The page itself is a public, data-free shell. Its data comes from `/router/*`
-endpoints behind the router admin token. Enter the token in the page; it stays
-in memory, not in browser storage or URLs. Without a configured token, only
+endpoints behind the router admin token. Enter the token in the page. After
+its first successful request the page keeps the token in this browser's local
+storage, so a reload does not ask again; Disconnect removes it, and so does a
+token the router refuses. It is never put in a URL. Use Disconnect on a
+browser other people use. Without a configured token, only
 direct loopback access can read (a Tailscale/LAN address is not loopback), and
 feedback from the page does not work at all: like every strict-session request,
 it needs the token, loopback included. Use HTTPS or a trusted encrypted tunnel
@@ -33,95 +36,103 @@ structured judgments, **not a written reasoning trace**.
 
 ### Overview
 
-How the router is doing over one window (1h, 24h, 7d or 30d), in four rows.
+How the router is doing over one window (1h, 24h, 7d or 30d). A `?` beside a
+label gives its definition.
 
-- **Quota.** One row per provider the router knows, and one per CodexBar
-  subscription it only tracks. Each usage window is a bar with a tick where
-  pace says it should be, the gap to pace, and when it resets. A routed
-  provider also says what quota is doing to routing right now: `calm`
+- **The headline band.** Four numbers, each with one comparator under it.
+  *Frontier quota saved*: calls that did not spend the frontier model's quota,
+  weighted by each model's `quota_cost` (a comparison against every call
+  going to the priced model with the highest `quota_cost`, not a measured
+  subscription delta). *Router overhead per admission*: Jev plus policy at
+  admission, p50, with all Jev time spread over the execution calls beside
+  it. *Clean turns*: turn plans whose `corrective_followup` answer is below
+  the configured threshold. *Calls completed*: with the problem counts
+  (unknown, rejected, stream failed), each linked to the matching sessions,
+  and the fallback and low-confidence admission rates. A line under the band
+  gives the cache hit (cached over input tokens, from calls that reported
+  both) and the circuit breakers.
+- **Requests beside quota.** Requests per bucket with the first-byte p50,
+  and beside them one row per provider the router knows and one per CodexBar
+  subscription it only tracks. Each usage window is a meter with a tick where
+  pace says it should be, and when it resets. While quota routing is on, a
+  routed provider also says what quota is doing to routing right now: `calm`
   (pressure 0), `elevated` (pressure, but not above
   `quota_policy.demote_above`), `demoting` (above it: route entries on this
   provider move back) or `exhausted` (a fresh window at `exhausted_at`). A
-  stale, failed or missing reading gets no label, because it steers nothing.
-  A tracked subscription never gets one either: it never steers. This row is
-  the page's one live source, the quota monitor's last readings read from
-  memory; nothing on the page polls a provider. See
-  [the CodexBar source](quota.md#the-codexbar-source).
-- **Four numbers.** *Quota saved*: 1 minus the mean `quota_cost` of the
-  execution calls, over the models router.yaml prices (the rest are counted
-  apart). *Router tax*: Jev's p50 at admission, and all Jev time spread over
-  the execution calls. *Clean turns*: turn plans whose `corrective_followup`
-  answer is below the configured threshold. *Cache hit*: cached over input
-  tokens, from calls that reported both.
-- **Tasks beside latency.** Admissions by the first choice question's answer
-  and by the model and effort they were bound to, with the corrective rate of
-  their later turns. Beside it, per model and effort: calls, first-byte p50,
-  and tokens per second while streaming (output tokens over the time after the
-  first byte). Router time and upstream time are shown apart. Total response
-  time is not the headline: it mostly measures how much the model wrote.
-- **Requests over time**, with the outcome counts (unknown, rejected, stream
-  failed), the fallback and low-confidence admission rates, and the circuit
-  breakers. The problem counts link to the matching sessions.
+  stale or failed reading is marked as such and steers nothing. A tracked
+  subscription never steers; it shows its 30-day cost when it reports one.
+  The quota rows are the page's one live source, the quota
+  monitor's last readings read from memory; nothing on the page polls a
+  provider. See [the CodexBar source](quota.md#the-codexbar-source).
+- **By model.** Per model and effort: admissions, calls, first-byte p50 and
+  p95, and tokens per second while streaming (output tokens over the time
+  after the first byte). Total response time is not the headline: it mostly
+  measures how much the model wrote. Admissions by the first choice
+  question's answer, as a heatmap, are folded under the table.
 
-Legacy alias traffic, when there is any, has its own panel and is never mixed
-into the session numbers. `GET /router/audit/overview` also returns the
+Legacy alias traffic, when there is any, has its own panel last and is never
+mixed into the session numbers. `GET /router/audit/overview` also returns the
 knife-edge share, early escalation, feedback counts and shadow answers; the
 page does not draw them yet.
 
 ### Sessions
 
-Which session is which. Each row is one strict session: when it was last seen,
-its title (the first line of its first prompt, scrubbed) with more of the
-prompt under it, the client, the workspace (the last path component of the
-directory the harness reports), the number of user turns, model and effort
-(with the move, when the effort changed), the admission rule, the latest
-feedback verdict, and any problems.
+Which session is which. Each row is one strict session, in six columns: the
+session (its title, the first line of its first prompt, scrubbed, then the
+client, the workspace and the number of user turns), when it was last seen,
+model and effort (with the move, when the effort changed), the admission
+rule, the latest feedback verdict, and the number of problems. The workspace
+is the last path component of the directory the harness reports.
 
-Search matches the session id, the title and the prompt preview. The filters
-are client, model, rule, feedback (`↑ more`, `↓ less`, `✓ right`, slow,
-unrated), state, adaptive effort mode, problems and last seen. Pinned shows
-bookmarked sessions.
+Saved views across the top: All, Problems, Unrated and Pinned (bookmarked
+sessions). One search box matches the session id, the title and the prompt
+preview, and also takes `key:value` filters such as `rule:hard`: client,
+model, rule, feedback, state, adaptive effort mode, problem and last seen.
+Each active filter shows as a chip you can remove.
 
 ### A session
 
-Why this route and effort, and how it went, one user turn at a time. The header
-shows the title, the bound model and effort, the client, the workspace, the
-start time, the turns and calls, and the latest verdict with its note.
+Why this route and effort, and how it went, one user turn at a time. The page
+opens with the title and one strip of facts: the bound model and effort, the
+client, the workspace, the start time, the turns and calls. The feedback
+buttons sit at the right of the strip. Under it, one sentence says how the
+session was admitted, for example the rule and the score that decided it, or
+the fallback route when Jev failed.
 
-**The turn timeline.** One card per user turn, not per HTTP call: an agent
-makes many calls for one prompt, and the router decides only at turn
+**The turn list**, down the left. One entry per user turn, not per HTTP call:
+an agent makes many calls for one prompt, and the router decides only at turn
 boundaries. Turn 1 is the admission. A later turn opens with a turn plan when
 the session uses adaptive effort; otherwise it opens when an execution request
 carries more user messages than the one before it, and that turn records its
-prompt without calling Jev. A card shows the prompt's first line, what the turn
-did to the route or effort, its calls and tokens, its problems, a `corrective`
-mark when Jev scored the turn as a correction, and any feedback given during
-it. Calls logged before turn tracking existed are matched to turns by log
-order, and the page says so.
+prompt without calling Jev. An entry shows the prompt's first line, what the
+turn did to the route or effort, its calls, its problems, a `corrective` mark
+when Jev scored the turn as a correction, and any feedback given during it.
+Calls logged before turn tracking existed are matched to turns by log order,
+and the page says so.
 
-**The three columns** of the selected turn, cause to choice:
+**The selected turn**, on the right, in four sections:
 
-1. **Request.** What the user asked and what Jev was shown: the request, any
-   pasted material (folded), the earlier request, constraints and observations,
-   and the facts (tools, images, tokens, context headroom). A row written
-   before text capture holds only the state's shape, so it shows character
-   counts.
-2. **Jev.** Each answer on a ruler, with the thresholds the ladder compared it
-   against marked on the same ruler, and the call's latency. Shadow answers
-   are listed apart. A turn that opened without a plan says "Not asked".
-3. **Rule** or **Effort.** For the admission: the confidence gate and every
-   rule of the ladder, replayed from the row under the config it was taken
-   under, each with the condition that decided it; then the route, the model
-   and effort, what quota did (kept the primary, or how it steered, with each
-   provider's pressure), and the quality lane with its evidence. A fallback
-   admission shows the alias's fallback, because no rule ran. For a turn plan:
-   the effort move, its status, the ladder and the thresholds. For a turn
-   without a plan: the effort it ran at and, when that changed, the feedback
-   that changed it.
-
-Under the columns: the turn's calls, input, cached and output tokens,
-first-byte p50 and tokens per second, the tool calls the assistant made, its
-last text, and the HTTP calls in a folded table.
+1. **Why this rule** (for the admission) or **Why this effort** (for a later
+   turn). For the admission: the rule, model and effort, what the rule is for,
+   the closest miss when a skipped rule came near its cutoff, and the ladder
+   replayed from the row under the config it was taken under, one line per
+   rule (checked, got, needs, short, sends to). Then what quota did and the
+   quality lane with its evidence. A rule's name opens a card that says what
+   it matches, why it exists and where it sends work. A fallback admission
+   shows the alias's fallback, because no rule ran. For a turn plan: the
+   effort move, its status, the ladder and the thresholds. For a turn without
+   a plan: the effort it ran at and, when that changed, the feedback that
+   changed it.
+2. **Jev scores.** One row per question, with the thresholds the ladder
+   compared it against, and the call's latency. Shadow answers are listed
+   apart. A turn that opened without a plan says "Not asked".
+3. **Request.** What the user asked and what Jev was shown: the request, any
+   pasted material (folded), the earlier request, constraints and
+   observations, and the facts. A row written before text capture holds only
+   the state's shape, so it shows character counts.
+4. **Calls**, closed by default: the turn's calls, tokens, first-byte p50 and
+   tokens per second, the tool calls the assistant made, its last text, and
+   the HTTP calls in a table.
 
 The tool calls and the assistant's text come from the client's own transcript:
 each request carries what the assistant did so far, and the router reads it
@@ -130,8 +141,8 @@ final answer appears once the client sends its next request.
 
 ### Feedback
 
-A session page has three buttons: Good, Too weak and Too strong. Each records
-`right`, `too_weak` or `too_strong` against the session through
+A session page has three buttons at the right of its strip: good, too weak
+and too strong. Each records `right`, `too_weak` or `too_strong` against the session through
 `POST /router/sessions/{id}/feedback`, and never changes its effort. Every
 click adds a row; the newest is the session's verdict.
 
@@ -151,7 +162,7 @@ dots on the Rules view's rulers, and in its preview.
 
 ### Jev sandbox
 
-The Jev sandbox button opens a drawer for the selected turn (the admission,
+Jev sandbox, in the page's `⋯` menu, opens a drawer for the selected turn (the admission,
 when the selected turn made no Jev call). It holds the state Jev was shown, as
 JSON, and the instructions of each question asked, from the running config.
 Edit either and press Run: the router makes **one live Jev call**, which spends
@@ -165,7 +176,7 @@ problem (fix it in Rules) from a state or a question wording that misled Jev.
 
 ### Saving an eval case
 
-Save as eval case, available once the session has a verdict, appends the
+Save as eval case, in the same menu once the session has a verdict, appends the
 session's admission to `golden_cases.jsonl` beside the database
 (`POST /router/eval-cases`): the stored state, the allowlisted facts, Jev's
 answers, the chosen rule, route, model, effort and lane, the config hash, the
@@ -174,23 +185,26 @@ pressure, and the verdict as the expectation. The file is created private
 
 ### Rules
 
-The running policy beside its text, over a window (7d by default). With several
-rulesets, a switch picks one.
+The running policy over a window (7d by default). The ladder is the page; the
+score rulers and the settings sit in a side column, and router.yaml opens on
+demand. With several rulesets, a switch picks one.
 
 - **Ladder.** Each rule in order: its conditions, where it sends work, its
   lane, and how many admissions in the window it took, linked to those
   sessions. The confidence gate comes first and the default last; Jev-failure
-  fallbacks show when there were any. The ladder is read-only: click a rule to
-  jump to its line in the editor.
-- **Scores.** One ruler per score a rule compares, with each threshold marked
-  and named, and one dot per admission in the window at its score, coloured by
-  its verdict. A dot links to its session. A cluster of `↑ more` dots just
-  below a cutoff is what to look for.
+  fallbacks show when there were any. The ladder is read-only. A rule's name
+  opens its card (what it matches, why it exists, where it sends work), with a
+  link to its line in router.yaml.
+- **Where admissions landed.** One ruler per score a rule compares, with each
+  threshold marked and named, and one dot per admission in the window at its
+  score, coloured by its verdict. A dot links to its session. A cluster of
+  `↑ too weak` dots just below a cutoff is what to look for.
 - **Settings.** The quota policy and the adaptive-effort settings, one line
   each, linked to their lines.
-- **router.yaml.** The text the router loaded, in an editor with line numbers.
-  The page edits the text and never regenerates the file from parsed data, so
-  comments and the literal question wording stay as written.
+- **router.yaml.** Edit router.yaml opens the text the router loaded, in an
+  editor with line numbers. It stays open while there is a draft or a
+  preview. The page edits the text and never regenerates the file from parsed
+  data, so comments and the literal question wording stay as written.
 
 The editor has three actions.
 

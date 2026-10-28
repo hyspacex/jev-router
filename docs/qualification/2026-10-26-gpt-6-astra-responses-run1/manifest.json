@@ -24,7 +24,7 @@
         "between_turn": "native_configuration_update",
         "qualification": "verified",
         "cache_behavior": "unverified",
-        "qualification_ref": "/Users/hy/Developer/jev-router/docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
+        "qualification_ref": "docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
       }
     }
   },
@@ -115,7 +115,7 @@
     }
   ],
   "run": {
-    "upstream": "http://100.82.7.89:8317",
+    "upstream": "http://<proxy-host>:8317",
     "router": "http://127.0.0.1:18330",
     "q07": [
       {

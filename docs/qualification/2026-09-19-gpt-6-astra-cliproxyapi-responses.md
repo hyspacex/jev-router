@@ -1,12 +1,14 @@
 # Effort qualification report: gpt-6-astra on CLIProxyAPI (Responses)
 
+Newer evidence for this profile: [2026-10-26 report](2026-10-26-gpt-6-astra-responses.md).
+
 **Date:** 2026-09-19
 **Profile (model key):** `gpt-6-astra-responses`, in the test config built by
 `examples/make-adaptive-astra.py`. `router.yaml` itself declares nothing
 verified and keeps the experiment off.
 **Upstream id:** `gpt-6-astra`
 **Endpoint / proxy:** CLIProxyAPI on the owner's Mac mini,
-`http://100.82.7.89:8317`, `POST /v1/responses`
+`http://<proxy-host>:8317`, `POST /v1/responses`
 **Protocol:** `openai-responses`
 **Adapter revision (`compatibility_revision`):** `responses-astra-cliproxyapi-v1`
 **Router commit:** the `r2-session-routing` branch, at the commit that adds
@@ -37,7 +39,7 @@ what the endpoint itself does.
 the new client adapter:
 
     uv run python examples/make-adaptive-astra.py --out <cfg> --sqlite <db> --port 18318
-    JEV_ROUTER_UPSTREAM=http://100.82.7.89:8317 \
+    JEV_ROUTER_UPSTREAM=http://<proxy-host>:8317 \
       JEV_ROUTER_ADMIN_TOKEN=<throwaway> uv run jev-router -c <cfg> serve --port 18318
     JEV_ROUTER_ADMIN_TOKEN=<throwaway> uv run jev-router adapter \
       --router http://127.0.0.1:18318 --alias astra-adaptive --port 18320 \

@@ -3,7 +3,7 @@
 **Specification:** R2 — core product and implementation specification  
 **Date:** 2026-09-19  
 **Repository baseline:** `hyspacex/jev-router@a248b889b4511c154c2bb6d7410223c76a0fb8f7`  
-**Status:** Proposed; not an implementation or a claim that the new tests have run.  
+**Status:** Implemented. Written as a proposal against the baseline above; strict sessions, the semantic packet, quality lanes and the effort experiment were built from it, and the contract tests cite their C and F ids. Later owner decisions are marked in place. For current behaviour read [SESSION_ROUTING.md](SESSION_ROUTING.md), [SEMANTIC_POLICY.md](SEMANTIC_POLICY.md) and [ADAPTIVE_EFFORT.md](ADAPTIVE_EFFORT.md); the code wins where they differ.  
 **Supersedes:** `JEV_ROUTER_PI_SESSION_SPEC.md` as the product specification. Client-specific examples may be written separately, but do not define this product.
 
 MUST/MUST NOT are acceptance requirements. SHOULD describes the intended default. Illustrative thresholds and budgets are engineering starting points, not measured findings. All new endpoints, configuration fields, and commands below are proposed additions unless explicitly described as existing.

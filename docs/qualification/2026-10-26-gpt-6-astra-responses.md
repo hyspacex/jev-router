@@ -6,7 +6,7 @@ declares it. `router.yaml` itself declares nothing verified and keeps the
 experiment off; the profile is verified only in the deployment config that
 names this file.
 **Upstream id:** `gpt-6-astra`
-**Endpoint / proxy:** CLIProxyAPI on the owner's Mac mini, `http://100.82.7.89:8317`,
+**Endpoint / proxy:** CLIProxyAPI on the owner's Mac mini, `http://<proxy-host>:8317`,
 `POST /v1/responses`, probed directly; the router half ran through a local
 router on `http://127.0.0.1:18330` with that proxy as its upstream.
 **Protocol:** `openai-responses`
@@ -30,7 +30,7 @@ run again.
     JEV_ROUTER_QUALIFY_LIVE=1 JEV_ROUTER_QUALIFY_ALLOW=gpt-6-astra-responses \
       uv run python evals/qualify_effort.py -c <make-adaptive-astra config> \
         --profile gpt-6-astra-responses --router http://127.0.0.1:18330 \
-        --upstream http://100.82.7.89:8317 --confirm-live \
+        --upstream http://<proxy-host>:8317 --confirm-live \
         --max-calls 60 --max-seconds 1500 --report <this file>
 
 This is the first time `qualify_effort.py` has run live; its live caller was

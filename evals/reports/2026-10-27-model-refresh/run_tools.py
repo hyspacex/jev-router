@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "evals"), str(ROOT / "src")]
 import httpx  # noqa: E402
+from common import upstream_base_url, upstream_key  # noqa: E402
 import run_sessions as S  # noqa: E402
 from manifest import build_manifest, write_manifest  # noqa: E402
 from session_client import RouterSessionClient  # noqa: E402
@@ -80,16 +81,10 @@ async def main():
     limit = 250  # 5 probes + 310 text attempts + 250 session attempts <= 600
     tasks = S.load_tasks()
     assert not S.validate(tasks)
-    key = subprocess.check_output(  # noqa: ASYNC221 - preflight only
-        [
-            "ssh",
-            "mini",
-            'python3 -c \'import json,pathlib; print(json.loads((pathlib.Path.home()/".pi/agent/models.json").read_text())["providers"]["jev-router"]["apiKey"])\'',
-        ],
-        text=True,
-    ).strip()
+    # The proxy and its key come from JEV_ROUTER_UPSTREAM and UPSTREAM_API_KEY.
+    key = upstream_key()
     client = RouterSessionClient(
-        router_url="http://100.82.7.89:8317", upstream_api_key=key, timeout_s=180
+        router_url=upstream_base_url(), upstream_api_key=key, timeout_s=180
     )
     await client._http.aclose()
     client._http = httpx.AsyncClient(transport=Transport(), timeout=180)

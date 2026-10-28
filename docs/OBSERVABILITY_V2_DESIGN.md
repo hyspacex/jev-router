@@ -51,6 +51,11 @@ What was built differs from the design below in these deliberate ways.
   share, early escalation and feedback counts, but the page does not draw them
   yet. New session counters are nullable rather than `NOT NULL DEFAULT`, to
   keep migrations additive.
+- **The page layout has since changed.** The dashboard v3 redesign
+  (2026-10-27) replaced the layouts sketched below. The
+  [operations guide](guides/operations.md#live-audit-dashboard) describes the
+  current page, and [`prototypes/DESIGN_NOTES.md`](prototypes/DESIGN_NOTES.md)
+  says why it changed.
 
 ---
 
@@ -68,11 +73,11 @@ A review of the current observability implementation reveals five structural mis
 
 | # | Pain Point | Root Cause in Current Implementation | v2 Design Direction |
 | :--- | :--- | :--- | :--- |
-| **1** | **Coding plan quota is empty or stale** | [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L43-L121) disables quota on all providers (`enabled: false`), [`audit_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L1283-L1293) only reads historical `decisions.quota_snapshot` rows from SQLite rather than live state, and CLI `codexbar usage --source web` cannot access `CodexBar.app`'s sandboxed browser cookies (e.g., Ollama). | **Hybrid `CodexBar` integration**: Read `CodexBar.app`'s live `widget-snapshot.json` first + enrich with CLI `codexbar usage` pace metrics; expose all enabled coding subscriptions (`codex`, `claude`, `antigravity`, `ollama`, `grok`) live on `/router/audit/overview`. |
-| **2** | **Sessions cannot be matched to actual coding sessions or prompts** | [`to_facts()`](file:///Users/hy/Developer/jev-router/src/jev_router/features.py#L66-L84) drops all prompt text; [`Store.log_decision()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L291-L331) defaults to `log_state: false` and stores only [`state_shape`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L49-L86) (character lengths); and [`dashboard.py`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L130-L140) strips `state` even when `log_state: true` is enabled. | **Scrubbed Session & Turn Text Persistence**: Store session `title`, full Jev `state` (`latest_user_request`, `material_the_user_pasted`, `current_user_request`, `observations`), and per-turn user prompt + assistant/tool summary (~2–4 KB cap, secret-scrubbed) in `router.db`. |
-| **3** | **Session Inspector (`#s=<id>`) bars and `"Shown to Jev"` are cryptic** | Each bar in [`hero()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L993-L1025) and [`outcomePane()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L1889-L1916) is a raw HTTP tool-call request (10–40 per user prompt), and [`jevBody()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L1342-L1366) shows `"127 chars · text not stored"` and `"names withheld"`. | **User-Turn-Centric Causal Inspector**: Group HTTP tool calls under **User Turns** (`Turn 1 (Admission)`, `Turn 2`, ...). Replace the 5 stage tabs with a unified 3-column **"Why This Route & Effort?"** causal view. |
-| **4** | **No visibility into or control over routing rules & config** | Routing policy lives exclusively in [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml) with a 6-stage pipeline that is invisible in the UI. | **New `Rules & Config` Tab (`#rules`)**: Interactive visual pipeline diagram with live traffic annotations, Visual Rule/Threshold Editor + synchronized YAML editor, historical **"What-If" replay**, and atomic **live hot-reload** saving back to `router.yaml`. |
-| **5** | **Metrics focus on upstream `response_ms` rather than router performance** | [`build_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L622-L699) centers on `response_ms` (dominated by upstream generation length). It lacks router overhead vs. TTFT separation, routing regret signals, and quota/cache efficiency metrics. | **System-Level Control-Plane Metrics**: Separate **Router Tax (`jev_ms` / `plan_ms`)** from **Upstream TTFT (`first_byte_ms`)** and **Streaming TPS**; track **Routing Quality & Regret** (corrective follow-ups, Turn-2 escalations, knife-edge boundaries) and **Quota/Cache Savings**. |
+| **1** | **Coding plan quota is empty or stale** | [`router.yaml`](../router.yaml) disables quota on all providers (`enabled: false`), [`audit_overview()`](../src/jev_router/sessions.py) only reads historical `decisions.quota_snapshot` rows from SQLite rather than live state, and CLI `codexbar usage --source web` cannot access `CodexBar.app`'s sandboxed browser cookies (e.g., Ollama). | **Hybrid `CodexBar` integration**: Read `CodexBar.app`'s live `widget-snapshot.json` first + enrich with CLI `codexbar usage` pace metrics; expose all enabled coding subscriptions (`codex`, `claude`, `antigravity`, `ollama`, `grok`) live on `/router/audit/overview`. |
+| **2** | **Sessions cannot be matched to actual coding sessions or prompts** | [`to_facts()`](../src/jev_router/features.py) drops all prompt text; [`Store.log_decision()`](../src/jev_router/pins.py) defaults to `log_state: false` and stores only [`state_shape`](../src/jev_router/state.py) (character lengths); and [`dashboard.py`](../src/jev_router/dashboard.py) strips `state` even when `log_state: true` is enabled. | **Scrubbed Session & Turn Text Persistence**: Store session `title`, full Jev `state` (`latest_user_request`, `material_the_user_pasted`, `current_user_request`, `observations`), and per-turn user prompt + assistant/tool summary (~2–4 KB cap, secret-scrubbed) in `router.db`. |
+| **3** | **Session Inspector (`#s=<id>`) bars and `"Shown to Jev"` are cryptic** | Each bar in [`hero()`](../src/jev_router/static/dashboard.js) and [`outcomePane()`](../src/jev_router/static/dashboard.js) is a raw HTTP tool-call request (10–40 per user prompt), and [`jevBody()`](../src/jev_router/static/dashboard.js) shows `"127 chars · text not stored"` and `"names withheld"`. | **User-Turn-Centric Causal Inspector**: Group HTTP tool calls under **User Turns** (`Turn 1 (Admission)`, `Turn 2`, ...). Replace the 5 stage tabs with a unified 3-column **"Why This Route & Effort?"** causal view. |
+| **4** | **No visibility into or control over routing rules & config** | Routing policy lives exclusively in [`router.yaml`](../router.yaml) with a 6-stage pipeline that is invisible in the UI. | **New `Rules & Config` Tab (`#rules`)**: Interactive visual pipeline diagram with live traffic annotations, Visual Rule/Threshold Editor + synchronized YAML editor, historical **"What-If" replay**, and atomic **live hot-reload** saving back to `router.yaml`. |
+| **5** | **Metrics focus on upstream `response_ms` rather than router performance** | [`build_overview()`](../src/jev_router/dashboard.py) centers on `response_ms` (dominated by upstream generation length). It lacks router overhead vs. TTFT separation, routing regret signals, and quota/cache efficiency metrics. | **System-Level Control-Plane Metrics**: Separate **Router Tax (`jev_ms` / `plan_ms`)** from **Upstream TTFT (`first_byte_ms`)** and **Streaming TPS**; track **Routing Quality & Regret** (corrective follow-ups, Turn-2 escalations, knife-edge boundaries) and **Quota/Cache Savings**. |
 
 ### The 5 Questions Every Screen Must Answer
 
@@ -120,21 +125,21 @@ flowchart LR
 
 ### 2.1 Diagnosis of Current Quota Limitations
 
-1. **Disabled by default in config**: In [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L43-L121), `providers.openai.quota.enabled`, `providers.ollama.quota.enabled`, and `providers.xai.quota.enabled` are all set to `false`.
-2. **Dashboard never queries live `QuotaMonitor`**: [`SessionManager.audit_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L1283-L1293) and [`build_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L674-L679) only look up `SELECT ts, quota_snapshot FROM decisions WHERE quota_snapshot IS NOT NULL ORDER BY id DESC LIMIT 1`. If no recent request logged a non-null `quota_snapshot`, the UI displays `"no quota snapshots"` even when `CodexBar` is running on the host.
+1. **Disabled by default in config**: In [`router.yaml`](../router.yaml), `providers.openai.quota.enabled`, `providers.ollama.quota.enabled`, and `providers.xai.quota.enabled` are all set to `false`.
+2. **Dashboard never queries live `QuotaMonitor`**: [`SessionManager.audit_overview()`](../src/jev_router/sessions.py) and [`build_overview()`](../src/jev_router/dashboard.py) only look up `SELECT ts, quota_snapshot FROM decisions WHERE quota_snapshot IS NOT NULL ORDER BY id DESC LIMIT 1`. If no recent request logged a non-null `quota_snapshot`, the UI displays `"no quota snapshots"` even when `CodexBar` is running on the host.
 3. **Web-cookie providers fail via standalone CLI**: `CodexBar.app` (`v0.60.3`) tracks five enabled subscriptions in `~/.codexbar/config.json`:
    - `codex` (source: `oauth`)
    - `claude` (source: `oauth`)
    - `antigravity` (source: `local`)
    - `ollama` (source: `web`)
    - `grok` (source: `web`)
-   When [`CodexBarSource._poll_sync()`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py#L140-L185) runs `codexbar usage --provider ollama --source web --json-only`, the CLI fails with `"No Ollama session cookie found"` because browser session cookies live inside the macOS `CodexBar.app` container.
+   When [`CodexBarSource._poll_sync()`](../src/jev_router/quota.py) runs `codexbar usage --provider ollama --source web --json-only`, the CLI fails with `"No Ollama session cookie found"` because browser session cookies live inside the macOS `CodexBar.app` container.
 4. **Where `CodexBar.app` actually persists live data**: Every ~60 seconds, `CodexBar.app` writes a complete, pre-authenticated snapshot for **all enabled providers** (including `ollama` and `grok`) to:
    - `~/Library/Group Containers/Y5PE65HELJ.com.steipete.codexbar/widget-snapshot.json`
 
 ### 2.2 Hybrid `CodexBar` Architecture
 
-We will upgrade [`src/jev_router/quota.py`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py) to use a **two-tier Hybrid `CodexBar` Collector** that tracks all enabled subscriptions in `~/.codexbar/config.json` and links them to `jev-router` providers where applicable.
+We will upgrade [`src/jev_router/quota.py`](../src/jev_router/quota.py) to use a **two-tier Hybrid `CodexBar` Collector** that tracks all enabled subscriptions in `~/.codexbar/config.json` and links them to `jev-router` providers where applicable.
 
 ```mermaid
 flowchart TD
@@ -164,7 +169,7 @@ flowchart TD
   - `creditsRemaining`: `float | null`
 
 #### Tier 2: CLI Pace Enrichment & Stale-Snapshot Fallback
-- For every window that has `windowMinutes` and `resetsAt`, [`window_expected_percent()`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py#L506-L516) in `quota.py` already computes the exact linear pace (`expected_percent`) directly from wall-clock time without spawning a subprocess:
+- For every window that has `windowMinutes` and `resetsAt`, [`window_expected_percent()`](../src/jev_router/quota.py) in `quota.py` already computes the exact linear pace (`expected_percent`) directly from wall-clock time without spawning a subprocess:
   $$\text{expected\_percent} = \text{clamp}\left(100 \times \frac{W - (T_{\text{reset}} - T_{\text{now}})}{W},\ 0,\ 100\right)$$
 - When `widget-snapshot.json` is missing or older than `stale_after_seconds` (default `300s`), `HybridCodexBarCollector` asynchronously runs `/opt/homebrew/bin/codexbar usage --provider <id> --json-only` for CLI-accessible providers (`codex`, `claude`, `antigravity`) and merges `pace.primary` / `pace.secondary` (`expectedUsedPercent`, `deltaPercent`, `stage`, `willLastToReset`).
 
@@ -180,7 +185,7 @@ flowchart TD
 
 ### 2.3 Configuration Changes in `router.yaml`
 
-Replace the per-provider disabled boilerplate in [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L43-L121) with a top-level `codexbar` integration block plus enabled provider links:
+Replace the per-provider disabled boilerplate in [`router.yaml`](../router.yaml) with a top-level `codexbar` integration block plus enabled provider links:
 
 ```yaml
 codexbar:
@@ -215,7 +220,7 @@ providers:
 
 ### 2.4 Dashboard Quota UI Redesign
 
-In [`dashboard.py`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L674-L679), `build_overview()` will receive live snapshots directly from `QuotaMonitor.all_snapshots()` (injected via [`app.py`](file:///Users/hy/Developer/jev-router/src/jev_router/app.py)), falling back to the latest SQLite `decisions.quota_snapshot` only in offline replay mode.
+In [`dashboard.py`](../src/jev_router/dashboard.py), `build_overview()` will receive live snapshots directly from `QuotaMonitor.all_snapshots()` (injected via [`app.py`](../src/jev_router/app.py)), falling back to the latest SQLite `decisions.quota_snapshot` only in offline replay mode.
 
 On the **Overview** tab (`#overview`), the **Coding Subscriptions & Quota Strip** displays two groups:
 
@@ -223,7 +228,7 @@ On the **Overview** tab (`#overview`), the **Coding Subscriptions & Quota Strip*
    - **Dual-Window Bar with Pace Tick**:
      - Horizontal progress bar (`0%` to `100%`) showing `used_percent` for **5h Session** (`primary`) and **7d Weekly** (`secondary`).
      - A vertical tick mark on the bar at `expected_percent` (linear time elapsed in the window).
-     - Color coding: **Calm** (`pressure < 0.35`, green), **Elevated / Ahead of Pace** (`0.35 <= pressure < 0.60`, amber, e.g., `43% used vs 25% expected (+18%)`), **Demoting** (`0.60 <= pressure < 0.85`, orange — triggers fallback promotion in [`apply_quota()`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py#L761-L824)), **Exhausted** (`pressure >= 0.85`, red).
+     - Color coding: **Calm** (`pressure < 0.35`, green), **Elevated / Ahead of Pace** (`0.35 <= pressure < 0.60`, amber, e.g., `43% used vs 25% expected (+18%)`), **Demoting** (`0.60 <= pressure < 0.85`, orange — triggers fallback promotion in [`apply_quota()`](../src/jev_router/quota.py)), **Exhausted** (`pressure >= 0.85`, red).
    - **Router Impact Badge**: Explicitly tells the user what `jev-router` is doing with this quota right now:
      - e.g., `"Active: Normal routing (pressure 0.31 < 0.60 demote threshold)"` or `"Steered: Demoting gpt-6-astra (cost 1.0) → gpt-6-sol where equivalent"`.
 2. **External Coding Subscriptions (`claude`, `antigravity`)**:
@@ -236,13 +241,13 @@ On the **Overview** tab (`#overview`), the **Coding Subscriptions & Quota Strip*
 ### 3.1 Why Text Is Currently Missing
 
 1. **Admission (`POST /router/resolve`)**:
-   - [`extract_features()`](file:///Users/hy/Developer/jev-router/src/jev_router/features.py#L140-L246) extracts `first_user_message`, `last_user_message`, `system_prompt`, and `messages`.
-   - [`build_state()`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L179-L263) builds the Jev state (`latest_user_request`, `material_the_user_pasted`, `earlier_request_in_this_conversation`).
-   - Then [`features.to_facts()`](file:///Users/hy/Developer/jev-router/src/jev_router/features.py#L66-L84) discards all text strings, [`Store.log_decision()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L291-L331) drops `state` because `settings.log_state` is `false` in [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L21), and [`dashboard.py`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L130-L140) strips `state`, `tool_names`, and `languages` before returning JSON to the browser.
+   - [`extract_features()`](../src/jev_router/features.py) extracts `first_user_message`, `last_user_message`, `system_prompt`, and `messages`.
+   - [`build_state()`](../src/jev_router/state.py) builds the Jev state (`latest_user_request`, `material_the_user_pasted`, `earlier_request_in_this_conversation`).
+   - Then [`features.to_facts()`](../src/jev_router/features.py) discards all text strings, [`Store.log_decision()`](../src/jev_router/pins.py) drops `state` because `settings.log_state` is `false` in [`router.yaml`](../router.yaml), and [`dashboard.py`](../src/jev_router/dashboard.py) strips `state`, `tool_names`, and `languages` before returning JSON to the browser.
 2. **Between-Turn Planning (`POST /router/turn-plan`)**:
-   - [`SessionManager.plan_turn()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L618-L905) constructs `state = build_turn_state(session.ledger, body)` containing `task_request`, `current_user_request`, `user_constraints`, `quoted_material`, and `observations`, sends it to Jev, and then **discards `state` completely** — `decisions` rows logged for `turn-plan` set `state_shape=None` and `state=None`.
+   - [`SessionManager.plan_turn()`](../src/jev_router/sessions.py) constructs `state = build_turn_state(session.ledger, body)` containing `task_request`, `current_user_request`, `user_constraints`, `quoted_material`, and `observations`, sends it to Jev, and then **discards `state` completely** — `decisions` rows logged for `turn-plan` set `state_shape=None` and `state=None`.
 3. **Execution Calls (`POST /v1/chat/completions`, `POST /v1/responses`)**:
-   - In [`app.py`](file:///Users/hy/Developer/jev-router/src/jev_router/app.py#L1185-L1295), the proxy streams SSE chunks back to the client and parses token usage (`input_tokens`, `output_tokens`, `cached_input_tokens`), but never extracts a summary of the assistant's response or the tool calls made during that turn.
+   - In [`app.py`](../src/jev_router/app.py), the proxy streams SSE chunks back to the client and parses token usage (`input_tokens`, `output_tokens`, `cached_input_tokens`), but never extracts a summary of the assistant's response or the tool calls made during that turn.
 
 ### 3.2 Privacy & Secret-Scrubbing Pipeline (`src/jev_router/scrub.py`)
 
@@ -256,7 +261,7 @@ Before any text is written to `~/.jev-router/router.db`, it passes through a det
    - Base64 image data URIs (`data:image/[^;]+;base64,[A-Za-z0-9+/=]+`) $\rightarrow$ `[IMAGE_DATA_URI]`.
    - Hex/base64 single-token blobs $> 256$ chars $\rightarrow$ `[BINARY_BLOB_OMITTED]`.
 3. **Head + Tail Squeeze Truncation (`squeeze(text, cap)`)**:
-   - Reuses [`squeeze()`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L121-L132) from `state.py` (which keeps the first 70% and last 30% with `"\n...\n"` in between) so both the opening instruction and trailing question/error trace are preserved within a strict byte budget.
+   - Reuses [`squeeze()`](../src/jev_router/state.py) from `state.py` (which keeps the first 70% and last 30% with `"\n...\n"` in between) so both the opening instruction and trailing question/error trace are preserved within a strict byte budget.
 
 ### 3.3 What Text We Capture & Size Budgets
 
@@ -265,13 +270,13 @@ Before any text is written to `~/.jev-router/router.db`, it passes through a det
 | **Session Title (`title`)** | First user turn at `/router/resolve` (or first `/v1/*` call) | `120 chars` (single line, stripped of markdown headers/code fences) | Displayed as the primary human-readable title in the Sessions list and Session header so you immediately recognize the Pi Agent or Codex task. |
 | **Session Opening Preview (`prompt_preview`)** | First user turn (`latest_user_request`) | `400 chars` | Shown as a 2-line subtitle under the session row in `#sessions` and searchable via full-text search. |
 | **Workspace / Harness Hint (`workspace_hint`)** | Extracted from system prompt / harness environment block (e.g., `cwd`, repo basename like `jev-router`) if present | `120 chars` | Badge on session row (e.g., `repo: jev-router`) to group coding sessions by project. |
-| **Full Jev Input State (`state`)** | Every `/router/resolve` and `/router/turn-plan` decision | JSON object (~2–4 KB total, already squeezed by [`continuation_aware_v1()`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L179-L263) and [`build_turn_state()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L228-L327)) | Replaces `"127 chars · text not stored"` in the Session Inspector with the exact `latest_user_request`, `material_the_user_pasted`, `earlier_request_in_this_conversation`, `current_user_request`, and provenanced `observations` that Jev evaluated. |
+| **Full Jev Input State (`state`)** | Every `/router/resolve` and `/router/turn-plan` decision | JSON object (~2–4 KB total, already squeezed by [`continuation_aware_v1()`](../src/jev_router/state.py) and [`build_turn_state()`](../src/jev_router/sessions.py)) | Replaces `"127 chars · text not stored"` in the Session Inspector with the exact `latest_user_request`, `material_the_user_pasted`, `earlier_request_in_this_conversation`, `current_user_request`, and provenanced `observations` that Jev evaluated. |
 | **Per-Turn User Prompt (`user_prompt`)** | Admission turn + each new user turn | `2,048 chars` (squeezed) | Displayed at the top of each User Turn card in the Session Inspector. |
 | **Per-Turn Assistant & Tool Summary (`turn_summary_json`)** | Updated as `/v1/chat/completions` or `/v1/responses` calls complete within a turn | `2,048 chars` JSON: `{ "tool_calls": [{"name": "bash", "count": 3, "last_status": "ok"}], "assistant_snippet": "...", "files_touched": [...] }` | Shows what happened during the turn's tool loop (and why the next user turn might have been a corrective follow-up). |
 
 ### 3.4 SQLite Schema Migrations (`~/.jev-router/router.db`)
 
-All migrations follow `jev-router`'s additive migration pattern (`ALTER TABLE ... ADD COLUMN` in [`Store._migrate()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L180-L246) and [`SessionManager._init_db()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L365-L450)):
+All migrations follow `jev-router`'s additive migration pattern (`ALTER TABLE ... ADD COLUMN` in [`Store._migrate()`](../src/jev_router/pins.py) and [`SessionManager._init_db()`](../src/jev_router/sessions.py)):
 
 ```sql
 -- 1. Enrich `sessions` table (src/jev_router/sessions.py)
@@ -289,9 +294,9 @@ ALTER TABLE decisions ADD COLUMN assistant_summary TEXT;
 ALTER TABLE decisions ADD COLUMN tool_calls_json TEXT;
 ```
 
-And in [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L21):
+And in [`router.yaml`](../router.yaml):
 - Change `settings.log_state: true` to be the **shipped default**, with `settings.scrub_secrets: true` and `settings.turn_text_max_chars: 2048`.
-- Update [`dashboard.py`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L130-L140) so `project_decision()` and `build_session_detail()` preserve `state`, `user_prompt`, `assistant_summary`, `tool_calls_json`, `features.tool_names`, and `features.languages`.
+- Update [`dashboard.py`](../src/jev_router/dashboard.py) so `project_decision()` and `build_session_detail()` preserve `state`, `user_prompt`, `assistant_summary`, `tool_calls_json`, `features.tool_names`, and `features.languages`.
 
 ---
 
@@ -300,12 +305,12 @@ And in [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml#L21):
 ### 4.1 Why the Current Session Page Is Confusing
 
 1. **The Mysterious Vertical Bars**:
-   - In [`hero()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L993-L1025), the strip of bars (`button.tick`) plots **every raw HTTP execution call** (`POST /v1/chat/completions` or `/v1/responses`), with bar height proportional to `input_tokens`.
-   - In [`outcomePane()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L1889-L1916), a second strip of bars (`button.cb`) again plots every raw HTTP call, with bar height proportional to `response_ms` and a bottom segment for `first_byte_ms`.
+   - In [`hero()`](../src/jev_router/static/dashboard.js), the strip of bars (`button.tick`) plots **every raw HTTP execution call** (`POST /v1/chat/completions` or `/v1/responses`), with bar height proportional to `input_tokens`.
+   - In [`outcomePane()`](../src/jev_router/static/dashboard.js), a second strip of bars (`button.cb`) again plots every raw HTTP call, with bar height proportional to `response_ms` and a bottom segment for `first_byte_ms`.
    - **Why this fails for coding agents**: When you type a single prompt in Pi Agent or Codex, the agent runs an autonomous tool loop of 10–40 HTTP calls (`read_file`, `bash`, `edit_file`, etc.). Because `jev-router` pins the model for the session and only makes routing/effort decisions at **User Turn Boundaries** (`Turn 1` admission, `Turn 2` user follow-up, etc.), showing 35 unlabelled HTTP bars hides the actual conversation structure and makes you wonder *"Is each bar a turn? A message? Why didn't Jev run on bar #14?"*
 2. **The Cryptic `"Shown to Jev"` Card & 5 Stage Tabs**:
    - Currently, clicking a decision opens 5 separate tabs (`Request` $\to$ `Jev` $\to$ `Policy` $\to$ `Route` $\to$ `Outcome`).
-   - Under `Jev` $\to$ `"Shown to Jev"`, [`jevBody()`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L1342-L1366) renders `state_shape` character counts (`latest_user_request: 127 chars · text not stored`) and `tool names: 6 · names withheld`.
+   - Under `Jev` $\to$ `"Shown to Jev"`, [`jevBody()`](../src/jev_router/static/dashboard.js) renders `state_shape` character counts (`latest_user_request: 127 chars · text not stored`) and `tool names: 6 · names withheld`.
    - To answer *"Why did this request get routed to `gpt-6-sol · high`?"*, you have to click back and forth across 4 tabs and mentally join Jev's numeric scores (`difficulty: 1.42`) against thresholds hidden in `router.yaml`.
 
 ### 4.2 Redesign Core Principle
@@ -371,7 +376,7 @@ flowchart LR
 #### Column 1: What the User Asked & What Was Shown to Jev
 - **Actual Text Cards (No more `"text not stored"`)**:
   - **`latest_user_request`** (or **`current_user_request`** on Turn $\ge 2$): Renders the actual user instruction in a readable monospace/markdown card.
-  - **`material_the_user_pasted`** (or **`quoted_material`**): Collapsible block showing the exact stack trace, diff, or file snippet that [`split_pasted()`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L135-L176) separated from the user's instruction, with an explanation badge: *"Separated as quoted material so pasted code/logs cannot trick Jev into misclassifying the prompt."*
+  - **`material_the_user_pasted`** (or **`quoted_material`**): Collapsible block showing the exact stack trace, diff, or file snippet that [`split_pasted()`](../src/jev_router/state.py) separated from the user's instruction, with an explanation badge: *"Separated as quoted material so pasted code/logs cannot trick Jev into misclassifying the prompt."*
   - **`earlier_request_in_this_conversation`** / **`observations`**: On follow-up turns, shows the initial task anchor and provenanced observations (`harness: command exited 1`, `assistant_claim: updated quota.py`).
 - **Hard Eligibility Checklist**:
   - Compact pill strip showing why candidate models passed or failed code-level gates before Jev even ran:
@@ -417,7 +422,7 @@ Add a third top-level navigation tab alongside `Overview` and `Sessions`:
 
 This tab serves two tightly coupled purposes:
 1. **Visual Architecture & Policy Map**: Illustrate `jev-router`'s 6-stage routing pipeline with live traffic annotations so the user can see *how* requests flow through gates, rules, quality lanes, quota steering, and between-turn effort rules.
-2. **Interactive Policy Editor + "What-If" Replay + Live Hot-Reload**: Let the user tune thresholds, rule ordering, route candidates, quota weights, and adaptive effort settings via either a structured **Visual Editor** or a synchronized **YAML Editor**, preview the exact impact on recent sessions, and atomically save + hot-reload [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml).
+2. **Interactive Policy Editor + "What-If" Replay + Live Hot-Reload**: Let the user tune thresholds, rule ordering, route candidates, quota weights, and adaptive effort settings via either a structured **Visual Editor** or a synchronized **YAML Editor**, preview the exact impact on recent sessions, and atomically save + hot-reload [`router.yaml`](../router.yaml).
 
 ### 5.2 Visual Architecture Diagram (Interactive SVG/Flow Canvas)
 
@@ -487,11 +492,11 @@ Users can toggle between (or view side-by-side):
    - **Between-Turn Adaptive Effort**:
      - Toggle `session_routing.adaptive_effort_enabled` (`true`/`false`), adjust `upgrade_difficulty` (`1.8`), `upgrade_harm` (`0.6`), `upgrade_p_hard` (`0.4`), `corrective_followup` (`0.6`), and `downgrade_confirmations` (`2`).
 2. **YAML Editor**:
-   - Full [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml) text editor with line numbers, structural validation errors, and an inline unified diff viewer (`Diff vs. Saved router.yaml`).
+   - Full [`router.yaml`](../router.yaml) text editor with line numbers, structural validation errors, and an inline unified diff viewer (`Diff vs. Saved router.yaml`).
 
 #### Right Pane: "What-If" Historical Replay Simulator
 Before saving changes to disk, clicking **"Preview Impact (Replay)"** sends the draft configuration to `POST /router/audit/config/preview`.
-- The backend re-runs [`evaluate_policy()`](file:///Users/hy/Developer/jev-router/src/jev_router/app.py#L465-L615) and [`apply_quota()`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py#L761-L824) in memory against the last $N$ (e.g., 200) stored admission and turn-plan decisions in `router.db` using their stored Jev scores, features, and quota snapshots (**zero Jev API calls required**, completes in `< 15 ms`).
+- The backend re-runs [`evaluate_policy()`](../src/jev_router/app.py) and [`apply_quota()`](../src/jev_router/quota.py) in memory against the last $N$ (e.g., 200) stored admission and turn-plan decisions in `router.db` using their stored Jev scores, features, and quota snapshots (**zero Jev API calls required**, completes in `< 15 ms`).
 - Displays a **Replay Impact Report**:
   - **Migration Summary**: e.g., `"14 of 128 sessions (10.9%) would change route"`.
   - **Tier Shift Bar**: Shows before vs. after share of `gpt-6-astra` (Frontier), `gpt-6-sol` (Workhorse), and `gpt-6-luna` (Fast), plus estimated **Frontier Quota Saved %** delta.
@@ -501,7 +506,7 @@ Before saving changes to disk, clicking **"Preview Impact (Replay)"** sends the 
 
 #### Atomic Save & Live Hot-Reload (`POST /router/audit/config/apply`)
 When the user clicks **"Save & Hot-Reload"**:
-1. **Validation**: Parses the candidate config through [`parse_config()`](file:///Users/hy/Developer/jev-router/src/jev_router/config.py#L480-L790), verifying all rule references, route candidates, quality lane qualification checks, and question schemas. If invalid, returns HTTP `422` with exact line/field errors.
+1. **Validation**: Parses the candidate config through [`parse_config()`](../src/jev_router/config.py), verifying all rule references, route candidates, quality lane qualification checks, and question schemas. If invalid, returns HTTP `422` with exact line/field errors.
 2. **Backup & Atomic Write**:
    - Copies current `router.yaml` to `~/.jev-router/config-backups/router.<timestamp>.yaml`.
    - Writes the new YAML to `router.yaml.tmp` and atomically replaces `router.yaml` via `os.replace()`.
@@ -515,7 +520,7 @@ When the user clicks **"Save & Hot-Reload"**:
 
 ### 6.1 Critique of Current Metrics
 
-Currently, [`build_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L622-L699) and [`dashboard.js`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js#L516-L780) emphasize **`response_ms`** (total end-to-end HTTP completion time) across models, sessions, and charts.
+Currently, [`build_overview()`](../src/jev_router/dashboard.py) and [`dashboard.js`](../src/jev_router/static/dashboard.js) emphasize **`response_ms`** (total end-to-end HTTP completion time) across models, sessions, and charts.
 
 Why `response_ms` is misleading for a router observability tool:
 1. **Confounded by output length**: A 2,500-token code generation response takes 35 seconds; a 20-token bash command takes 0.8 seconds. Plotting `response_ms` measures *how much text the model wrote*, not router overhead or upstream responsiveness.
@@ -631,15 +636,15 @@ The redesigned `Overview` tab replaces `response_ms` charts with 4 focused secti
 
 ### 7.1 Why In-Harness Feedback Is the Missing Ground Truth
 
-Right now, `jev-router` already has a `feedback` table in [`src/jev_router/pins.py`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L31-L92) (`VERDICTS = ("right", "too_weak", "too_strong", "too_slow")`) and a `POST /router/feedback` endpoint in [`src/jev_router/app.py`](file:///Users/hy/Developer/jev-router/src/jev_router/app.py#L3064-L3120). However, it goes completely unused in practice for three reasons:
+Right now, `jev-router` already has a `feedback` table in [`src/jev_router/pins.py`](../src/jev_router/pins.py) (`VERDICTS = ("right", "too_weak", "too_strong", "too_slow")`) and a `POST /router/feedback` endpoint in [`src/jev_router/app.py`](../src/jev_router/app.py). However, it goes completely unused in practice for three reasons:
 
 1. **Wrong place in the workflow**: When a model misunderstands a complex refactoring or takes 15 seconds thinking on a trivial question, the user experiences that friction **inside the Pi Agent terminal**, not while browsing `/dashboard`.
-2. **Disconnected from strict sessions (`session_id`)**: `POST /router/feedback` currently requires a raw `decision_id` (or `"last"`), whereas the Pi extension ([`integrations/pi/client.mjs`](file:///Users/hy/Developer/jev-router/integrations/pi/client.mjs#L123-L125)) tracks `session_id` (`pi-<uuid>`) and `request_id`. Furthermore, [`SessionManager.audit_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L1252-L1294) and [`audit_sessions()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L1120-L1208) never join the `feedback` table, so the dashboard never surfaces feedback even if recorded.
+2. **Disconnected from strict sessions (`session_id`)**: `POST /router/feedback` currently requires a raw `decision_id` (or `"last"`), whereas the Pi extension ([`integrations/pi/client.mjs`](../integrations/pi/client.mjs)) tracks `session_id` (`pi-<uuid>`) and `request_id`. Furthermore, [`SessionManager.audit_overview()`](../src/jev_router/sessions.py) and [`audit_sessions()`](../src/jev_router/sessions.py) never join the `feedback` table, so the dashboard never surfaces feedback even if recorded.
 3. **Relative human perception ("More Intelligence" vs. "Less Intelligence")**: Users do not think in terms of internal router rules (`moderate_careful` vs. `hard`) or Jev difficulty scores (`1.42`). They see Pi's status bar (`Jev auto · gpt-6-sol · medium · strict`) and immediately know whether the router gave the task **too little intelligence** (`too_weak`), **too much intelligence / overkill** (`too_strong`), or got it **just right** (`right`).
 
-### 7.2 UX in the Pi Agent Extension ([`integrations/pi/index.ts`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts))
+### 7.2 UX in the Pi Agent Extension ([`integrations/pi/index.ts`](../integrations/pi/index.ts))
 
-The Pi extension already registers the `/jev` command in [`integrations/pi/index.ts`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts#L96-L112) (`status`, `audit`, `retry`, `close`) and displays the bound model and effort in the bottom status bar (`Jev auto · gpt-6-sol · medium · strict`). We extend `/jev` with zero-friction feedback commands and an interactive picker:
+The Pi extension already registers the `/jev` command in [`integrations/pi/index.ts`](../integrations/pi/index.ts) (`status`, `audit`, `retry`, `close`) and displays the bound model and effort in the bottom status bar (`Jev auto · gpt-6-sol · medium · strict`). We extend `/jev` with zero-friction feedback commands and an interactive picker:
 
 | Pi Slash Command | Shortcut Alias | Mapped Verdict in `router.db` | User Meaning |
 | :--- | :--- | :--- | :--- |
@@ -650,13 +655,13 @@ The Pi extension already registers the `/jev` command in [`integrations/pi/index
 
 #### Status Bar Transparency, Quota-Demotion Indicator & Same-Model Effort Step-Up
 - **Quota-Demoted Route Visibility in Pi's Status Bar**:
-  - When `jev-router`'s rule ladder selects `gpt-6-astra · medium` (`intended_model`), but live subscription quota pressure (`> 0.60`) or a provider circuit breaker steers the binding to an equivalent fallback (`gpt-6-sol · high`), the admission response (`execution` contract in [`src/jev_router/sessions.py`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L96-L130)) will include:
+  - When `jev-router`'s rule ladder selects `gpt-6-astra · medium` (`intended_model`), but live subscription quota pressure (`> 0.60`) or a provider circuit breaker steers the binding to an equivalent fallback (`gpt-6-sol · high`), the admission response (`execution` contract in [`src/jev_router/sessions.py`](../src/jev_router/sessions.py)) will include:
     ```json
     "quota_steered": true,
     "intended_model": "gpt-6-astra",
     "intended_effort": "medium"
     ```
-  - [`validateBinding()`](file:///Users/hy/Developer/jev-router/integrations/pi/client.mjs#L77-L101) and [`status()`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts#L57-L64) in Pi will display:
+  - [`validateBinding()`](../integrations/pi/client.mjs) and [`status()`](../integrations/pi/index.ts) in Pi will display:
     - Normal route: `Jev auto · gpt-6-sol · high · strict`
     - Quota-steered route: `Jev auto · gpt-6-sol · high (steered from astra: quota) · strict`
     - After feedback: `Jev auto · gpt-6-sol · xhigh · strict · [↑ more intel]`
@@ -676,7 +681,7 @@ The Pi extension already registers the `/jev` command in [`integrations/pi/index
 
 ### 7.3 Backend Session-Aware Feedback Contract
 
-We extend the `feedback` table in [`src/jev_router/pins.py`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L81-L92) with additive columns so feedback links directly to both the **Session** (`session_id`), the **Admission Decision** (`decision_id`), and the **Latest Turn / Request** (`request_id`, `turn_index`) where the user triggered it:
+We extend the `feedback` table in [`src/jev_router/pins.py`](../src/jev_router/pins.py) with additive columns so feedback links directly to both the **Session** (`session_id`), the **Admission Decision** (`decision_id`), and the **Latest Turn / Request** (`request_id`, `turn_index`) where the user triggered it:
 
 ```sql
 ALTER TABLE feedback ADD COLUMN session_id TEXT;
@@ -686,7 +691,7 @@ CREATE INDEX IF NOT EXISTS feedback_session_id ON feedback (session_id);
 ```
 
 And add a session-native endpoint alongside `POST /router/feedback`:
-- **`POST /router/sessions/{session_id}/feedback`** (authenticated with `X-Router-Admin-Token`, called via `StrictClient.control()` in [`integrations/pi/client.mjs`](file:///Users/hy/Developer/jev-router/integrations/pi/client.mjs#L128-L141)):
+- **`POST /router/sessions/{session_id}/feedback`** (authenticated with `X-Router-Admin-Token`, called via `StrictClient.control()` in [`integrations/pi/client.mjs`](../integrations/pi/client.mjs)):
   ```json
   {
     "verdict": "too_weak",
@@ -745,14 +750,14 @@ flowchart LR
 
 When a session is misrouted, there are two distinct root causes:
 - **Case A (Policy Threshold Issue)**: Jev scored a hard task at `difficulty = 1.40`, and the `hard` rule cutoff was `1.45`. The **Rules & Config Replay Simulator** ([Section 5.3](#53-dual-mode-editor--what-if-replay--hot-reload-workflow)) solves this in zero API calls.
-- **Case B (State Builder or Rubric Issue)**: Jev scored a genuinely hard task at `difficulty = 0.55` because the user prompt was terse (`"fix the failing transport test"`) or because [`continuation_aware_v1`](file:///Users/hy/Developer/jev-router/src/jev_router/state.py#L179-L263) split out context Jev needed. No rule threshold tweak can separate `0.55` from easy questions without breaking easy routing.
+- **Case B (State Builder or Rubric Issue)**: Jev scored a genuinely hard task at `difficulty = 0.55` because the user prompt was terse (`"fix the failing transport test"`) or because [`continuation_aware_v1`](../src/jev_router/state.py) split out context Jev needed. No rule threshold tweak can separate `0.55` from easy questions without breaking easy routing.
 
-To diagnose and fix **Case B** and preserve regression cases for offline evaluation ([`evals/`](file:///Users/hy/Developer/jev-router/docs/development/evaluation.md)), we add two capabilities to the Session Inspector (`#s=<id>`):
+To diagnose and fix **Case B** and preserve regression cases for offline evaluation ([`evals/`](development/evaluation.md)), we add two capabilities to the Session Inspector (`#s=<id>`):
 
 #### 1. Live Jev State & Rubric Sandbox (`POST /router/audit/jev-sandbox`)
 - On any admission or turn-plan decision in `#s=<id>`, clicking **"Open in Jev Sandbox"** opens a slide-over drawer pre-populated with:
   1. **Editable `state` JSON**: The exact `latest_user_request`, `material_the_user_pasted`, `earlier_request_in_this_conversation`, and `facts` sent to Jev.
-  2. **Editable Question Rubrics**: The active `task_v2`, `difficulty_v2`, and `harm_v1` prompt/level definitions from [`router.yaml`](file:///Users/hy/Developer/jev-router/router.yaml).
+  2. **Editable Question Rubrics**: The active `task_v2`, `difficulty_v2`, and `harm_v1` prompt/level definitions from [`router.yaml`](../router.yaml).
 - Clicking **"Run Live Jev Probe (~240ms, <$0.0001)"** sends the modified `state` and `questions` to TypeSafe Jev via `POST /router/audit/jev-sandbox` and renders a **Side-by-Side Score & Route Diff**:
   - `Original State/Rubric`: `difficulty = 0.55` $\rightarrow$ Rule `easy` $\rightarrow$ `gpt-6-luna · low`
   - `Sandbox State/Rubric`: `difficulty = 1.68 (+1.13)` $\rightarrow$ Rule `hard` $\rightarrow$ `gpt-6-sol · high`
@@ -760,7 +765,7 @@ To diagnose and fix **Case B** and preserve regression cases for offline evaluat
 
 #### 2. 1-Click "Promote to Golden Eval Set" (`POST /router/audit/eval-cases`)
 - On any session in `#s=<id>` (and automatically suggested when you flag a session with `/jev more` or `/jev less`), clicking **"Save to Golden Eval Set"** exports the session's admission `state`, `features`, original Jev `answers`, and your target expectation (`expected_verdict: "too_weak" | "too_strong" | "right"`, optional `min_quality_lane` / `max_quality_lane`) into `~/.jev-router/golden_cases.jsonl`.
-- This bridges daily coding in Pi Agent directly into the offline benchmark workflow in [`docs/development/evaluation.md`](file:///Users/hy/Developer/jev-router/docs/development/evaluation.md).
+- This bridges daily coding in Pi Agent directly into the offline benchmark workflow in [`docs/development/evaluation.md`](development/evaluation.md).
 
 ---
 
@@ -773,13 +778,13 @@ When implementing this design in the next iteration, changes map cleanly to 11 f
 | File | Symbols / Functions to Add or Update | Purpose |
 | :--- | :--- | :--- |
 | **`src/jev_router/scrub.py`** *(New)* | `scrub_text(text: str) -> str`, `scrub_state(state: dict) -> dict`, `extract_session_title(prompt: str) -> str`, `summarize_assistant_turn(payload: dict) -> dict` | Secret/token redaction, base64 data-URI stripping, session title extraction, and 2 KB assistant/tool-call turn summarization. |
-| [`src/jev_router/quota.py`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py) | `CodexBarWidgetSnapshotReader`, `HybridCodexBarSource`, `QuotaMonitor.all_snapshots()` | Read `widget-snapshot.json` for all enabled subscriptions (`codex`, `claude`, `antigravity`, `ollama`, `grok`), compute linear pace via [`window_expected_percent()`](file:///Users/hy/Developer/jev-router/src/jev_router/quota.py#L506-L516), fall back to CLI when stale, and expose live snapshots for both routed providers and external subscriptions. |
-| [`src/jev_router/pins.py`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py) | [`Store._migrate()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L180-L246), [`Store.log_decision()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L291-L331), [`Store.add_feedback()`](file:///Users/hy/Developer/jev-router/src/jev_router/pins.py#L606-L632) | Add `turn_index`, `user_prompt`, `assistant_summary`, `tool_calls_json` to `decisions`; add `session_id`, `request_id`, `turn_index` to `feedback`; store scrubbed `state` by default (`log_state: true`). |
-| [`src/jev_router/sessions.py`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py) | [`SessionManager._init_db()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L365-L450), [`contract()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L96-L130), [`resolve()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L465-L616), `adjust_session_effort()`, [`audit_sessions()`](file:///Users/hy/Developer/jev-router/src/jev_router/sessions.py#L1120-L1208) | Persist `title`, `prompt_preview`, `workspace_hint`, `turn_count`, `escalation_count`, `corrective_count`, `feedback_verdict` on `sessions`; expose `quota_steered` & `intended_model` in `contract()`; support same-model effort step-up/down on `/jev more` / `/jev less`; join `feedback` in audit queries. |
-| [`src/jev_router/dashboard.py`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py) | [`project_decision()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L118-L236), [`build_session_detail()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L510-L620), [`build_overview()`](file:///Users/hy/Developer/jev-router/src/jev_router/dashboard.py#L622-L699), `group_decisions_into_turns()`, `replay_config_preview()` | Stop stripping `state`, `tool_names`, and `languages`; group session decisions into structured `turns[]` (`Turn 1`, `Turn 2`, ...) with nested HTTP tool calls; compute Router Tax, TTFT by `(model, effort)`, Streaming TPS, Corrective Follow-up Rate, Knife-Edge Share, Frontier Quota Saved %, and Feedback Alignment. |
-| [`src/jev_router/app.py`](file:///Users/hy/Developer/jev-router/src/jev_router/app.py) | `POST /router/sessions/{session_id}/feedback`, `POST /router/audit/jev-sandbox`, `POST /router/audit/eval-cases`, `GET /router/audit/config`, `POST /router/audit/config/preview`, `POST /router/audit/config/apply` | Add session feedback + same-model effort adjustment endpoint, live Jev state/rubric sandbox endpoint, golden eval case export endpoint, and config preview/hot-reload endpoints. |
-| [`integrations/pi/client.mjs`](file:///Users/hy/Developer/jev-router/integrations/pi/client.mjs) | [`validateBinding()`](file:///Users/hy/Developer/jev-router/integrations/pi/client.mjs#L77-L101), `StrictClient.feedback(verdict, note, signal)` | Preserve optional `quota_steered` & `intended_model` fields on `execution`; post `{ verdict, adjust_effort: true, request_id, note, source: "pi" }` to `/router/sessions/${sessionId}/feedback` and update local `binding.execution.initial_effort` when stepped up/down. |
-| [`integrations/pi/index.ts`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts) | [`status()`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts#L57-L64), [`pi.registerCommand("jev", ...)`](file:///Users/hy/Developer/jev-router/integrations/pi/index.ts#L96-L112) | Display `(steered from <intended_model>: quota)` in status bar when `quota_steered` is true; add `/jev more [note]`, `/jev less [note]`, `/jev good [note]`, and `/jev feedback` commands. |
+| [`src/jev_router/quota.py`](../src/jev_router/quota.py) | `CodexBarWidgetSnapshotReader`, `HybridCodexBarSource`, `QuotaMonitor.all_snapshots()` | Read `widget-snapshot.json` for all enabled subscriptions (`codex`, `claude`, `antigravity`, `ollama`, `grok`), compute linear pace via [`window_expected_percent()`](../src/jev_router/quota.py), fall back to CLI when stale, and expose live snapshots for both routed providers and external subscriptions. |
+| [`src/jev_router/pins.py`](../src/jev_router/pins.py) | [`Store._migrate()`](../src/jev_router/pins.py), [`Store.log_decision()`](../src/jev_router/pins.py), [`Store.add_feedback()`](../src/jev_router/pins.py) | Add `turn_index`, `user_prompt`, `assistant_summary`, `tool_calls_json` to `decisions`; add `session_id`, `request_id`, `turn_index` to `feedback`; store scrubbed `state` by default (`log_state: true`). |
+| [`src/jev_router/sessions.py`](../src/jev_router/sessions.py) | [`SessionManager._init_db()`](../src/jev_router/sessions.py), [`contract()`](../src/jev_router/sessions.py), [`resolve()`](../src/jev_router/sessions.py), `adjust_session_effort()`, [`audit_sessions()`](../src/jev_router/sessions.py) | Persist `title`, `prompt_preview`, `workspace_hint`, `turn_count`, `escalation_count`, `corrective_count`, `feedback_verdict` on `sessions`; expose `quota_steered` & `intended_model` in `contract()`; support same-model effort step-up/down on `/jev more` / `/jev less`; join `feedback` in audit queries. |
+| [`src/jev_router/dashboard.py`](../src/jev_router/dashboard.py) | [`project_decision()`](../src/jev_router/dashboard.py), [`build_session_detail()`](../src/jev_router/dashboard.py), [`build_overview()`](../src/jev_router/dashboard.py), `group_decisions_into_turns()`, `replay_config_preview()` | Stop stripping `state`, `tool_names`, and `languages`; group session decisions into structured `turns[]` (`Turn 1`, `Turn 2`, ...) with nested HTTP tool calls; compute Router Tax, TTFT by `(model, effort)`, Streaming TPS, Corrective Follow-up Rate, Knife-Edge Share, Frontier Quota Saved %, and Feedback Alignment. |
+| [`src/jev_router/app.py`](../src/jev_router/app.py) | `POST /router/sessions/{session_id}/feedback`, `POST /router/audit/jev-sandbox`, `POST /router/audit/eval-cases`, `GET /router/audit/config`, `POST /router/audit/config/preview`, `POST /router/audit/config/apply` | Add session feedback + same-model effort adjustment endpoint, live Jev state/rubric sandbox endpoint, golden eval case export endpoint, and config preview/hot-reload endpoints. |
+| [`integrations/pi/client.mjs`](../integrations/pi/client.mjs) | [`validateBinding()`](../integrations/pi/client.mjs), `StrictClient.feedback(verdict, note, signal)` | Preserve optional `quota_steered` & `intended_model` fields on `execution`; post `{ verdict, adjust_effort: true, request_id, note, source: "pi" }` to `/router/sessions/${sessionId}/feedback` and update local `binding.execution.initial_effort` when stepped up/down. |
+| [`integrations/pi/index.ts`](../integrations/pi/index.ts) | [`status()`](../integrations/pi/index.ts), [`pi.registerCommand("jev", ...)`](../integrations/pi/index.ts) | Display `(steered from <intended_model>: quota)` in status bar when `quota_steered` is true; add `/jev more [note]`, `/jev less [note]`, `/jev good [note]`, and `/jev feedback` commands. |
 
 ### 8.2 HTTP API Contract Additions
 
@@ -908,9 +913,9 @@ Returns the structured config model, raw YAML string, current `config_hash`, rul
 
 ### 8.3 Frontend Component Breakdown (`src/jev_router/static/`)
 
-- [`dashboard.html`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.html):
+- [`dashboard.html`](../src/jev_router/static/dashboard.html):
   - Add top-level nav tab `<a href="#rules" data-tab="rules">Rules & Config</a>`.
-- [`dashboard.js`](file:///Users/hy/Developer/jev-router/src/jev_router/static/dashboard.js):
+- [`dashboard.js`](../src/jev_router/static/dashboard.js):
   - **Overview (`renderOverview`)**:
     - `renderQuotaStrip()`: Renders Routed Upstream Subscriptions + External CodexBar Subscriptions with 5h/7d bars and linear pace ticks.
     - `renderSystemKpis()`: Frontier Quota Saved %, Router Tax (`jev_ms` p50 & amortized ms/req), Non-Corrective Turn Rate %, and Prompt Cache Hit Ratio %.

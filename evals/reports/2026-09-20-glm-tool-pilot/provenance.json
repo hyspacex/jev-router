@@ -1,6 +1,6 @@
 {
   "source_run": "evals/results/sessions-1789882602",
-  "endpoint": "http://100.82.7.89:8317",
+  "endpoint": "http://<proxy-host>:8317",
   "execution": "direct proxy; fixed wire models; no router admission or pins",
   "container_image_id": "sha256:f88ce06928ee50f396519fd424a5585879005cfafcd14a94d821b59a27bbed18",
   "omitted_fields": [

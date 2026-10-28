@@ -1,7 +1,5 @@
 import asyncio
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -11,7 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import admission as A  # noqa: E402
 import httpx  # noqa: E402
 import yaml  # noqa: E402
-from common import Budget, UpstreamClient, load_cases  # noqa: E402
+from common import Budget, UpstreamClient, load_cases, upstream_key  # noqa: E402
 from manifest import build_manifest, run_kind, write_manifest  # noqa: E402
 
 OUT = ROOT / "evals/reports/2026-10-27-model-refresh"
@@ -83,15 +81,8 @@ class Client(UpstreamClient):
 
 
 async def main():
-    os.environ["UPSTREAM_API_KEY"] = subprocess.check_output(  # noqa: ASYNC221 - preflight only
-        [
-            "ssh",
-            "mini",
-            'python3 -c \'import json,pathlib; print(json.loads((pathlib.Path.home()/".pi/agent/models.json").read_text())["providers"]["jev-router"]["apiKey"])\'',
-        ],
-        text=True,
-    ).strip()
-    os.environ["JEV_ROUTER_UPSTREAM"] = "http://100.82.7.89:8317"
+    # The proxy and its key come from JEV_ROUTER_UPSTREAM and UPSTREAM_API_KEY.
+    upstream_key()
     budget = Budget(max_calls=wire_limit)
     client = Client(concurrency=2, cache=True, budget=budget, timeout_s=180)
     await client._client.aclose()

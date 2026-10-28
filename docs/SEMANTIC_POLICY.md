@@ -346,10 +346,11 @@ decision 760392c45528:
 
 It re-runs the same pure selection from the row alone: the config hash, the
 stored answers, the request facts and the pressure the decision was taken
-under. No Jev call, no quota poll, and **no prompt** — the log keeps counts and
-flags, which is all a replay needs and all there is (invariant I13). Replaying
-at the recorded pressure matters: a deliberate quota saving replayed at
-pressure zero would look like a routing change.
+under. No Jev call, no quota poll, and **no prompt**: a replay reads counts
+and flags, which is all it needs (invariant I13), even when the row also holds
+scrubbed text under `settings.log_state`. Replaying at the recorded pressure
+matters: a deliberate quota saving replayed at pressure zero would look like a
+routing change.
 
 When the config hash has moved, it says so instead of claiming a match. A
 decision taken from a fallback has no stored answers, and the replay says that
