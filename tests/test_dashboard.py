@@ -366,6 +366,13 @@ async def test_trace_under_the_running_config_reproduces(tmp_path, strict_env):
     assert outcomes["easy"] == "not_reached"
     # Today's definition is attached only because the hash matches.
     assert body["admission"]["rule_definition"]["when"] == {"difficulty": {"gte": 1.5}}
+    # Each rule carries what the dashboard needs to name it, from the same config.
+    hard = next(r for r in trace["rules"] if r["name"] == "hard")
+    assert hard["description"] is None
+    assert hard["sends_to"] == {"route": None, "model": "big", "effort": "high"}
+    assert trace["gate_sends_to"] == {"route": None, "model": "big", "effort": "medium"}
+    assert trace["default_sends_to"] == {"route": None, "model": "big", "effort": "medium"}
+    assert trace["labels"] == {}
 
 
 @respx.mock

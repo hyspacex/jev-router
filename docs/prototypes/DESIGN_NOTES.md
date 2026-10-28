@@ -42,8 +42,10 @@ Open it in a browser; `#overview`, `#sessions`, `#session`, `#rules`.
 - A list row is a summary; the first column is a human title (NN/g tables).
 - A detail page is: header, one-line summary, primary pane, secondary pane,
   with raw data last (Honeycomb, Datadog, Braintrust, Langfuse).
-- A trace is a vertical stepper with one line per step; only the deciding
-  step is open (Carbon, Vercel routing cards).
+- A trace is the ladder in rule order, one grid of columns (checked, got,
+  needs, short, sends to), with the deciding rule raised and the skipped
+  rules folded (Carbon, Vercel routing cards). A rule's name opens its card:
+  what it matches in words, why it exists, where it sends work.
 
 ## What changed per view
 
@@ -59,8 +61,9 @@ rule, verdict, problems count. Pre-logging sessions are explained once.
 
 Session: title, one strip of facts, feedback at the right. A one-line
 decision sentence ("Admitted by moderate_tools · difficulty 2.33 ≥ 1.4 with
-tools"). Left: a vertical list of turns. Right: Why this rule (gate, missed
-rules folded, the hit, quota and lane), Jev scores (one row per question),
+tools"). Left: a vertical list of turns. Right: Why this rule (rule, model and
+effort in three cells, the rule's description, the closest miss, the ladder
+as replayed, quota and lane), Jev scores (one row per question),
 Request, Calls (closed).
 
 Rules: the ladder is the page; scores and settings in a side column; the YAML

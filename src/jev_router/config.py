@@ -487,6 +487,9 @@ class Rule(Base):
     # of model/effort pairs has been measured for it, and quota pressure may
     # then only move the request inside that set.
     lane: str = ""
+    # Why the rule exists, for people. The dashboard shows its first sentence
+    # beside the rule's name; routing never reads it.
+    description: str = ""
 
 
 class LowConfidence(Base):
@@ -745,6 +748,10 @@ class RouterConfig(Base):
     semantic_policy: SemanticPolicyCfg = Field(default_factory=SemanticPolicyCfg)
     quality_lanes: dict[str, QualityLaneCfg] = Field(default_factory=dict)
     experiments: ExperimentsCfg = Field(default_factory=ExperimentsCfg)
+    # Names for a score question's levels, for the dashboard. Written as
+    # `questions.<id>.labels` and lifted out at load, so nothing that sends a
+    # question to Jev or versions its packet ever sees them.
+    question_labels: dict[str, list[str]] = Field(default_factory=dict)
 
     # Set by load_config; stored with every decision so a later tuning run
     # knows which router.yaml produced it.
@@ -896,6 +903,20 @@ class RouterConfig(Base):
 
     # --- cross-field validation ----------------------------------------
 
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_question_labels(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or not isinstance(data.get("questions"), dict):
+            return data
+        questions: dict[Any, Any] = {}
+        labels = dict(data.get("question_labels") or {})
+        for qid, q in data["questions"].items():
+            if isinstance(q, dict) and "labels" in q:
+                q = {k: v for k, v in q.items() if k != "labels"}
+                labels[qid] = data["questions"][qid]["labels"]
+            questions[qid] = q
+        return {**data, "questions": questions, "question_labels": labels}
+
     @model_validator(mode="after")
     def _check_references(self) -> RouterConfig:
         problems: list[str] = []
@@ -1001,6 +1022,22 @@ class RouterConfig(Base):
                     problems.append(
                         f"questions.{qid}: score needs a criteria list of 2 to 10 levels"
                     )
+
+        for qid, names in self.question_labels.items():
+            q = self.questions.get(qid)
+            if q is None:
+                problems.append(f"questions.{qid}.labels: unknown question")
+            elif q.get("type") != "score":
+                problems.append(
+                    f"questions.{qid}.labels: only a score question has levels to name"
+                )
+            elif not isinstance(q.get("criteria"), list) or len(names) != len(q["criteria"]):
+                problems.append(
+                    f"questions.{qid}.labels: give one name per level "
+                    f"({len(q.get('criteria') or [])}), got {len(names)}"
+                )
+            elif not all(isinstance(n, str) and n.strip() for n in names):
+                problems.append(f"questions.{qid}.labels: every name must be non-empty text")
 
         check_route(self.settings.default_route, "settings.default_route")
 
@@ -1536,6 +1573,23 @@ def scrub_config_text(text: str) -> str:
                 host[0] = host[0].rsplit("@", 1)[1]
                 settings[key] = f"{scheme}://{'/'.join(host)}"
     return yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+
+
+def config_warnings(cfg: RouterConfig) -> list[str]:
+    """What check-config reports without refusing the file."""
+    rulesets: dict[str, Ruleset] = {"policy": cfg.policy}
+    rulesets.update({f"rulesets.{name}": rs for name, rs in cfg.rulesets.items()})
+    rulesets.update({
+        f"aliases.{alias}.rules": acfg.rules
+        for alias, acfg in cfg.aliases.items()
+        if isinstance(acfg.rules, Ruleset)
+    })
+    return [
+        f"{where}.rules[{rule.name}]: no description; the dashboard can only show its name"
+        for where, rs in rulesets.items()
+        for rule in rs.rules
+        if not rule.description.strip()
+    ]
 
 
 def check_registry_names(cfg: RouterConfig) -> list[str]:

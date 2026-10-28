@@ -173,6 +173,26 @@ details.more > summary:hover { color: var(--text); }
 .qn { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
 .panel.wide { grid-column: 1 / -1; }
 
+/* a rule's name opens its card: what it matches, why it exists, where it sends work */
+.rn { background: none; border: 0; padding: 0; font: inherit; font-family: var(--mono); color: inherit; text-decoration: underline dotted var(--fill-2); text-underline-offset: 3px; cursor: pointer; }
+.rn:hover, .rn[aria-expanded="true"] { color: var(--text); text-decoration-color: var(--text-2); }
+.rn.more { font-family: var(--sans); font-size: 12px; color: var(--text-3); }
+.pill { display: inline-block; font-family: var(--sans); font-size: 12px; font-weight: 400; line-height: 16px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--text-3); white-space: nowrap; }
+.rcard { position: absolute; z-index: 30; width: min(380px, calc(100vw - 32px)); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 14px 16px; font-size: 13px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); animation: fade .15s var(--ease) backwards; }
+.rcard .rtop { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.rcard .rnm { font-family: var(--mono); font-size: 14px; font-weight: 500; }
+.rcard .rpos { margin-left: auto; font-size: 12px; color: var(--text-3); }
+.rcard .rlbl { margin-top: 12px; font-size: 12px; color: var(--text-3); }
+.rcard .rtxt { margin-top: 2px; color: var(--text); }
+.rcard .rtxt.d { color: var(--text-2); }
+.rcard .rtxt.none { color: var(--text-3); font-style: italic; }
+.rcard .kv { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); grid-template-columns: 76px minmax(0, 1fr); gap: 4px 10px; }
+.rcard .kv > * { min-width: 0; overflow-wrap: anywhere; }
+.rcard .kv .mono { font-size: 13px; }
+.rcard .racts { margin-top: 12px; display: flex; gap: 16px; font-size: 12px; }
+.rcard .lk { background: none; border: 0; padding: 0; font: inherit; color: var(--text-2); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.rcard .lk:hover { color: var(--text); }
+
 /* motion: short entrances only, never replayed by the live refresh */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -475,23 +495,72 @@ details.more > summary:hover { color: var(--text); }
 .insp .kv { margin-top: 10px; }
 .insp .kv > * { min-width: 0; overflow-wrap: anywhere; }
 
-/* why this rule: a vertical stepper, one line per step */
-.insp .step { display: grid; grid-template-columns: 18px 170px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 5px 0; font-size: 13px; }
-.insp .step .g { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); align-self: center; }
-.insp .step .g.good { background: var(--good); }
-.insp .step .g.warn { background: var(--warn); }
-.insp .step .n { font-family: var(--mono); font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.insp .step.hit .n { color: var(--text); font-weight: 500; }
-.insp .step .w { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.insp .step.hit .w, .insp .step.fired .w { color: var(--text-2); }
-.insp .step.miss .n { color: var(--text-3); }
-.insp .step.fold { color: var(--text-3); font-size: 12px; grid-template-columns: 18px minmax(0, 1fr); }
-.insp .step.fold > span { overflow-wrap: anywhere; }
-.insp .missed { border-left: 1px solid var(--line); margin-left: 3px; padding-left: 0; }
-.insp .missed .step { grid-template-columns: 14px 166px minmax(0, 1fr); }
-.insp .diff { margin: 0 0 8px; font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
-.insp .iquota, .insp .ilane { color: var(--text); }
-.insp .ilane .ref { display: block; font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+/* why this rule: the result in three cells, what the rule is for, the
+   closest miss, the ladder as replayed in one grid, then quota, lane and
+   what the replay ran under */
+.insp .wstrip { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, .8fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.insp .wstrip > div { background: var(--surface-2); padding: 8px 12px; min-width: 0; }
+.insp .wstrip .k { font-size: 12px; color: var(--text-3); }
+.insp .wstrip .v { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+.insp .wstrip .v .sans { font-family: var(--sans); }
+.insp .wstrip .s { font-size: 12px; color: var(--text-3); margin-top: 2px; overflow-wrap: anywhere; }
+.insp .wstrip .s .badge { font-size: 12px; padding: 0 6px; margin-right: 2px; }
+.insp .wrow { margin: 12px 0 0; display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; font-size: 13px; color: var(--text-2); }
+.insp .wrow + .wrow { margin-top: 4px; }
+.insp .wrow .wl { font-size: 12px; color: var(--text-3); padding-top: 1px; }
+.insp .wrow .rn { font-size: 13px; }
+.insp .wn { color: var(--warn); font-weight: 500; }
+.insp .notrace { margin: 14px 0 0; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 6px; font-size: 13px; color: var(--text-2); }
+.insp .diff { margin: 12px 0 0; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.insp .lad3 { margin-top: 14px; container-type: inline-size; }
+.insp .lr3 { display: grid; grid-template-columns: 14px minmax(0, 1.3fr) 84px 112px 64px 64px minmax(0, 1fr); gap: 0 10px; align-items: baseline; padding: 6px 8px; font-size: 13px; border-top: 1px solid var(--line); }
+.insp .lr3.cont { border-top: 0; padding-top: 0; }
+.insp .lr3.th { border-top: 0; padding-bottom: 4px; font-size: 12px; color: var(--text-3); }
+.insp .lr3 .cells { display: contents; }
+.insp .lr3 .mk { align-self: center; display: flex; }
+.insp .lg { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+.insp .lg.good { background: var(--good); }
+.insp .lg.warn { background: var(--warn); }
+.insp .lg.none { background: none; box-shadow: inset 0 0 0 1px var(--fill-2); }
+.insp .lr3 .nm { min-width: 0; overflow-wrap: anywhere; }
+.insp .lr3 .nm .rn, .insp .lr3 .nm .id { font-family: var(--mono); color: var(--text-2); }
+.insp .lr3 .ds { display: block; font-size: 12px; color: var(--text-3); line-height: 1.4; margin-top: 1px; }
+.insp .lr3 .ck { color: var(--text-2); overflow-wrap: anywhere; }
+.insp .lr3 .got { text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+.insp .lr3 .got small { font-weight: 400; font-size: 12px; color: var(--text-3); margin-left: 5px; }
+.insp .lr3.th .got { font-weight: 400; }
+.insp .lr3 .need { color: var(--text-3); overflow-wrap: anywhere; }
+.insp .lr3 .short { color: var(--text-3); font-size: 12px; }
+.insp .lr3 .to { font-family: var(--mono); font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.insp .lr3.th .to { font-family: var(--sans); }
+.insp .lr3.near .nm .rn { color: var(--text); }
+.insp .lr3.fold .fl { grid-column: 2 / -1; font-size: 12px; color: var(--text-3); }
+.insp .lr3.fold .fl .rn { font-size: 12px; }
+.insp .lr3.fold .fl .lk { font-size: 12px; }
+.insp .hitg { background: var(--surface-2); border-radius: 6px; border-top: 1px solid var(--line); }
+.insp .hitg .lr3 { border-top: 0; }
+.insp .hitg + .lr3, .insp .hitg + .lskip > .lr3:first-child { border-top: 0; }
+.insp .hitg .nm .rn, .insp .hitg .nm .id, .insp .hitg .ck, .insp .hitg .to { color: var(--text); }
+.insp .hitg .nm .rn, .insp .hitg .nm .id { font-weight: 500; }
+/* narrow: the cells run on as one line under the rule's name, never off the side */
+@container (max-width: 600px) {
+  .insp .lr3 { grid-template-columns: 14px minmax(0, 1fr); padding: 6px 4px; }
+  .insp .lr3.th { display: none; }
+  .insp .lr3 .nm:empty { display: none; }
+  .insp .lr3 .cells { display: flex; flex-wrap: wrap; gap: 0 8px; grid-column: 2; font-size: 12px; }
+  .insp .lr3 .cells > :empty { display: none; }
+  .insp .lr3 .got { text-align: left; }
+  .insp .lr3 .to::before { content: "→ "; }
+  .insp .lr3 .short .n::after { content: " short"; }
+}
+.insp .wctx { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
+.insp .wln { display: grid; grid-template-columns: 8px 52px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.insp .wln .lg { align-self: center; }
+.insp .wln .wk { font-size: 12px; color: var(--text-3); }
+.insp .wln > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.insp .wln .ilane .ref { display: inline; font-size: 12px; margin: 0; }
+.insp .wln .ilane .ref::before { content: " · "; }
+.insp .wmeta { margin: 2px 0 0; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
 
 /* why this effort: the move, its status and the thresholds it was weighed against */
 .insp .plan { font-size: 13px; }
@@ -612,9 +681,10 @@ body.drawer-open .wrap { padding-right: calc(min(36rem, 100vw) + 16px); }
   .insp .decision { padding: 10px 12px; font-size: 13px; }
   .insp .detail { padding: 4px 14px 14px; }
   .insp .sec > summary .note { margin-left: 20px; text-align: left; flex-basis: 100%; }
-  .insp .step { grid-template-columns: 18px minmax(0, 1fr); }
-  .insp .step .w { grid-column: 2; white-space: normal; overflow-wrap: anywhere; }
-  .insp .missed .step { grid-template-columns: 14px minmax(0, 1fr); }
+  .insp .wstrip { grid-template-columns: minmax(0, 1fr); }
+  .insp .wrow { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .insp .wln { grid-template-columns: 8px minmax(0, 1fr); }
+  .insp .wln .wk { display: none; }
   .insp .kv.plim, .insp .shape .kv { grid-template-columns: 120px minmax(0, 1fr); }
   .insp .score { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .insp .score .viz { grid-column: 1 / -1; }
@@ -637,14 +707,17 @@ body.drawer-open .wrap { padding-right: calc(min(36rem, 100vw) + 16px); }
 /* the ladder: first match wins */
 .rv .tbl.ladder { display: flex; flex-direction: column; align-items: stretch; margin: 0; }
 .rv .nw { white-space: nowrap; }
-.rv .ladder .tr { grid-template-columns: 24px 150px minmax(0, 1.3fr) minmax(0, 1.6fr) 96px; padding-inline: 8px; margin-inline: -8px; }
+.rv .ladder .tr { grid-template-columns: 24px minmax(0, 1.5fr) minmax(0, 1.4fr) minmax(0, 1.1fr) 96px; padding-inline: 8px; margin-inline: -8px; align-items: baseline; }
+.rv .ladder .tr:not(.th) > .n { white-space: normal; overflow-wrap: anywhere; }
+.rv .ladder .n .pill { margin-left: 6px; }
+.rv .ladder .n .ds { display: block; margin-top: 2px; font-family: var(--sans); font-size: 12px; line-height: 1.4; color: var(--text-3); }
 .rv .ladder .tr:not(.th) > .when, .rv .ladder .tr:not(.th) > .to { white-space: normal; overflow-wrap: anywhere; }
 .rv .ladder .tr.go { cursor: pointer; }
 .rv .ladder .tr.go:hover { background: var(--surface-2); }
 .rv .ladder .tr.on { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--text); }
 .rv .ladder .i { font-size: 12px; color: var(--text-3); }
 .rv .ladder .n { font-family: var(--mono); font-size: 13px; }
-.rv .ladder .when { color: var(--text-2); font-size: 12px; }
+.rv .ladder .when { color: var(--text-2); font-size: 13px; }
 .rv .ladder .when .always { color: var(--text-3); }
 .rv .ladder .to { font-family: var(--mono); font-size: 12px; }
 .rv .ladder .to .rlane { color: var(--text-3); font-family: var(--sans); }
@@ -675,6 +748,10 @@ body.drawer-open .wrap { padding-right: calc(min(36rem, 100vw) + 16px); }
 .rv .rtk.draft { width: 2px; margin-left: -.5px; background: var(--warn); }
 .rv .rlb { position: absolute; top: 13px; transform: translateX(-50%); font-family: var(--mono); font-size: 11px; line-height: 12px; color: var(--text-3); white-space: nowrap; cursor: default; }
 .rv .rlb.draft { color: var(--warn); }
+.rv .rlevels { position: relative; height: 16px; margin-top: 2px; }
+.rv .rlevels span { position: absolute; transform: translateX(-50%); font-size: 12px; line-height: 16px; color: var(--text-2); white-space: nowrap; }
+.rv .rlevels span.l0 { transform: none; }
+.rv .rlevels span.ln { transform: translateX(-100%); }
 .rv .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--text-3); margin-top: 6px; }
 .rv .legend .knife { margin-left: auto; }
 
