@@ -175,8 +175,10 @@ existing binding when the classifier recovers.
 | **Ordinary chat client** | Define a [legacy alias](docs/guides/legacy-routing.md) if the client cannot resolve sessions. It has different pin and fallback semantics. |
 | **Codex** | The [experimental adapter](docs/ADAPTIVE_EFFORT.md#trying-it-with-codex) is for a separately configured deployment, not the default onboarding path. |
 
-The shipped config exposes only strict `auto`. Older `auto-fast`, `auto-code`,
-and `auto-session` examples require custom configurations.
+The shipped config exposes strict `auto`. It also keeps the retired
+`auto-conserve`, which routes as `auto`, only for sessions bound under it.
+Older `auto-fast`, `auto-code`, and `auto-session` examples require custom
+configurations.
 
 ## Inspect, deploy, and extend
 

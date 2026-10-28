@@ -523,8 +523,12 @@ One SQLite file holds pins, a decision log and feedback, and, for strict
 sessions, the bindings, the per-attempt request records and the effort ledger.
 The log keeps Jev's answers with their confidences, the computed counts and
 flags, the rule that fired, and a hash of the config that produced the row. It
-never keeps message text, prompts or API keys. The conversation key, the
-session owner and every request fingerprint are hashes and are not reversible.
+never keeps API keys or the `Authorization` header. Message text is kept only
+while `settings.log_state` is on (the shipped default), only after `scrub.py`
+and a length cap, and only in named columns: the state Jev was shown, each
+user turn's prompt, a short summary of each turn, and the session's title and
+preview. Replay never reads them. The conversation key, the session owner and
+every request fingerprint are hashes and are not reversible.
 
 That is enough to replay the policy against past decisions, which is what
 `evals/tune.py` does — and, one row at a time, what `decisions replay` does.

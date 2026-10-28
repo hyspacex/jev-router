@@ -1,5 +1,7 @@
 # Effort qualification report: gpt-6-astra on CLIProxyAPI (Responses)
 
+Newer evidence for this profile: [2026-10-26 report](2026-10-26-gpt-6-astra-responses.md).
+
 **Date:** 2026-09-19
 **Profile (model key):** `gpt-6-astra-responses`, in the test config built by
 `examples/make-adaptive-astra.py`. `router.yaml` itself declares nothing

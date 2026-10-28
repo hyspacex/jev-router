@@ -38,3 +38,5 @@ evals/cases_public_labels.yaml
 coverage.xml
 htmlcov/
 .playwright-mcp/
+router.local.yaml
+cliproxyapi.conf

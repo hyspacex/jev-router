@@ -375,8 +375,11 @@ config error with a message saying so: a strict session is scoped to the owner
 of that credential, so there has to be one to scope it to. A deployment that
 does not want strict sessions sets `session_routing.enabled: false`.
 
-Nothing recoverable is stored. Request fingerprints are sha256 hashes, the
-owner is a sha256 hash, and no message text, prompt or key is written.
+Nothing recoverable about the caller is stored. Request fingerprints are
+sha256 hashes, the owner is a sha256 hash, and no key is written. Message
+text is a separate matter: with `settings.log_state` on, the shipped default,
+the session's title, prompt preview and each turn's prompt are kept, scrubbed
+and capped. See [stored text](guides/operations.md#stored-text).
 
 ## A minimal client
 

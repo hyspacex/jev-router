@@ -4,8 +4,6 @@
 
 Live evaluations spend provider quota. Start with offline tests and dry runs; use a separate benchmark config and database.
 
-## Evaluating and tuning
-
 Everything under `evals/` measures the router against 171 labelled requests in
 `evals/cases.yaml`. Every case carries a `slice` saying what shape of request
 it is:

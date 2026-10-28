@@ -4,8 +4,6 @@
 
 Quota affects new admissions, never an existing strict binding. For overlapping windows, use the [coherent-window configuration](../SEMANTIC_POLICY.md#quota-windows).
 
-## Quota-aware routing
-
 Several providers are flat-rate subscriptions with a usage window rather than
 a metered bill. When one of them is being spent faster than its window, new
 conversations should lean on the others, and the expensive model should be
@@ -22,7 +20,7 @@ snapshot that has aged out all mean pressure 0, which routes exactly as the
 router routed before quota existed. Every source ships disabled, so a fresh
 install runs no subprocess.
 
-### A quota source
+## A quota source
 
 Sources are registered by name, like deciders. Four ship: `codexbar`,
 `command`, `static` and `none`.
@@ -111,7 +109,7 @@ providers:
 `static` takes the numbers straight from `config` and is for tests and demos.
 `none` reports nothing.
 
-### The CodexBar source
+## The CodexBar source
 
 CodexBar.app writes every subscription it watches to
 `~/Library/Group Containers/<team>.com.steipete.codexbar/widget-snapshot.json`
@@ -160,7 +158,7 @@ is an `error`. Both are pressure 0. The CLI has no browser session, so for a
 web-cookie provider such as Ollama it usually finds nothing; the snapshot is
 the source that works there.
 
-#### Tracked subscriptions
+### Tracked subscriptions
 
 CodexBar may watch subscriptions the router does not route to, such as a
 Claude or Antigravity plan. With `codexbar.enabled` and
@@ -188,7 +186,7 @@ To add a source, write a class with `async def fetch() -> QuotaSnapshot` in
 `@register_quota_source("name")`. A source may never raise: return a snapshot
 carrying an `error` instead.
 
-### How pressure is computed
+## How pressure is computed
 
 ```yaml
 quota_policy:
@@ -217,7 +215,7 @@ instead: 1.0 while the breaker is open, then decaying to 0 over
 `recovery_seconds` after it closes. A provider with both takes the higher of
 the two.
 
-### What pressure does
+## What pressure does
 
 Three things, all bounded.
 
@@ -256,7 +254,7 @@ entry in its route, or falls through to a cheaper rule.
 
 Pressure never touches a pinned conversation. It affects new decisions only.
 
-### When a window is spent
+## When a window is spent
 
 Pressure is about pace. Whether a provider can serve at all is a separate
 fact: a fresh window used at or above `exhausted_at` means that provider is
@@ -272,7 +270,7 @@ spent provider.
 `exhausted_at: 100` refuses only a fully spent window. Lower it to keep a
 reserve for sessions already running.
 
-### Balancing in both directions
+## Balancing in both directions
 
 `auto` moves work away from whichever subscription is busy, but only between
 pairs the admission test measured as equally good for that work
@@ -296,7 +294,7 @@ admissions.
 2026-09-24. It now routes exactly as `auto` and is kept only so sessions bound
 under it still run.
 
-### Seeing it
+## Seeing it
 
 ```sh
 uv run jev-router quota --poll            # snapshots, pressures, staleness, errors

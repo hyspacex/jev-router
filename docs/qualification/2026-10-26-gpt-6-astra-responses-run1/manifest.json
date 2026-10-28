@@ -24,7 +24,7 @@
         "between_turn": "native_configuration_update",
         "qualification": "verified",
         "cache_behavior": "unverified",
-        "qualification_ref": "./docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
+        "qualification_ref": "docs/qualification/2026-09-19-gpt-6-astra-cliproxyapi-responses.md"
       }
     }
   },

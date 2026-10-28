@@ -2,15 +2,18 @@
 
 [Documentation index](../README.md) · [Project home](../../README.md)
 
-### Other commands
+## Commands
 
 ```sh
+uv run jev-router check-config              # validate router.yaml and print a summary
+uv run jev-router serve --mode shadow
 uv run jev-router explain request.json      # features, state, Jev answers, chosen model
 uv run jev-router explain request.json --pressure openai=0.8
 uv run jev-router quota --poll              # quota snapshots and pressure per provider
 uv run jev-router quota --poll --json
 uv run jev-router decisions -n 20           # tail the decision log
 uv run jev-router decisions replay last     # re-run one decision from its own row
+uv run jev-router decisions replay '#730'   # one exact row; also --row 730
 uv run jev-router feedback last too_weak --model gpt-6-astra --effort high
 uv run jev-router sessions list             # strict session bindings
 uv run jev-router sessions show <id>
@@ -20,6 +23,11 @@ uv run jev-router prune --older-than-days 30   # irreversible
 uv run jev-router adapter --alias <strict-alias> --port 18320
 uv run jev-router config show --window 7d      # the rules, their lines and hits
 uv run jev-router config preview draft.yaml    # replay recent admissions under a draft
+uv run jev-router config-snapshots list        # stored configs, scrubbed, and whether each loads
+uv run jev-router config-snapshots import old.yaml   # only a file whose hash a decision carries
+uv run jev-router bookmarks add <session-id> --label "Debugging" [--slug debugging]
+uv run jev-router bookmarks list
+uv run jev-router bookmarks remove <slug>
 ```
 
 `config preview` validates a draft exactly as startup validates a file, then
@@ -53,7 +61,7 @@ rather than claiming a match. `sessions` and `adapter` belong to strict
 sessions; see [`docs/SESSION_ROUTING.md`](../../docs/SESSION_ROUTING.md) and
 [`docs/ADAPTIVE_EFFORT.md`](../../docs/ADAPTIVE_EFFORT.md).
 
-### Endpoints
+## Endpoints
 
 | Path | Method | Behaviour | Writes |
 | --- | --- | --- | --- |
@@ -339,7 +347,7 @@ the allowlisted facts, the answers, `chosen` (`rule`, `route`, `model`,
 The note is scrubbed and cut to 500 characters. It returns `{saved, path,
 total_cases}`. Nothing else is written.
 
-### Response headers
+## Response headers
 
 On an alias request:
 
@@ -369,7 +377,7 @@ On a strict session's execution:
 | `X-Router-Effective-Effort` | only when adaptation is on: the effort this request really ran at |
 | `X-Router-Compaction-Epoch` | only when adaptation is on: how many times the history has been folded up |
 
-### Environment
+## Environment
 
 | Variable | Read by | What it does |
 | --- | --- | --- |

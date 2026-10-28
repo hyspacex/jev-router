@@ -1,6 +1,8 @@
 # Client integrations
 
-Production exposes one alias: **auto**, a strict fixed-model session. Direct
+Production exposes one alias: **auto**, a strict fixed-model session. The
+retired `auto-conserve` stays in the shipped config only for sessions bound
+under it. Direct
 OpenAI requests with `model: auto` are not enough: clients must resolve a
 binding, then acknowledge it on execution. Existing generic concrete-model
 passthrough remains available. The legacy pin implementation remains for
