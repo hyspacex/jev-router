@@ -1,6 +1,6 @@
 # Evaluation reports
 
-Dated runs, newest first. Each directory holds its plan or method, the
+Dated runs, newest first. Each report directory holds its plan or method, the
 measurements with their intervals, a manifest, and the scripts that produced
 them. Live scripts spend provider quota; reply text stays in the git-ignored
 `evals/.cache/`. Verdicts that change the model pool are recorded in
@@ -14,5 +14,7 @@ them. Live scripts spend provider quota; reply text stays in the git-ignored
 | [2026-09-20 GLM tool pilot](2026-09-20-glm-tool-pilot/summary.md) | Can GLM-5.3 handle tool-driven coding sessions? | Pilot pass on the bounded tasks; broad tool qualification inconclusive. |
 | [2026-09-20 GLM effort](2026-09-20-glm-effort/summary.md) | Which GLM effort qualifies for moderate tool routing? | Deployed, after a shuffled-label control discrepancy was resolved. |
 | [2026-09-19 session pilot](2026-09-19-session-pilot/summary.md) | Fixed model, simple rules or Jev, over eight coding tasks? | 24 of 24 sessions passed; adaptive effort was off. |
+| [2026-09-19 outcome benchmark](2026-09-19-outcome-benchmark/outcomes.md) | Which route gives an adequate answer most cheaply, case by case? | 19 of 58 cases finished before the run stopped itself; the fast model is best at effort none. |
+| [2026-09-19 classifier run](../results/20260919-081432/summary.md) | How accurately do Jev's answers route the 271 labelled cases? | The final classifier eval of that day, kept in `evals/results/`; later classifier changes are in EXPERIMENTS.md. |
 
 Do not read an older report as a measurement of the current configuration.

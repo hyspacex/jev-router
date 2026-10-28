@@ -41,7 +41,7 @@ on its fixed model. Legacy aliases and adaptive effort have separate guides.
 | [Development and tests](development/testing.md) | Offline checks and regression coverage. |
 | [Evaluation guide](development/evaluation.md) | Classification, controls, live outcomes, isolation, and tuning. |
 | [Design](../DESIGN.md) | Architecture, trade-offs, and rejected alternatives. |
-| [Observability v2 design](OBSERVABILITY_V2_DESIGN.md) | Implemented 2026-10-27: CodexBar quota, scrubbed session and turn text, the turn inspector, the Rules view, and system-level metrics. Its implementation notes list where the code differs. |
+| [Observability v2 design](OBSERVABILITY_V2_DESIGN.md) | Implemented 2026-10-27, UI superseded by the v3 dashboard: CodexBar quota, scrubbed session and turn text, the turn inspector, the Rules view, and system-level metrics. Its implementation notes list where the code differs. |
 | [Test plan](../TESTPLAN.md) | Measurement methodology and acceptance-case mapping. |
 | [Session and effort specification](R2_SPEC.md) | C01–C34 and F01–F20 contracts, with later owner decisions marked in place. |
 | [Experiment log](../evals/EXPERIMENTS.md) | Changes tried and their before/after evidence. |
@@ -62,9 +62,9 @@ results as measurements of the current configuration.
   first, with its question and outcome. Pool verdicts live in [POOL.md](../POOL.md).
 - [Coding-session pilot](../evals/reports/2026-09-19-session-pilot/summary.md):
   the eight-task fixed/rules/Jev comparison; adaptive effort was off.
-- [Outcome benchmark, 2026-09-19](../evals/outcomes.md): graded replies over
-  19 cases, with [its manifest](../evals/manifest.md). `evals/run_outcomes.py`
-  overwrites both files on its next run.
+- [Outcome benchmark, 2026-09-19](../evals/reports/2026-09-19-outcome-benchmark/outcomes.md):
+  graded replies over 19 cases, with [its manifest](../evals/reports/2026-09-19-outcome-benchmark/manifest.md).
+  Each run of `evals/run_outcomes.py` now writes its own dated directory.
 - [Deployment qualification reports](qualification/): provisional deployment
   evidence and a template, not blanket model-family qualification.
 - [Consolidation verification](verification/2026-09-19-consolidation.md): dated

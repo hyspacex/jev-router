@@ -5,7 +5,8 @@ Reads three sources and looks for the cheapest set of thresholds that keeps
 under-routing at or below the limit on the tuning split:
 
   1. cached Jev answers from an evals/results/<run> directory
-  2. evals/outcomes.json, where the outcome benchmark revised a label
+  2. the newest evals/reports/*-outcome-benchmark/outcomes.json, where the
+     outcome benchmark revised a label
   3. the `decisions` and `feedback` tables in the router's sqlite log
 
 Feedback rows count three times, since they come from real work.
@@ -38,6 +39,7 @@ from common import (  # noqa: E402
     ROOT,
     config_with_overlay,
     effort_rank,
+    latest_outcomes,
     questions_to_replace,
     route_cost,
     tier_of,
@@ -653,7 +655,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--results", default=str(EVALS_DIR / "results" / "latest"))
     p.add_argument("--variant", default="winner")
-    p.add_argument("--outcomes", default=str(EVALS_DIR / "outcomes.json"))
+    p.add_argument("--outcomes", default=str(latest_outcomes() or ""),
+                   help="outcomes.json to read (default: the newest outcome benchmark)")
     p.add_argument("--db", default="~/.jev-router/router.db")
     p.add_argument("--samples", type=int, default=3000)
     p.add_argument("--limit", type=float, default=UNDER_ROUTE_LIMIT,
@@ -687,7 +690,8 @@ def main() -> int:
 
     widened = 0
     if not args.no_outcomes:
-        widened = apply_outcomes(cases, Path(args.outcomes))
+        if args.outcomes:
+            widened = apply_outcomes(cases, Path(args.outcomes))
 
     feedback: list[TuneCase] = []
     if not args.no_feedback:

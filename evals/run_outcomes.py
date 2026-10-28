@@ -26,8 +26,8 @@ Three things make the result trustworthy rather than merely available:
 Every reply and every judgement is cached on disk by a hash of the request, so
 a rerun costs nothing and a stopped run resumes. Cases are run one at a time in
 priority order, so a run that stops on its budget leaves whole cases finished
-rather than every case half done. Writes evals/outcomes.json and
-evals/outcomes.md.
+rather than every case half done. Writes outcomes.json, outcomes.md and a
+manifest into evals/reports/<date>-outcome-benchmark/ (`--out` to choose).
 """
 
 from __future__ import annotations
@@ -60,6 +60,8 @@ from manifest import (  # noqa: E402
 from common import (  # noqa: E402
     EVALS_DIR,
     config_with_overlay,
+    latest_outcomes,
+    outcome_report_dir,
     ROUTE_ORDER,
     Budget,
     Case,
@@ -655,9 +657,9 @@ async def main_async(args: argparse.Namespace) -> int:
         # Cases that already have results come first, so the k samples land on
         # the cases with something to compare against before any new case is
         # started. Everything else keeps its file order behind them.
-        previous = EVALS_DIR / "outcomes.json"
+        previous = latest_outcomes()
         known: list[str] = []
-        if previous.exists():
+        if previous is not None:
             try:
                 known = [
                     row["case_id"]
@@ -721,10 +723,12 @@ async def main_async(args: argparse.Namespace) -> int:
         "cases": rows,
         "proposed_label_changes": proposals,
     }
-    (EVALS_DIR / "outcomes.json").write_text(json.dumps(payload, indent=2))
-    (EVALS_DIR / "outcomes.md").write_text(build_report(rows, routes))
+    out = Path(args.out) if args.out else outcome_report_dir(datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "outcomes.json").write_text(json.dumps(payload, indent=2))
+    (out / "outcomes.md").write_text(build_report(rows, routes))
     write_manifest(
-        EVALS_DIR,
+        out,
         build_manifest(
             script="evals/run_outcomes.py",
             kind=run_kind(upstream.calls, len(order) * len(routes) * args.samples),
@@ -771,7 +775,7 @@ async def main_async(args: argparse.Namespace) -> int:
     print(f"live upstream calls: {upstream.calls}")
     if budget is not None:
         print(budget.line())
-    print(f"wrote {EVALS_DIR / 'outcomes.json'} and {EVALS_DIR / 'outcomes.md'}")
+    print(f"wrote {out / 'outcomes.json'} and {out / 'outcomes.md'}")
     return 0
 
 
@@ -792,6 +796,7 @@ def main() -> int:
                         "already-measured ones first")
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--apply-labels", action="store_true", help="write the clear-cut changes")
+    p.add_argument("--out", help="report directory (default evals/reports/<UTC date>-outcome-benchmark)")
     args = p.parse_args()
     return asyncio.run(main_async(args))
 

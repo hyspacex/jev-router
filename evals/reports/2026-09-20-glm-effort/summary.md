@@ -54,7 +54,7 @@ verifies usable tool responses at explicit `(low)` and `(high)`; it cannot
 prove what reasoning budget the upstream actually applied. Max is not added
 without endpoint-specific testing.
 
-The existing `evals/outcomes.md` reports Astra low mean 9.37 (interval
+The existing `evals/outcomes.md` (now [`evals/reports/2026-09-19-outcome-benchmark/outcomes.md`](../2026-09-19-outcome-benchmark/outcomes.md)) reports Astra low mean 9.37 (interval
 8.88–9.87), medium 9.51 (9.01–10.00). Those small-task results do not justify
 removing the medium safety defaults. Low remains the existing careful-work
 choice; removing the earlier tool rule makes it reachable.

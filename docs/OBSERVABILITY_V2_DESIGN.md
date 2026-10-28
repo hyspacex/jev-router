@@ -1,6 +1,6 @@
 # `jev-router` Observability Platform v2 — Design Specification
 
-**Status:** Implemented, 2026-10-27. The code is the reference where it and this document disagree; see the notes below. How to use it: [operations guide](guides/operations.md#live-audit-dashboard). Endpoints: [API reference](reference/api.md).  
+**Status:** Implemented, 2026-10-27; its UI was superseded the same day by the v3 dashboard. Read it for the telemetry design and its reasoning, not for the page layout. The code is the reference where it and this document disagree; see the notes below. How to use it: [operations guide](guides/operations.md#live-audit-dashboard). Endpoints: [API reference](reference/api.md).  
 **Scope:** `jev-router` Core Telemetry (`features.py`, `state.py`, `pins.py`, `sessions.py`, `quota.py`, `config.py`, `app.py`) + Observability UI (`dashboard.py`, `static/dashboard.{html,css,js}`)
 
 ## Implementation notes

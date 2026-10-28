@@ -95,7 +95,7 @@ that raising its effort made answers slightly worse on average and cost a third
 more latency. A rerun with three samples per route and the token cap raised
 from 3,000 to 8,000 found the same signs, no truncation at all on any route,
 and a blind judge that scores about 1.5 points below the programmatic check it
-was measured against. `evals/outcomes.md` has the tables.
+was measured against. [The 2026-09-19 outcome benchmark](../../evals/reports/2026-09-19-outcome-benchmark/outcomes.md) has the tables.
 
 Caveats. The cases are written rather than sampled, and labelled by one person,
 so task accuracy is measured against one opinion. A sample of 100 public

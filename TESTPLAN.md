@@ -277,7 +277,7 @@ uv run python evals/run_outcomes.py --apply-labels     # write the clear-cut cha
 3. Grade with a programmatic check where one exists. **The check decides.** The judge still runs when the spec also has a rubric, so the two can be compared, but its score is not mixed in. Record score, latency, output tokens and `finish_reason`.
 4. For each case, the cheapest adequate route is the cheapest candidate whose mean score is within 0.5 points (of 10) of the best.
 5. **Resample the winner.** Bootstrap over the k samples, 500 draws, taking one sample per route each time and recomputing the winner. Report the route flip rate and the tier flip rate. A case whose tier flips in more than 20% of draws is labelled `unstable` and is never allowed to override a hand label.
-6. Where a stable outcome disagrees with the hand label, `evals/outcomes.md` lists the proposed change and the reason. `--apply-labels` writes only the clear-cut ones into `cases.yaml`, marking each changed case with `label_source: outcome`. The rest are left for a person.
+6. Where a stable outcome disagrees with the hand label, the run's `outcomes.md` lists the proposed change and the reason. `--apply-labels` writes only the clear-cut ones into `cases.yaml`, marking each changed case with `label_source: outcome`. The rest are left for a person.
 
 ### Three numbers that say whether to believe the rest
 
@@ -315,7 +315,7 @@ This is also where existing benchmark knowledge enters. An earlier in-house mode
 
 Run layer 3 when a model is added, when a model version changes, and otherwise once a quarter. It costs roughly 40 cases times 7 routes, about 280 calls, plus a judge call for each case that has a rubric.
 
-Results of the 2026-09-18 run, over the 25 cases that completed (`evals/outcomes.md`):
+Results of the 2026-09-18 run, over the 25 cases that completed (`evals/outcomes.md` as of commit `343603f`; later runs overwrote that file before runs got their own directories):
 
 | route | mean score | wins outright | adequate on | median latency |
 | --- | --- | --- | --- | --- |
@@ -372,8 +372,9 @@ harder rubric.
 
 The run was resumed the same day and reached 19 of the 58 gradeable cases
 before stopping itself at 256 of 400 calls, when `ollama/glm-5.3-flash(high)`'s
-own median latency went from 5.6 s to 16.9 s. `evals/outcomes.md` has the
-tables and `evals/outcomes.json` names the 39 cases that did not run.
+own median latency went from 5.6 s to 16.9 s.
+[`evals/reports/2026-09-19-outcome-benchmark/outcomes.md`](evals/reports/2026-09-19-outcome-benchmark/outcomes.md) has the
+tables and its `outcomes.json` names the 39 cases that did not run.
 
 Three things changed with the extra nine cases. The judge looks worse, not
 better: it differs from the programmatic check by 2 points or more on 38.8%
@@ -464,7 +465,7 @@ Shadow mode comes first. For a week the router logs what it would have chosen wh
 uv run python evals/tune.py --variant router_yaml --samples 5000
 ```
 
-It reads three sources: the cached answers in `evals/results/<run>/per_case.jsonl`, `evals/outcomes.json`, and the `decisions` and `feedback` tables in the sqlite log.
+It reads three sources: the cached answers in `evals/results/<run>/per_case.jsonl`, the newest `evals/reports/*-outcome-benchmark/outcomes.json`, and the `decisions` and `feedback` tables in the sqlite log.
 
 1. Each feedback row with a `better_model` or `better_effort` becomes a replayable case (stored answers plus features, with your correction as the label). Feedback cases count three times as much as synthetic ones, since they come from real work.
 2. The tool searches the policy's numeric settings: the difficulty cutoffs between effort levels, the difficulty cutoff between models, the confidence floor, and the harm and faithfulness thresholds. It looks for the setting with the lowest total spend that keeps under-routing at 5% or less, where total spend is quota plus the cost of the under-routes. One under-route is priced at 60 quota units (`UNDER_ROUTE_COST` in `tune.py`): a redo on the frontier model at high effort, counted three times because the person's time is worth more than the quota. Without that term the search happily trades an under-route for half a quota unit.
