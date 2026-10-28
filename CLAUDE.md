@@ -107,7 +107,8 @@ the offline comparison until a qualified deployment and live arm are available.
   and `replay_decision`, which re-runs a stored decision from its own row.
 - `providers.py` — one circuit breaker per provider, in memory, plus the
   merge of quota pressure and health pressure.
-- `quota.py` — the quota source registry (`command`, `static`, `none`), the
+- `quota.py` — the quota source registry (`command`, `static`, `none`,
+  `codexbar`), the
   background poller, coherent overlapping windows, `snapshot_status`, and
   `compute_pressure`, which is pure.
 - `deciders/base.py` — the `Decision` dataclass and the decider registry.
@@ -135,7 +136,8 @@ the offline comparison until a qualified deployment and live arm are available.
   `configuration_update` item, full-replay and chain validation against the
   ledger, what a compaction request may be, and the bounded read-only SSE
   observer. Not a converter.
-- `adapter.py` — the Codex client shim behind `jev-router adapter`. A client,
+- `integrations/codex/adapter.py` — the Codex client shim behind
+  `jev-router adapter`; `adapter.py` only re-exports it. A client,
   not policy: it resolves a binding, asks for turn plans, inserts the items
   the plans hand it, and chooses nothing. In memory only.
 - `feedback.py` — validation shared by the CLI and the HTTP endpoint.
@@ -144,7 +146,7 @@ the offline comparison until a qualified deployment and live arm are available.
   percentiles and buckets from the tables, legacy rows counted apart),
   `/router/audit/sessions` (sessions with per-session aggregates, filtered by
   allowlisted `client`, `model`, `rule`, `state`, `adaptive`, `problem`,
-  `pinned`, `q` and `window`; facets; bookmarks) and
+  `pinned`, `feedback`, `q` and `window`; facets; bookmarks) and
   `/router/audit/sessions/{id}` (binding, admission, requests, plans, and the
   admission's trace, plus `turns[]`: one entry per user turn with its
   scrubbed prompt, state, Jev answers, plan and execution rollup). Every field
@@ -215,7 +217,8 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 - `effort_replay.py` + `effort_fixtures.yaml` — the between-turn policies
   compared offline over synthetic turn sequences, resampled by session.
 - `qualify_effort.py` — the live qualification of one exact deployment. It
-  plans by default; its allowlist is empty and it has never been run.
+  plans by default and its built-in allowlist is empty. Its live runs so far
+  are the 2026-10-26 reports in `docs/qualification/`.
 - `REPORT_TEMPLATE.md` — keeps policy replay, live qualification, coding
   outcomes and subscription observations apart.
 - `outcome_specs.yaml` + `checks.py` + `run_outcomes.py` — grade real replies,

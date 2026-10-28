@@ -300,6 +300,19 @@ def _route(name, score, cost, scores=None, checks=None, judges=None):
     }
 
 
+def test_latest_outcomes_is_the_newest_dated_outcome_report(tmp_path, monkeypatch):
+    import common
+
+    monkeypatch.setattr(common, "REPORTS_DIR", tmp_path)
+    assert common.latest_outcomes() is None
+    for date in ["2026-09-19", "2026-11-02", "2026-10-01"]:
+        run = common.outcome_report_dir(date)
+        run.mkdir()
+        (run / "outcomes.json").write_text("{}")
+    (tmp_path / "2026-12-01-model-refresh").mkdir()
+    assert common.latest_outcomes() == tmp_path / "2026-11-02-outcome-benchmark" / "outcomes.json"
+
+
 def test_cheapest_adequate_prefers_the_cheap_route_within_the_gap():
     import run_outcomes as ro
 

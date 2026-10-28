@@ -24,6 +24,19 @@ import yaml
 EVALS_DIR = Path(__file__).resolve().parent
 ROOT = EVALS_DIR.parent
 CACHE_DIR = EVALS_DIR / ".cache"
+REPORTS_DIR = EVALS_DIR / "reports"
+OUTCOME_REPORT = "outcome-benchmark"
+
+
+def outcome_report_dir(date: str) -> Path:
+    """Where one outcome benchmark run writes: reports/<date>-outcome-benchmark."""
+    return REPORTS_DIR / f"{date}-{OUTCOME_REPORT}"
+
+
+def latest_outcomes() -> Path | None:
+    """The newest outcome benchmark's outcomes.json, by its dated directory."""
+    runs = sorted(REPORTS_DIR.glob(f"*-{OUTCOME_REPORT}/outcomes.json"))
+    return runs[-1] if runs else None
 
 sys.path.insert(0, str(ROOT / "src"))
 

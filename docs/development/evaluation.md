@@ -121,8 +121,8 @@ exists it decides the score and the judge is scored against it. It needs
 models for real. Cases run one at a time in priority order under `--max-calls`,
 so a run that hits its budget leaves whole cases finished and resumes from the
 cache. It also stops itself if a route's own median latency triples or replies
-start coming back empty. It writes `evals/outcomes.json` and
-`evals/outcomes.md`; `--apply-labels` writes the clear-cut label changes back
+start coming back empty. It writes `outcomes.json`, `outcomes.md` and a
+manifest into `evals/reports/<date>-outcome-benchmark/` (`--out` to choose); `--apply-labels` writes the clear-cut label changes back
 into `cases.yaml`, and never writes one from a case whose winner is `unstable`.
 
 `import_public.py` samples WildChat (ODC-BY), BFCL, LongBench v2 and MGSM into
@@ -132,7 +132,7 @@ script drops anything the dataset flags as toxic and anything matching an email
 address, a phone number or a card-shaped number, and it never writes a label of
 its own. Labels live beside it in `cases_public_labels.yaml`.
 
-`tune.py` reads the cached answers, `evals/outcomes.json`, and the `decisions`
+`tune.py` reads the cached answers, the newest outcome benchmark's `outcomes.json`, and the `decisions`
 and `feedback` tables in the sqlite log. Feedback rows count three times. It
 searches for the cheapest set of thresholds that keeps under-routing at or
 below 5% on the tuning split and prints a unified diff. It never edits

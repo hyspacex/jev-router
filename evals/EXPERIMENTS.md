@@ -369,7 +369,7 @@ much.
 
 `evals/run_outcomes.py` ran 25 gradeable cases on all seven routes and graded
 each reply with a programmatic check, a blind judge, or both. The full table is
-in `evals/outcomes.md`.
+in `evals/outcomes.md` as of commit `343603f`.
 
 | route | mean score | wins outright | adequate on | median latency | median output tokens |
 | --- | --- | --- | --- | --- | --- |
@@ -411,7 +411,7 @@ clear-cut disagreements were written into `cases.yaml` with
 | quick-drug-interaction-73 | frontier/medium | fast/none | fast-tier scores 9.5, 10.0, 10.0; astra(low) was the worst route at 8.1 |
 | design-naming-bikeshed-24 | fast/none | frontier/medium | fast-tier scored 4.0 flat, frontier 6.0 to 7.0; the fast model padded a one-line naming question |
 
-Four more disagreements are listed in `evals/outcomes.md` and left for a
+Four more disagreements are listed in that file and left for a
 person, because the margin came from one judge call or the scores were mixed
 across the tier: `summarise-trial-abstract-66`,
 `quick-borrow-checker-misleading-75`, `code-sql-window-query-05` and
@@ -1299,7 +1299,7 @@ The branch adds nothing measurable to either legacy path. Strict execution
 costs about 0.3 ms more than passthrough, which buys the binding check, the
 request-id check and the context budget. All three are far below the variance
 of anything downstream: the Jev call in experiment 22 has a median of 121 ms
-and the fastest model route in `evals/outcomes.md` has a median of 3.6 s.
+and the fastest model route in `evals/reports/2026-09-19-outcome-benchmark/outcomes.md` has a median of 3.6 s.
 
 Do not read these as latency the user feels. They are the shim's own cost with
 the rest of the world removed.
@@ -1309,8 +1309,8 @@ the rest of the world removed.
 `evals/run_outcomes.py`, k=3, candidate cap 8,000. The run stopped itself at
 256 of 400 calls when `ollama/glm-5.3-flash(high)`'s own median latency went
 from 5.6 s to 16.9 s. Nineteen of the 58 gradeable cases finished; the other 39
-are named in `evals/outcomes.json` under `not_run` and resume from the cache.
-The full tables are in `evals/outcomes.md`.
+are named in `evals/reports/2026-09-19-outcome-benchmark/outcomes.json` under `not_run` and resume from the cache.
+The full tables are in [its `outcomes.md`](reports/2026-09-19-outcome-benchmark/outcomes.md).
 
 Three things changed from the ten-case run in experiment 20.
 
@@ -1336,7 +1336,7 @@ and `xhigh` costs 29 s median against 11 s for `medium` and buys nothing.
 Truncation is 0.0% on every route.
 
 Seven label changes were proposed and **none were applied**. The proposal table
-in `evals/outcomes.md` prints `yes` in its "applied" column for the clear-cut
+in that `outcomes.md` prints `yes` in its "applied" column for the clear-cut
 ones, which is a label on the proposal and not a record of a write;
 `--apply-labels` was not run.
 

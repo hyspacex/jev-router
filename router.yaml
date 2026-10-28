@@ -311,7 +311,7 @@ quality_lanes:
     qualified:
       - model: ollama/glm-5.3-flash
         effort: none
-        qualification_ref: "POOL.md: in the pool since the first release; evals/outcomes.md shows raising its effort made answers slightly worse"
+        qualification_ref: "POOL.md: in the pool since the first release; evals/reports/2026-09-19-outcome-benchmark/outcomes.md shows raising its effort made answers slightly worse"
       - model: gpt-6-luna
         effort: low
         qualification_ref: "POOL.md: GPT-6 Sol and Luna (2026-09-24); evals/ADMISSION.md step fast6, 0.12 below glm-5.3-flash on ten text cases"
@@ -834,7 +834,7 @@ policy:
       use: {route: mid}
 
     # Everything left is on the fast model at no reasoning effort. The outcome
-    # benchmark (evals/outcomes.md) found that raising this model's effort made
+    # benchmark (evals/reports/2026-09-19-outcome-benchmark/outcomes.md) found that raising this model's effort made
     # answers slightly worse on average, not better: none -> low was -0.43 of
     # 10 and low -> high a further -0.36, while latency went up by a third. So
     # there is no ladder here, and evals/cases.yaml labels every fast case
