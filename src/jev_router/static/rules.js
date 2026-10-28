@@ -136,6 +136,38 @@ function useText(use) {
   return direct ? add(node, el("span", "nw", direct)) : null;
 }
 
+// Names for each score's levels, by question, when router.yaml gives them.
+function levelLabels() {
+  const out = {};
+  for (const [key, q] of Object.entries((S.rules && S.rules.questions) || {})) if (q && Array.isArray(q.labels)) out[key] = q.labels;
+  return out;
+}
+
+// Where a `use` lands: the route's primary entry, or the model it names.
+function sendsOf(use) {
+  if (!use) return null;
+  if (!use.route) return {route: null, model: use.model || null, effort: use.effort || null};
+  const route = ((S.rules && S.rules.routes) || {})[use.route];
+  const p = route && route.primary;
+  return {route: use.route, model: p ? p.model : null, effort: p ? p.effort : null};
+}
+
+// The rule card's contents for a rule of the selected ladder.
+function ruleInfo(set, r) {
+  const rules = Array.isArray(set.rules) ? set.rules : [];
+  const at = rules.indexOf(r);
+  const open = r.line ? button("lk", "router.yaml line " + r.line, () => {
+    closeRuleCard();
+    if (!editorShown()) showEditor(true);
+    focusLine(r.line);
+  }) : null;
+  return {
+    name: r.name, index: r.index, count: rules.length, protected: r.protected, lane: r.lane,
+    description: r.description, sentence: matchWords(whenConds(r.when), levelLabels()), sendsTo: sendsOf(r.use),
+    before: rules.slice(0, Math.max(0, at)).map((x) => x.name), hits: r.hits, total: set.admissions, words: windowWords(), open,
+  };
+}
+
 // What the previewed draft does to the selected ladder, rule by rule:
 // {name: "differs" | "removed"} and the rules the draft adds.
 function draftDelta(rules) {
@@ -223,7 +255,7 @@ function ladderPanel() {
     if (absent(o.hits)) hits.append(gap("not counted"));
     else if (o.hits) hits.append(link("hn", int(o.hits), listHash({rule: o.filter, window: S.rwin}), plural(o.hits, "admission") + " by " + o.name + ": open the sessions"));
     else hits.append(el("span", "hn t3", "0"));
-    add(r, el("span", "i", o.index), el("span", "n", o.name), conds, to, hits);
+    add(r, el("span", "i", o.index), add(el("span", "n"), o.nameNode || o.name), conds, to, hits);
     tbl.append(r);
   };
   const first = rules.length ? rules[0].line : null;
@@ -231,11 +263,14 @@ function ladderPanel() {
   const gate = set.low_confidence;
   if (gate) {
     const qs = Array.isArray(gate.questions) ? gate.questions.map(human).join(" or ") : "";
-    row({index: "", name: "confidence gate", filter: "low_confidence", cond: [(qs ? qs + " " : "") + "confidence < " + cfg(gate.min_confidence)],
+    row({index: "", name: "confidence gate", filter: "low_confidence", cond: [cap((qs ? qs + " " : "") + "confidence under " + cfg(gate.min_confidence))],
       use: useText(gate.use), hits: gate.hits, share: gate.share, line: keyLine("low_confidence", first, -1), cls: "quiet"});
   }
+  const labels = levelLabels();
   for (const r of rules) {
-    row({index: String(r.index), name: r.name, filter: r.name, cond: whenParts(r.when), use: useText(r.use), lane: r.lane,
+    const nameNode = add(el("span"), ruleName(r.name, () => ruleInfo(set, r)), r.protected ? el("span", "pill", "protected") : null,
+      add(el("span", "ds"), r.description ? firstSentence(r.description) : el("span", "pill", "no description")));
+    row({index: String(r.index), name: r.name, nameNode, filter: r.name, cond: [matchWords(whenConds(r.when), labels)], use: useText(r.use), lane: r.lane,
       hits: r.hits, share: r.share, line: r.line});
     if (delta && delta.changed.has(r.name)) {
       const d = delta.changed.get(r.name);
@@ -380,6 +415,16 @@ function ruler(key, ticks, rated, draftTicks) {
   }
   scale.style.height = (14 + Math.max(1, lastX.length) * LABEL_ROW) + "px";
   add(blk, field, scale);
+  // The level names under the scale, when router.yaml gives them and they span it.
+  if (Array.isArray(q.labels) && q.labels.length - 1 === top) {
+    const levels = el("div", "rlevels");
+    q.labels.forEach((name, i) => {
+      const s = el("span", i === 0 ? "l0" : i === q.labels.length - 1 ? "ln" : null, name);
+      s.style.left = x(i) + "%";
+      levels.append(s);
+    });
+    blk.append(levels);
+  }
   return blk;
 }
 

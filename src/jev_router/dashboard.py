@@ -510,6 +510,42 @@ def _project_admission(row: dict[str, Any], config: RouterConfig) -> dict[str, A
     return item
 
 
+def _sends_to(config: RouterConfig, use: Any) -> dict[str, Any] | None:
+    """Where a rule's `use` lands under `config`: the route's primary entry."""
+    if use is None:
+        return None
+    if use.route:
+        lane = config.routes.get(use.route)
+        primary = lane.primary if lane is not None else None
+        return {
+            "route": use.route,
+            "model": primary.model if primary else None,
+            "effort": primary.effort if primary else None,
+        }
+    return {"route": None, "model": use.model, "effort": use.effort}
+
+
+def _rule_identity(config: RouterConfig, alias_cfg: Any, traced: dict[str, Any]) -> dict[str, Any]:
+    """The descriptions and destinations a trace is read with, from the same config."""
+    ruleset = config.ruleset_for(alias_cfg)
+    by_name = {rule.name: rule for rule in ruleset.rules}
+    rules = []
+    for item in traced.get("rules") or []:
+        rule = by_name.get(item.get("name"))
+        rules.append({
+            **item,
+            "description": (rule.description or None) if rule else None,
+            "sends_to": _sends_to(config, rule.use) if rule else None,
+        })
+    gate = ruleset.low_confidence
+    return {
+        "rules": rules,
+        "gate_sends_to": _sends_to(config, gate.use) if gate is not None else None,
+        "default_sends_to": _sends_to(config, ruleset.default),
+        "labels": {qid: list(names) for qid, names in config.question_labels.items()},
+    }
+
+
 def explain_admission(
     row: dict[str, Any] | None, config: RouterConfig, store: Any
 ) -> dict[str, Any]:
@@ -561,6 +597,7 @@ def explain_admission(
         "replayed": replayed,
         "pressures": pressures,
         **{k: v for k, v in traced.items() if k not in ("model", "effort", "lane")},
+        **_rule_identity(under, alias_cfg, traced),
     }
 
 

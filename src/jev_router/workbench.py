@@ -261,6 +261,7 @@ def _rule_entry(rule: Any, index: int, line: int | None) -> dict[str, Any]:
         "name": rule.name,
         "lane": rule.lane or None,
         "protected": rule.protected,
+        "description": rule.description or None,
         "when": rule.when,
         "use": rule.use.model_dump(mode="json", exclude_none=True),
         "line": line,
@@ -454,6 +455,8 @@ def describe_config(
                 # The choice labels or score levels, as configured, so the
                 # sandbox can edit those too.
                 "criteria": _criteria_view(q.get("criteria")),
+                # Names for a score's levels, when router.yaml gives them.
+                "labels": config.question_labels.get(qid),
                 "line": node_line(root, ["questions", qid]),
             }
             for qid, q in config.questions.items()

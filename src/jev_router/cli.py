@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import ConfigError, RouterConfig, load_config
+from .config import ConfigError, RouterConfig, config_warnings, load_config
 from .pins import VERDICTS
 
 DEFAULT_CONFIG = os.environ.get("JEV_ROUTER_CONFIG", "router.yaml")
@@ -133,6 +133,8 @@ def cmd_check_config(args: argparse.Namespace) -> int:
             f"questions=[{', '.join(acfg.questions)}] rules={len(ruleset.rules)} "
             f"max_effort={acfg.max_effort or '-'}"
         )
+    for warning in config_warnings(config):
+        print(f"  warning: {warning}")
     return 0
 
 

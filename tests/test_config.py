@@ -497,3 +497,57 @@ def test_the_codexbar_block_rejects_unknown_keys_and_bad_numbers(tmp_path):
         load_raw(tmp_path, lambda r: r.update({"codexbar": {"enabled": True, "nope": 1}}))
     with pytest.raises(ConfigError):
         load_raw(tmp_path, lambda r: r.update({"codexbar": {"poll_interval_seconds": 0}}))
+
+
+# --- rule descriptions and level names (dashboard only) -------------------
+
+
+def test_level_names_are_lifted_out_of_the_question(tmp_path):
+    from jev_router.semantic import packet_version
+
+    plain = load_raw(tmp_path, lambda r: None)
+    named = load_raw(tmp_path, lambda r: r["questions"]["difficulty"].update(
+        labels=["trivial", "small", "multi-step"]))
+    assert named.question_labels == {"difficulty": ["trivial", "small", "multi-step"]}
+    # What Jev is sent, and the packet version that names it, do not move.
+    assert "labels" not in named.question("difficulty")
+    assert named.question("difficulty") == plain.question("difficulty")
+    ids = ["task", "difficulty", "harm_if_wrong"]
+    assert packet_version(named, ids, "minimal_v1") == packet_version(plain, ids, "minimal_v1")
+
+
+def test_the_shipped_config_names_difficulty_levels_and_sends_none_of_them():
+    cfg = load_config("router.yaml")
+    assert cfg.question_labels["difficulty"] == ["trivial", "routine", "needs thought", "multi-stage"]
+    assert all("labels" not in q for q in cfg.questions.values())
+
+
+@pytest.mark.parametrize(
+    "qid, names, message",
+    [
+        ("difficulty", ["one", "two"], "one name per level (3), got 2"),
+        ("difficulty", ["one", " ", "three"], "every name must be non-empty"),
+        ("harm_if_wrong", ["no", "yes"], "only a score question has levels"),
+    ],
+)
+def test_bad_level_names_are_refused(tmp_path, qid, names, message):
+    with pytest.raises(ConfigError) as exc:
+        load_raw(tmp_path, lambda r: r["questions"][qid].update(labels=names))
+    assert message in str(exc.value)
+
+
+def test_a_rule_without_a_description_is_a_warning_not_an_error(tmp_path):
+    from jev_router.config import config_warnings
+
+    cfg = load_raw(tmp_path, lambda r: r["policy"]["rules"][0].update(
+        description="Harm outranks everything below it."))
+    assert cfg.policy.rules[0].description == "Harm outranks everything below it."
+    warned = config_warnings(cfg)
+    assert not any("[harmful]" in w for w in warned)
+    assert "policy.rules[hard]: no description; the dashboard can only show its name" in warned
+
+
+def test_every_shipped_rule_has_a_description():
+    from jev_router.config import config_warnings
+
+    assert config_warnings(load_config("router.yaml")) == []

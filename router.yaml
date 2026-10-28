@@ -537,6 +537,9 @@ questions:
 
   difficulty:
     type: score
+    # Names for the four levels, for the dashboard. Lifted out at load: Jev
+    # never sees them, and they do not change the packet version.
+    labels: [trivial, routine, needs thought, multi-stage]
     instructions: >
       The state describes one request to an AI assistant. Read
       `latest_user_request` first: that is what the user is asking for now. If
@@ -736,6 +739,9 @@ policy:
   rules:
     - &images_easy
       name: images_easy
+      description: >
+        Easy image questions go to the cheap vision model. Quota never moves
+        an image request.
       lane: simple-vision
       protected: true            # quota never moves an image request
       when:
@@ -745,6 +751,9 @@ policy:
       use: {route: fast_vision}
 
     - name: images_need_vision
+      description: >
+        Any other image request goes to the frontier model, because only some
+        models read images well.
       lane: vision-work
       protected: true            # only some models read images
       when:
@@ -753,12 +762,14 @@ policy:
 
     - &very_hard
       name: very_hard
+      description: Multi-stage work gets the strongest setting.
       lane: hardest-work
       when:
         difficulty: {gte: 3.0}
       use: {route: frontier_xhigh}
 
     - name: hard
+      description: Work that needs real thought gets the frontier model at high effort.
       lane: hard-work
       when:
         difficulty: {gte: 2.4}
@@ -766,6 +777,7 @@ policy:
 
     - &high_harm
       name: high_harm
+      description: Mistakes here cost more than quota. Quota never moves it.
       lane: high-consequence
       protected: true            # a small mistake here costs more than quota
       when:
@@ -780,6 +792,11 @@ policy:
     # below astra medium. Code edits are exempt: they are what the mid model
     # was admitted on, and exempting them cost nothing in that eval.
     - name: moderate_careful
+      description: >
+        Moderate work where a mistake matters stays on astra. glm-5.3 takes it
+        only as the equivalent when OpenAI is busy, where it scored 0.10 below
+        astra medium. Code edits are exempt: the mid model was admitted on
+        them.
       lane: careful-moderate
       when:
         task: {not_in: [code-edit]}
@@ -792,6 +809,10 @@ policy:
     # High effort passed the bounded tool pilot; no general equivalence claim.
     - &moderate_tools
       name: moderate_tools
+      description: >
+        Moderate work with tools goes to glm-5.3 at high. High effort passed
+        the bounded tool pilot. It sits after moderate_careful so careful work
+        reaches astra first.
       lane: moderate-tools
       when:
         has_tools: true
@@ -803,6 +824,10 @@ policy:
     # the latency.
     - &moderate
       name: moderate
+      description: >
+        Moderate work without tools goes to the mid model. It scored 9.70
+        against the frontier model's 9.31 on 12 such cases, at a third of the
+        latency.
       lane: moderate-work
       when:
         difficulty: {gte: 1.4}
@@ -816,6 +841,9 @@ policy:
     # `effort: none` for the same reason.
     - &easy
       name: easy
+      description: >
+        Everything else goes to the fast model with no reasoning. Raising its
+        effort made answers slightly worse, not better.
       lane: simple-work
       when: {}
       use: {route: fast}

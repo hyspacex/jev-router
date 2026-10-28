@@ -602,6 +602,8 @@ function render(kind) {
       main.append(inspectorView(kind));
     }
   }
+  // A card whose name was just re-rendered away has nothing to point at.
+  if (RCARD.anchor && !document.contains(RCARD.anchor)) closeRuleCard();
   if (focused) {
     const again = document.querySelector('[data-fk="' + CSS.escape(focused) + '"]');
     if (again && again !== document.activeElement) again.focus({preventScroll: true});
@@ -1058,6 +1060,172 @@ function ruleWhy(r) {
   }
   return node;
 }
+
+// --- a rule in words, and its card -------------------------------------------------
+//
+// A rule's name is a reminder, not an explanation. Wherever one is shown it
+// can carry a "matches when" line written from its conditions, the first
+// sentence of its description, and a card that opens on click.
+
+// A flat feature condition's comparison, from its key's suffix, as the trace reads it.
+function featureOp(key) {
+  const m = String(key).match(/_(gte|lte|in|include)$/);
+  return !m ? "eq" : m[1] === "include" ? "intersects" : m[1];
+}
+
+function firstSentence(text) {
+  if (!text) return "";
+  const m = String(text).match(/^.*?[.!?](\s|$)/);
+  return (m ? m[0] : String(text)).trim();
+}
+
+// The level a score sits nearest, by name, or null without names.
+function levelName(labels, v) {
+  if (!Array.isArray(labels) || !labels.length || typeof v !== "number") return null;
+  return labels[Math.max(0, Math.min(labels.length - 1, Math.round(v)))];
+}
+
+// A config `when` mapping as the condition list a trace carries.
+function whenConds(when) {
+  const out = [];
+  for (const [key, cond] of Object.entries(when || {})) {
+    if (cond === null || typeof cond !== "object" || Array.isArray(cond)) {
+      out.push({key, source: "feature", op: featureOp(key), threshold: cond});
+      continue;
+    }
+    for (const [op, v] of Object.entries(cond)) {
+      if (op === "shift_with" || op === "max_shift") continue;
+      out.push({key, source: "answer", op, threshold: v});
+    }
+  }
+  return out;
+}
+
+// 1.399 reads as "under 1.4": a cutoff written one step below a round number.
+function underText(t) {
+  const up = Math.round((t + 0.001) * 100) / 100;
+  return Math.abs(up - t - 0.001) < 1e-9 ? "under " + cfg(up) : "≤ " + cfg(t);
+}
+
+// One condition in words: "has tools", "difficulty above routine (1.4+)".
+function condPhrase(c, labels) {
+  const key = c.source === "feature" ? String(c.key || "?").replace(/_(gte|lte|in|include)$/, "") : String(c.key || "?");
+  const name = key.replace(/^has_/, "").replaceAll("_", " ");
+  const t = c.threshold;
+  if (c.source === "feature" && typeof t === "boolean") return (t ? (key.startsWith("has_") ? "has " : "") : "no ") + name;
+  const list = (Array.isArray(t) ? t : [t]).map(plain).join(" or ");
+  if (c.op === "in" || c.op === "not_in") return name + (c.op === "in" ? " is " : " is not ") + list;
+  if (c.op === "intersects") return name + " include " + list;
+  if (c.op === "conf_gte") return name + " confidence " + cfg(t) + "+";
+  if (c.op === "eq" && typeof t !== "number") return name + " is " + plain(t);
+  if (typeof t !== "number") return name + " " + human(c.op || "=") + " " + plain(t);
+  const names = labels && labels[key];
+  const top = Array.isArray(names) ? names.length - 1 : null;
+  if (c.op === "gte" || c.op === "gt") {
+    if (top === null) return name + " " + cfg(t) + "+";
+    if (t >= top) return name + " " + names[top] + " (" + cfg(t) + ")";
+    if (Number.isInteger(t)) return name + " " + names[t] + " or above (" + cfg(t) + "+)";
+    return name + " above " + names[Math.floor(t)] + " (" + cfg(t) + "+)";
+  }
+  if (c.op === "lte" || c.op === "lt") {
+    const under = underText(t);
+    if (top === null) return name + " " + under;
+    return name + " " + names[Math.max(0, Math.floor(t))] + " or below (" + under + ")";
+  }
+  return name + " " + (OPS[c.op] ? OPS[c.op][0] : human(c.op)) + " " + cfg(t);
+}
+
+// What a rule matches, as one sentence. No conditions: it takes what is left.
+function matchWords(conds, labels) {
+  if (!conds.length) return "Anything left";
+  const text = conds.map((c) => condPhrase(c, labels)).join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// "glm-5.3 · high", from a `{route, model, effort}` destination.
+function sendsText(to) {
+  if (!to || !to.model) return null;
+  return splitModel(to.model)[1] + (to.effort ? " · " + to.effort : "");
+}
+
+// The card. info: name, index, count, protected, lane, description,
+// sentence, sendsTo, before (names), hits, total, words, open (a node or null).
+function ruleCard(info) {
+  const c = el("div", "rcard");
+  c.setAttribute("role", "dialog");
+  c.setAttribute("aria-label", "Rule " + info.name);
+  const top = el("div", "rtop");
+  add(top, el("span", "rnm", info.name), info.protected ? el("span", "pill", "protected") : null,
+    info.index ? el("span", "rpos", info.index + " of " + info.count) : null);
+  c.append(top);
+  add(c, el("div", "rlbl", "Matches when"), el("div", "rtxt", info.sentence || "–"));
+  c.append(el("div", "rlbl", "Why it exists"));
+  c.append(info.description ? el("div", "rtxt d", info.description) : el("div", "rtxt d none", "No description in router.yaml"));
+  const kv = el("div", "kv");
+  const to = sendsText(info.sendsTo);
+  const route = info.sendsTo && info.sendsTo.route;
+  add(kv, el("span", "k", "Sends to"), to ? el("span", "mono", to + (route ? "  (" + route + ")" : "")) : gap("not resolved"));
+  if (info.lane) add(kv, el("span", "k", "Lane"), el("span", "mono", info.lane));
+  if (info.before) {
+    const n = info.before.length;
+    const words = !n ? "first in the ladder" : n <= 2 ? "after " + info.before.join(", ") : "after " + n + " rules, last " + info.before[n - 1];
+    add(kv, el("span", "k", "Position"), el("span", null, words));
+  }
+  if (!absent(info.hits)) add(kv, el("span", "k", "Hits"), el("span", null, int(info.hits) + (absent(info.total) ? "" : " of " + int(info.total)) + " admissions " + (info.words || "")));
+  c.append(kv);
+  if (info.open) c.append(add(el("div", "racts"), info.open));
+  return c;
+}
+
+// One card open at a time, on <body>, below the name that opened it.
+const RCARD = {node: null, anchor: null};
+function closeRuleCard(focus) {
+  if (!RCARD.node) return;
+  RCARD.node.remove();
+  const a = RCARD.anchor;
+  RCARD.node = null;
+  RCARD.anchor = null;
+  if (a) {
+    a.setAttribute("aria-expanded", "false");
+    if (focus && document.contains(a)) a.focus({preventScroll: true});
+  }
+}
+function openRuleCard(anchor, info) {
+  const same = RCARD.anchor === anchor;
+  closeRuleCard();
+  if (same) return;
+  const card = ruleCard(info);
+  card.classList.add("pop");
+  // clientWidth leaves the scrollbar out, which 100vw would not.
+  const room = document.documentElement.clientWidth;
+  card.style.width = Math.min(380, room - 32) + "px";
+  document.body.append(card);
+  const box = anchor.getBoundingClientRect();
+  const width = card.offsetWidth;
+  card.style.left = Math.max(16, Math.min(box.left, room - width - 16)) + window.scrollX + "px";
+  card.style.top = box.bottom + window.scrollY + 6 + "px";
+  anchor.setAttribute("aria-expanded", "true");
+  RCARD.node = card;
+  RCARD.anchor = anchor;
+}
+// A rule's name that opens its card. info may be a function, read on click.
+function ruleName(name, info, cls) {
+  const b = el("button", "rn" + (cls ? " " + cls : ""), name);
+  b.type = "button";
+  b.setAttribute("aria-haspopup", "dialog");
+  b.setAttribute("aria-expanded", "false");
+  b.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openRuleCard(b, typeof info === "function" ? info() : info);
+  });
+  b.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); });
+  return b;
+}
+document.addEventListener("click", (event) => {
+  if (RCARD.node && !(event.target instanceof Element && event.target.closest(".rcard"))) closeRuleCard();
+});
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && RCARD.node) closeRuleCard(true); });
+window.addEventListener("hashchange", () => closeRuleCard());
 
 // --- input -------------------------------------------------------------------
 

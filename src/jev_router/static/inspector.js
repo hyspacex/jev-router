@@ -655,21 +655,15 @@
 
   // --- 1. why this rule, or this effort ---------------------------------------------
 
+  // A skipped rule this close to its cutoff is a near miss, as the Rules view
+  // counts one. The closest miss gets its own line only within CLOSE; further
+  // off, the skipped rules' fold still names it.
+  const NEAR = 0.1;
+  const CLOSE = 0.25;
+
   function whySection(ctx, t) {
     if (t.kind === "admission") {
-      const note = el("span");
-      const jn = jevNote(t);
-      if (jn) note.append(jn + " · ");
-      const hash = hash8(ctx.trace.config_hash || (ctx.adm && ctx.adm.config_hash));
-      if (hash) {
-        const c = el("span", null, "config " + hash);
-        if (ctx.trace.available) {
-          c.append(ctx.trace.source === "snapshot" ? " from snapshot" : " from running config");
-          if (ctx.trace.source === "snapshot") c.title = "The running config has moved since this admission; it is replayed under the config it was taken under";
-        } else if (ctx.session.config_matches === false) c.append(", not the running one");
-        note.append(c);
-      } else note.append(gap("config hash not recorded"));
-      const [box, body] = sec("why", "Why this rule", note);
+      const [box, body] = sec("why", "Why this rule", null);
       admissionWhy(ctx, t, body);
       return box;
     }
@@ -679,86 +673,333 @@
     return box;
   }
 
-  function stepRow(cls, name, text, dot) {
-    const row = el("div", "step" + (cls ? " " + cls : ""));
-    const w = add(el("span", "w"), text);
-    w.title = w.textContent;
-    add(row, el("i", "g" + (dot ? " " + dot : "")), el("span", "n", name), w);
-    return row;
-  }
-
-  function routeText(ctx, t) {
-    const d = t.decision || {};
-    const adm = ctx.adm || {};
-    const model = d.model || adm.model;
-    const effort = d.effort || adm.effort;
-    return (ctx.trace.route || d.route || adm.route || "direct") + " → " + (model || "?") + (effort ? " · " + effort : "");
-  }
-
+  // The result, what the rule is for, the closest miss, the ladder as
+  // replayed, then quota, lane and what the replay ran under.
   function admissionWhy(ctx, t, body) {
     const {adm, trace} = ctx;
     if (!adm) { body.append(el("p", "gaprow", "admission not recorded")); return; }
-    const d = t.decision || {};
-    if (fellBack(ctx)) {
-      body.append(stepRow("hit", d.rule || adm.rule || "admission_fallback", "Jev failed, no rule ran · the alias's fallback → " + routeText(ctx, t), "warn"));
-    } else if (trace.available) {
-      if (!trace.reproduces) body.append(add(el("p", "diff"), badge("warn", "replay differs"), " " + replayDiff(trace)));
-      ruleSteps(ctx, t, body);
+    body.append(outcomeStrip(ctx, t));
+    const why = whyLine(ctx);
+    if (why) body.append(why);
+    if (trace.available && !fellBack(ctx)) {
+      const near = closestMiss(trace);
+      if (near && near.short <= CLOSE) body.append(nearLine(ctx, near));
+      if (!trace.reproduces) body.append(el("p", "diff", replayDiff(trace) + ". The list below is the replay."));
+      body.append(ladder(ctx, t));
+    } else if (fellBack(ctx)) {
+      body.append(el("p", "notrace", "No rule ran, so there is nothing to trace. decisions replay re-runs the fallback route for this row."));
     } else {
-      body.append(el("p", "quiet", reasonText(trace.reason)));
-      body.append(stepRow("hit", d.rule || adm.rule || "?", "recorded · → " + routeText(ctx, t)));
+      body.append(el("p", "notrace", cap(reasonText(trace.reason)) + ". The rule list needs the config this admission was taken under."));
     }
-    const kv = el("div", "kv");
-    add(kv, el("span", "k", "Quota"), quotaValue(adm, ctx.session));
-    add(kv, el("span", "k", "Lane"), laneValue(ctx));
-    body.append(kv);
+    body.append(contextLines(ctx, t));
   }
 
-  // The gate, the rules missed before the hit (folded), the hit, and the rest.
-  function ruleSteps(ctx, t, body) {
+  function traceRules(trace) { return Array.isArray(trace.rules) ? trace.rules : []; }
+  function hitAt(trace) { return trace.matched === "low_confidence" ? -1 : traceRules(trace).findIndex((r) => r.outcome === "hit"); }
+  function bound(ctx, t) {
+    const d = t.decision || {};
+    const adm = ctx.adm || {};
+    return {model: d.model || adm.model || null, effort: d.effort || adm.effort || null, route: ctx.trace.route || d.route || adm.route || null};
+  }
+  // Where the deciding step said to send it, under the admission's config.
+  function decidedTo(trace) {
+    if (trace.matched === "low_confidence") return trace.gate_sends_to || null;
+    if (trace.matched === "default") return trace.default_sends_to || null;
+    const at = hitAt(trace);
+    return at >= 0 ? traceRules(trace)[at].sends_to || null : null;
+  }
+  function providerOf(model) {
+    const m = I.cfg && I.cfg.models && I.cfg.models[model];
+    if (m && m.provider) return m.provider;
+    const prefix = splitModel(model)[0];
+    return prefix ? prefix.replace(/\/$/, "") : null;
+  }
+  function quotaChanged(adm, session) {
+    return quotaMoves(adm).length > 0 || adm.quota_changed_choice === true || session.quota_changed_choice === true;
+  }
+
+  // The rule card, read from the trace: the config the admission was taken
+  // under. Hits come from the running config, so only when that is the one.
+  function cardInfo(ctx, r) {
+    const rules = traceRules(ctx.trace);
+    const at = rules.indexOf(r);
+    let hits = null;
+    let total = null;
+    if (ctx.trace.source === "running" && I.cfg && I.cfg.rulesets) {
+      const set = Object.values(I.cfg.rulesets).find((rs) => Array.isArray(rs.aliases) && rs.aliases.includes(ctx.session.alias));
+      const live = set && Array.isArray(set.rules) ? set.rules.find((x) => x.name === r.name) : null;
+      if (live) { hits = live.hits; total = set.admissions; }
+    }
+    return {
+      name: r.name, index: r.index, count: rules.length, protected: r.protected, lane: r.lane,
+      description: r.description, sentence: matchWords(Array.isArray(r.conditions) ? r.conditions : [], ctx.trace.labels),
+      sendsTo: r.sends_to, before: rules.slice(0, Math.max(0, at)).map((x) => x.name),
+      hits, total, words: "in the last 7 days", open: link("lk", "Open in Rules", rulesHash()),
+    };
+  }
+  function nameOf(ctx, r) { return ruleName(r.name || "?", () => cardInfo(ctx, r)); }
+
+  // Rule, model and effort; each second line says how it came to be.
+  function outcomeStrip(ctx, t) {
+    const {adm, trace, session} = ctx;
+    const b = bound(ctx, t);
+    const d = t.decision || {};
+    const rules = traceRules(trace);
+    const at = hitAt(trace);
+    const cell = (k, v, ...sub) => add(el("div"), el("div", "k", k), add(el("div", "v"), v), add(el("div", "s"), ...sub));
+    let rule;
+    if (fellBack(ctx)) rule = cell("Rule", el("span", "t2", d.rule || adm.rule || "admission_fallback"), badge("warn", "Jev failed"), " no rule ran");
+    else if (!trace.available) rule = cell("Rule", d.rule || adm.rule || session.decision_rule || gap("rule not recorded"), reasonText(trace.reason));
+    else if (trace.matched === "low_confidence") rule = cell("Rule", el("span", "sans", "confidence gate"), badge("warn", "fired"), " before any rule ran");
+    else if (trace.matched === "default") rule = cell("Rule", "default", "no rule matched");
+    else if (at >= 0) rule = cell("Rule", nameOf(ctx, rules[at]), rules[at].index + " of " + plural(rules.length, "rule"));
+    else rule = cell("Rule", trace.matched || gap("rule not recorded"));
+    if (trace.available && !trace.reproduces) {
+      const s = rule.querySelector(".s");
+      s.replaceChildren(badge("warn", "replay differs", replayDiff(trace)), " recorded " + ((trace.stored && trace.stored.rule) || "?"));
+    }
+    const sub = [];
+    const provider = b.model ? providerOf(b.model) : null;
+    if (quotaChanged(adm, session)) {
+      sub.push(badge("warn", "moved by quota"));
+      if (counterfactualDiffers(adm)) sub.push(" without quota " + adm.counterfactual);
+    } else sub.push([provider, b.route ? "route " + b.route : null].filter(Boolean).join(" · "));
+    const model = cell("Model", b.model ? bare(b.model) : gap("model not recorded"), ...sub);
+    const to = decidedTo(trace);
+    let how = "";
+    if (to && to.model && b.model) {
+      if (to.model !== b.model) how = "that entry's own";
+      else if ((to.effort || null) === b.effort) how = "set by the route";
+      else if (to.effort) how = "the route says " + to.effort;
+    }
+    const effort = cell("Effort", b.effort || el("span", "t3", "none"), how);
+    return add(el("div", "wstrip"), rule, model, effort);
+  }
+
+  function whyLine(ctx) {
     const {trace} = ctx;
+    const row = (label, ...body) => add(el("p", "wrow"), el("span", "wl", label), add(el("span"), ...body));
+    if (fellBack(ctx)) return row("What happened", "Jev did not answer, so the alias's admission_fallback route bound this session. Its answers are stored as absent.");
+    if (!trace.available) return null;
+    if (trace.matched === "low_confidence") {
+      const g = trace.gate || {};
+      const q = g.fired_by ? human(g.fired_by) : "a gated answer";
+      const conf = g.fired_by && g.questions ? g.questions[g.fired_by] : null;
+      return row("What happened", "Jev's confidence in " + q + " was " + (typeof conf === "number" ? num2(conf) + ", " : "") +
+        "under " + cfg(g.min_confidence) + ", so the gate's route was used before any rule ran.");
+    }
+    if (trace.matched === "default") return row("What happened", "No rule matched, so the ruleset's default route was used.");
+    const at = hitAt(trace);
+    if (at < 0) return null;
+    const r = traceRules(trace)[at];
+    if (!r.description) return row("Why it exists", el("span", "pill", "no description"));
+    const first = firstSentence(r.description);
+    const more = first !== String(r.description).trim() ? ruleName("more", () => cardInfo(ctx, r), "more") : null;
+    return row("Why it exists", first, more ? " " : null, more);
+  }
+
+  // How far a numeric condition missed by, or null when it cannot say.
+  function shortBy(c) {
+    const v = c.value;
+    const t = absent(c.effective_threshold) ? c.threshold : c.effective_threshold;
+    if (typeof v !== "number" || typeof t !== "number") return null;
+    if (c.op === "gte" || c.op === "gt" || c.op === "conf_gte") return Math.max(0, t - v);
+    if (c.op === "lte" || c.op === "lt") return Math.max(0, v - t);
+    return null;
+  }
+
+  // The skipped rule nearest to winning: one numeric condition failed, by the least.
+  function closestMiss(trace) {
+    const at = hitAt(trace);
+    if (trace.matched === "low_confidence") return null;
+    const rules = traceRules(trace);
+    const before = (at < 0 ? rules : rules.slice(0, at)).filter((r) => r.outcome === "miss");
+    let best = null;
+    for (const r of before) {
+      const failed = (Array.isArray(r.conditions) ? r.conditions : []).filter((c) => c.passed === false);
+      if (failed.length !== 1) continue;
+      const short = shortBy(failed[0]);
+      if (short !== null && (!best || short < best.short)) best = {rule: r, short};
+    }
+    return best;
+  }
+
+  function nearLine(ctx, near) {
+    const to = sendsText(near.rule.sends_to);
+    return add(el("p", "wrow"), el("span", "wl", "Closest miss"),
+      add(el("span"), el("span", near.short <= NEAR ? "wn" : null, num2(near.short)), " short of ", nameOf(ctx, near.rule),
+        to ? ", which would have used " + to + "." : "."));
+  }
+
+  // One row of the ladder: a status mark, the rule, then checked, got,
+  // needs, short and sends to. The cells sit in one grid on a wide screen
+  // and run on as one line under the name on a phone.
+  function lrow(cls, mark, name, cells) {
+    const row = el("div", "lr3" + (cls ? " " + cls : ""));
+    const mk = el("span", "mk");
+    if (mark) mk.append(el("i", "lg " + mark));
+    const nm = el("span", "nm");
+    if (name !== null && name !== undefined) add(nm, name);
+    const box = el("span", "cells");
+    ["ck", "got", "need", "short", "to"].forEach((k, i) => {
+      const c = el("span", k);
+      const v = cells[i];
+      if (v !== null && v !== undefined && v !== "") add(c, v);
+      box.append(c);
+    });
+    add(row, mk, nm, box);
+    return row;
+  }
+
+  // A condition's checked, got, needs and short cells.
+  function condCells(c, labels, level) {
+    const key = c.source === "feature" ? String(c.key || "?").replace(/_(gte|lte|in|include)$/, "") : String(c.key || "?");
+    const ck = key.replace(/^has_/, "").replaceAll("_", " ") + (c.op === "conf_gte" ? " confidence" : "");
+    let got;
+    if (absent(c.value)) got = gap("not recorded");
+    else if (typeof c.value === "boolean") got = bool(c.value);
+    else if (typeof c.value === "number") {
+      const name = level && c.op !== "conf_gte" ? levelName(labels && labels[key], c.value) : null;
+      got = add(el("span"), num2(c.value), name ? el("small", null, name) : null);
+    } else got = Array.isArray(c.value) ? c.value.map(plain).join(", ") : plain(c.value);
+    const t = absent(c.effective_threshold) ? c.threshold : c.effective_threshold;
+    let need = null;
+    if (typeof c.threshold === "boolean") need = null;
+    else if (c.op === "in") need = "in " + (Array.isArray(t) ? t.map(plain).join(", ") : plain(t));
+    else if (c.op === "not_in") need = "not " + (Array.isArray(t) ? t.map(plain).join(", ") : plain(t));
+    else if (c.op === "intersects") need = "includes " + (Array.isArray(t) ? t.map(plain).join(", ") : plain(t));
+    else if (typeof t === "number") need = ((c.op === "lte" || c.op === "lt") && underText(t).startsWith("under") ? "< " + underText(t).slice(6) : (OPS[c.op] ? OPS[c.op][0] : human(c.op)) + " " + cfg(t));
+    else if (!absent(t)) need = "= " + plain(t);
+    let short = null;
+    if (c.shift && typeof c.shift === "object") {
+      short = el("span", "t3", "moved from " + cfg(c.shift.base));
+      short.title = "Quota pressure " + (c.shift.provider ? "on " + c.shift.provider + " " : "") + "moved this cutoff from " + cfg(c.shift.base) + " to " + cfg(c.shift.effective);
+    }
+    return [ck, got, need, short];
+  }
+
+  function skipRow(ctx, r, isNear) {
+    const name = add(el("span"), nameOf(ctx, r),
+      add(el("span", "ds"), r.description ? firstSentence(r.description) : el("span", "pill", "no description")));
+    const to = sendsText(r.sends_to);
+    if (r.outcome === "skipped_experiment") return lrow("miss", "miss", name, [el("span", "t3", "experimental, skipped"), null, null, null, to]);
+    const failed = (Array.isArray(r.conditions) ? r.conditions : []).filter((c) => c.passed === false);
+    if (!failed.length) return lrow("miss", "miss", name, [gap("no failing condition recorded"), null, null, null, to]);
+    const cells = condCells(failed[0], ctx.trace.labels, false);
+    if (failed.length > 1) {
+      const more = el("span", "t3", " +" + (failed.length - 1));
+      more.title = "Also failed: " + failed.slice(1).map((c) => matchWords([c], ctx.trace.labels)).join("; ");
+      cells[2] = add(el("span"), cells[2] || "", more);
+    }
+    const sh = shortBy(failed[0]);
+    if (sh !== null) cells[3] = el("span", "n" + (isNear ? " wn" : ""), num2(sh));
+    return lrow("miss" + (isNear ? " near" : ""), isNear ? "warn" : "miss", name, [...cells, to]);
+  }
+
+  function ladder(ctx, t) {
+    const {trace} = ctx;
+    const labels = trace.labels;
+    const rules = traceRules(trace);
+    const at = hitAt(trace);
+    const fired = trace.matched === "low_confidence";
+    const b = bound(ctx, t);
+    const boundText = b.model ? bare(b.model) + (b.effort ? " · " + b.effort : "") : null;
+    const box = el("div", "lad3");
+    const th = lrow("th", null, "Rule", ["Checked", "Got", "Needs", "Short", "Sends to"]);
+    th.setAttribute("aria-hidden", "true");
+    box.append(th);
+
     const gate = trace.gate || {};
     if (gate.applies) {
-      const fired = !gate.passed;
-      body.append(stepRow(fired ? "fired" : null, "confidence gate", fired ? add(el("span"), "fired · ", gateFired(gate)) : gatePassed(gate), fired ? "warn" : "good"));
+      const stood = new Set((Array.isArray(gate.checks) ? gate.checks : []).filter((c) => c.outcome === "top_is_noise" || c.outcome === "action_equivalent").map((c) => c.question));
+      const rows = Object.entries(gate.questions || {}).map(([q, conf], i) => {
+        let short = null;
+        if (fired && gate.fired_by === q && typeof conf === "number") short = el("span", "wn", num2(gate.min_confidence - conf) + " under");
+        else if (stood.has(q)) short = el("span", "t3", "stood down");
+        return lrow(i ? "cont" : "", i ? null : (fired ? "warn" : "good"), i ? null : el("span", "id", "confidence gate"),
+          [human(q), absent(conf) ? gap("not recorded") : num2(conf), "≥ " + cfg(gate.min_confidence), short, i === 0 && fired ? boundText : null]);
+      });
+      if (fired) box.append(add(el("div", "hitg"), ...rows));
+      else box.append(...rows);
     }
-    const rules = Array.isArray(trace.rules) ? trace.rules : [];
-    const at = rules.findIndex((r) => r.outcome === "hit");
-    const before = at < 0 ? rules.filter((r) => r.outcome !== "not_reached") : rules.slice(0, at);
-    const after = at < 0 ? rules.filter((r) => r.outcome === "not_reached") : rules.slice(at + 1);
+
+    const before = fired ? [] : at < 0 ? rules.filter((r) => r.outcome !== "not_reached") : rules.slice(0, at);
     if (before.length) {
-      const fold = el("div", "step fold");
-      const list = el("div", "missed");
+      const near = closestMiss(trace);
+      const head = el("span", "fl");
+      add(head, plural(before.length, "rule") + " skipped");
+      if (near) add(head, " · closest ", nameOf(ctx, near.rule), ", ", el("span", near.short <= NEAR ? "wn" : null, num2(near.short) + " short"));
+      const list = el("div", "lskip");
       list.hidden = !I.missed;
-      const toggle = button("lk", I.missed ? "hide them" : "show them", () => {
+      const toggle = button("lk", I.missed ? "hide" : "show", () => {
         I.missed = !I.missed;
         list.hidden = !I.missed;
-        toggle.textContent = I.missed ? "hide them" : "show them";
+        toggle.textContent = I.missed ? "hide" : "show";
         toggle.setAttribute("aria-expanded", I.missed ? "true" : "false");
       });
       toggle.dataset.fk = "missed";
       toggle.setAttribute("aria-expanded", I.missed ? "true" : "false");
-      add(fold, el("i", "g"), add(el("span"), plural(before.length, "rule") + " missed" + (at < 0 ? "" : " before it") + " · ", toggle));
-      for (const r of before) list.append(stepRow("miss", r.index + " · " + (r.name || "?"), ruleWords(r)));
-      add(body, fold, list);
+      add(head, " · ", toggle);
+      const fold = el("div", "lr3 fold");
+      add(fold, add(el("span", "mk"), el("i", "lg miss")), head);
+      box.append(fold);
+      for (const r of before) list.append(skipRow(ctx, r, !!near && near.rule === r && near.short <= NEAR));
+      box.append(list);
     }
+
     if (at >= 0) {
       const r = rules[at];
-      body.append(stepRow("hit", r.index + " · " + (r.name || "?"), add(el("span"), ruleWords(r), " → " + routeText(ctx, t)), "good"));
-    } else if (trace.matched === "low_confidence") {
-      body.append(stepRow("hit", "low_confidence", "the gate's route → " + routeText(ctx, t), "good"));
+      const conds = Array.isArray(r.conditions) ? r.conditions : [];
+      const rows = conds.length
+        ? conds.map((c, i) => lrow(i ? "cont" : "", i ? null : "good", i ? null : nameOf(ctx, r), [...condCells(c, labels, true), i ? null : boundText]))
+        : [lrow("", "good", nameOf(ctx, r), [el("span", "t3", "always"), null, null, null, boundText])];
+      const dest = sendsText(r.sends_to);
+      if (dest && boundText && dest !== boundText) rows.push(lrow("cont", null, null, [null, null, null, null, el("span", "t3", "route's primary: " + dest)]));
+      box.append(add(el("div", "hitg"), ...rows));
     } else if (trace.matched === "default") {
-      body.append(stepRow("hit", "default", "no rule matched → " + routeText(ctx, t), "good"));
+      box.append(add(el("div", "hitg"), lrow("", "good", el("span", "id", "default"), [el("span", "t3", "no rule matched"), null, null, null, boundText])));
     }
-    if (after.length) {
-      const names = after.map((r) => r.name || "?");
-      const shown = names.length > UNREACHED_NAMED ? names.slice(0, UNREACHED_NAMED - 1).join(", ") + " and " + (names.length - UNREACHED_NAMED + 1) + " more" : names.join(", ");
-      const fold = el("div", "step fold");
-      const text = el("span", null, shown + " not reached");
-      text.title = names.join(", ");
-      add(fold, el("i", "g"), text);
-      body.append(fold);
+
+    const after = fired ? rules : at < 0 ? rules.filter((r) => r.outcome === "not_reached") : rules.slice(at + 1);
+    const tail = el("span", "fl");
+    if (fired) add(tail, "all " + plural(rules.length, "rule") + " and default not reached");
+    else {
+      const shown = after.length > UNREACHED_NAMED ? after.slice(0, UNREACHED_NAMED - 1) : after;
+      shown.forEach((r, i) => add(tail, i ? ", " : null, nameOf(ctx, r)));
+      if (after.length > shown.length) add(tail, " and " + (after.length - shown.length) + " more");
+      if (trace.matched !== "default") add(tail, after.length ? ", default" : "default");
+      add(tail, " not reached");
     }
+    if (fired || after.length || trace.matched !== "default") box.append(add(el("div", "lr3 fold"), add(el("span", "mk"), el("i", "lg none")), tail));
+    return box;
+  }
+
+  function contextLines(ctx, t) {
+    const {adm, session} = ctx;
+    const line = (mark, label, value) => add(el("div", "wln"), el("i", "lg " + mark), el("span", "wk", label), value);
+    const box = el("div", "wctx");
+    const said = quotaWords(adm, session);
+    box.append(line(!said ? "none" : quotaChanged(adm, session) ? "warn" : "good", "Quota", quotaValue(adm, session)));
+    const lane = laneInfo(ctx);
+    box.append(line(!lane ? "none" : lane.deferred || lane.ev === "weak" ? "warn" : lane.ev === "qualified" ? "good" : "none", "Lane", laneValue(ctx)));
+    box.append(admissionMeta(ctx, t));
+    return box;
+  }
+
+  // What Jev cost and what the replay ran under: the section's last line.
+  function admissionMeta(ctx, t) {
+    const line = el("p", "wmeta");
+    const jn = jevNote(t);
+    if (jn) line.append(jn + " · ");
+    const hash = hash8(ctx.trace.config_hash || (ctx.adm && ctx.adm.config_hash));
+    if (!hash) return add(line, gap("config hash not recorded"));
+    if (ctx.trace.available) {
+      const snap = ctx.trace.source === "snapshot";
+      const c = el("span", null, snap ? "replayed under config " + hash + " from its snapshot" : "replayed under the running config " + hash);
+      if (snap) c.title = "The running config has moved since this admission; it is replayed under the config it was taken under";
+      line.append(c);
+    } else line.append("config " + hash + (ctx.session.config_matches === false ? ", not the running one" : ""));
+    return line;
   }
 
   // A feature flag in words ("no images", "with tools"); anything else as condText.
@@ -770,32 +1011,11 @@
     return condText(c);
   }
 
-  // ruleWhy's wording, with the flags in words.
-  function ruleWords(r) {
-    const conds = Array.isArray(r.conditions) ? r.conditions : [];
-    if (r.outcome === "hit" && conds.length) {
-      const node = el("span");
-      conds.forEach((c, i) => add(node, i ? " · " : null, condWords(c)));
-      if (r.shift && typeof r.shift === "object") add(node, " · shifted " + cfg(r.shift.base) + " → " + cfg(r.shift.effective) + (r.shift.provider ? " by " + r.shift.provider : ""));
-      return node;
-    }
-    const first = r.outcome === "miss" ? conds.find((c) => c.passed === false) : null;
-    if (first && first.source === "feature" && typeof first.value === "boolean") return condWords(first);
-    return ruleWhy(r);
-  }
-
   function gateFired(gate) {
     const q = gate.fired_by;
     const c = q && gate.questions ? gate.questions[q] : null;
     if (!q) return el("span", null, gate.detail || "");
     return el("span", null, human(q) + " confidence " + (absent(c) ? "?" : num2(c)) + " < " + cfg(gate.min_confidence));
-  }
-
-  function gatePassed(gate) {
-    if (typeof gate.detail === "string" && gate.detail.includes("stood down")) return "passed · " + gate.detail;
-    const qs = Object.entries(gate.questions || {}).filter(([, c]) => !absent(c));
-    if (!qs.length) return "passed";
-    return "passed · " + qs.map(([q, c]) => human(q) + " " + num2(c)).join(", ") + (qs.length > 1 ? ", all ≥ " : " ≥ ") + cfg(gate.min_confidence);
   }
 
   // Quota: the words, then each provider's recorded reading.

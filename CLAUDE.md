@@ -90,7 +90,8 @@ the offline comparison until a qualified deployment and live arm are available.
 `src/jev_router/`
 
 - `config.py` — pydantic models for `router.yaml`, cross-field validation, the
-  `JEV_ROUTER_UPSTREAM` override, the config hash stored with every decision.
+  `JEV_ROUTER_UPSTREAM` override, the config hash stored with every decision,
+  and `config_warnings` (what `check-config` reports without refusing).
 - `features.py` — turns a chat-completions body into counts and flags. Pure.
 - `state.py` — state builders, the registry, the paste/continuation split,
   `turn_state_v1`, which bounds a client-supplied turn packet, and
@@ -229,6 +230,11 @@ forwarding, and `protocols.Observer` taps the reply to confirm it.
 
 - A model joins the pool through the admission test (`evals/admission.py`,
   POOL.md), not on vendor numbers. Record the verdict in POOL.md.
+
+- A rule's `description` and a score question's `labels` are for people.
+  Routing never reads a description. Labels are lifted out of the question at
+  load into `question_labels`, so Jev never sees them and the packet version
+  does not move. A rule with no description is a `check-config` warning.
 
 - Extend through `router.yaml` and the registries. A provider, model, question,
   route, rule, ruleset, alias or client floor is config. Only a new state
