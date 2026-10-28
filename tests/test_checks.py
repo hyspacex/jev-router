@@ -69,6 +69,52 @@ def test_regex_examples_fails_a_pattern_that_misses_ipv6():
     assert value < 1.0
 
 
+VERBOSE_REPLY = '''
+```python
+import re
+
+LOG_RE = re.compile(
+    r"""
+    ^(?P<client_ip>\\S+)\\s+      # client IP (IPv4 or IPv6)
+    \\S+\\s+                       # identd field
+    (?P<user>\\S+)\\s+             # authenticated user
+    \\[(?P<time>[^\\]]+)\\]\\s+      # timestamp
+    "(?:[^"\\\\]|\\\\.)*"\\s+         # request line
+    (?P<status>\\d{3})\\s+         # HTTP status code
+    (?P<size>\\S+)                # response size
+    """,
+    re.VERBOSE,
+)
+```
+'''
+LOG_LINES = [
+    '10.4.19.7 - - [18/Sep/2026:09:14:02 +0000] "GET /v1/orders?page=2 HTTP/1.1" 200 4821',
+    '2001:db8::5b - alice [18/Sep/2026:09:14:03 +0000] "POST /v1/orders HTTP/1.1" 422 190',
+]
+
+
+def test_regex_examples_reads_a_triple_quoted_verbose_pattern_with_its_flag():
+    # A DeepSeek reply on code-regex-extract-04 (2026-10-27) scored 0.25 here:
+    # the quote inside the request-line group cut the literal short, and the
+    # pattern was compiled without the re.VERBOSE the reply passed.
+    value, note = checks.regex_examples(
+        VERBOSE_REPLY,
+        should_match=LOG_LINES,
+        groups={"ip": ["10.4.19.7", "2001:db8::5b"], "status": ["200", "422"]},
+    )
+    assert value == 1.0, note
+
+
+def test_regex_examples_never_grants_a_flag_the_reply_did_not_pass():
+    without_flag = VERBOSE_REPLY.replace("    re.VERBOSE,\n", "")
+    value, _ = checks.regex_examples(
+        without_flag,
+        should_match=LOG_LINES,
+        groups={"ip": ["10.4.19.7", "2001:db8::5b"], "status": ["200", "422"]},
+    )
+    assert value < 1.0
+
+
 def test_json_fields_compares_numbers_loosely_and_strings_exactly():
     reply = 'Here:\n```json\n{"net": 7367.0, "currency": "dkk", "vat": 1841.75}\n```'
     value, _ = checks.json_fields(

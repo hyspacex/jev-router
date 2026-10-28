@@ -152,17 +152,17 @@ def regex_examples(
     `groups` maps a label to the value each example must yield. Any named group
     in the match may supply it, since the model chooses the group names.
     """
-    candidates: list[str] = []
+    candidates: list[tuple[str, int]] = []
     for block in code_blocks(reply, "python") + code_blocks(reply) + [reply]:
         candidates.extend(_compile_call_patterns(block))
         for m in re.finditer(r"""r?(['"]{3})(?P<pat>.*?)\1""", block, re.S):
-            candidates.append(m.group("pat"))
+            candidates.append((m.group("pat"), 0))
         for m in re.finditer(r"""r?(['"])(?P<pat>(?:\\.|(?!\1).){8,})\1""", block):
-            candidates.append(m.group("pat"))
+            candidates.append((m.group("pat"), 0))
     best, best_note = 0.0, "no usable regex found"
-    for pattern in candidates:
+    for pattern, flags in candidates:
         try:
-            rx = re.compile(pattern)
+            rx = re.compile(pattern, flags)
         except re.error:
             continue
         total, good = 0, 0
@@ -196,13 +196,16 @@ def regex_examples(
     return best, best_note
 
 
-def _compile_call_patterns(block: str) -> list[str]:
+def _compile_call_patterns(block: str) -> list[tuple[str, int]]:
     """Join the string literals inside each re.compile(...) call.
 
     Models write long patterns as adjacent literals with comments between, and
-    each literal on its own is not the pattern they meant.
+    each literal on its own is not the pattern they meant. A triple-quoted
+    literal is read whole, and the flags the call passes (re.VERBOSE and the
+    like) are kept: a verbose pattern compiled without its flag is a different
+    pattern. Only flags the reply itself passes are used.
     """
-    out: list[str] = []
+    out: list[tuple[str, int]] = []
     for m in re.finditer(r"re\.compile\s*\(", block):
         depth, i = 1, m.end()
         while i < len(block) and depth:
@@ -214,12 +217,28 @@ def _compile_call_patterns(block: str) -> list[str]:
         inner = block[m.end() : i - 1]
         inner = re.sub(r"#[^\n]*", "", inner)
         parts = [
-            lit.group("pat")
-            for lit in re.finditer(r"""[rbfu]{0,2}(['"])(?P<pat>(?:\\.|(?!\1).)*)\1""", inner)
+            lit.group("p3") if lit.group("q3") else lit.group("p1")
+            for lit in _LITERAL.finditer(inner)
         ]
         if parts:
-            out.append("".join(parts))
+            rest = _LITERAL.sub("", inner)
+            flags = 0
+            for name in re.findall(r"\bre\.([A-Z]+)\b", rest):
+                flags |= _FLAGS.get(name, 0)
+            out.append(("".join(parts), flags))
     return out
+
+
+_LITERAL = re.compile(
+    r"[rbfu]{0,2}(?:(?P<q3>" + '"""' + r"|''')(?P<p3>.*?)(?P=q3)"
+    r"|(?P<q1>[" + "\"'" + r"])(?P<p1>(?:\\.|(?!(?P=q1))[^\n])*)(?P=q1))",
+    re.S,
+)
+_FLAGS = {
+    "VERBOSE": re.X, "X": re.X, "IGNORECASE": re.I, "I": re.I,
+    "MULTILINE": re.M, "M": re.M, "DOTALL": re.S, "S": re.S,
+    "ASCII": re.A, "A": re.A,
+}
 
 
 @check("json_fields")

@@ -238,6 +238,9 @@ reads as unknown, which is pressure 0.
 
 ## DeepSeek 1017 and Sol 6.1 (2026-10-27)
 
+The DeepSeek part of this entry is re-examined in the
+[rerun below](#deepseek-1017-rerun-2026-10-27); the verdict holds, for speed rather than quality.
+
 Evidence: [refresh method](evals/reports/2026-10-27-model-refresh/METHOD.md),
 [paired measurements](evals/reports/2026-10-27-model-refresh/measurements.md),
 and [isolated coding pilot](evals/reports/2026-10-27-model-refresh/sessions/sessions.md).
@@ -287,6 +290,36 @@ input/output price versus Astra $10/$50, not fitting the evaluation results:
 [official model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
 No real model is marked adaptive-effort verified. No existing model profile or
 allowed-model entry is removed, so existing strict bindings retain their model.
+
+## DeepSeek 1017 rerun (2026-10-27)
+
+Evidence: [rerun summary](evals/reports/2026-10-27-deepseek-rerun/SUMMARY.md),
+[plan written before the run](evals/reports/2026-10-27-deepseek-rerun/plan.json),
+[measurements](evals/reports/2026-10-27-deepseek-rerun/measurements.md).
+
+The refresh above compared DeepSeek with reasoning on against GLM with it off,
+mis-graded a correct `re.VERBOSE` regex, and timed DeepSeek while the tool
+pilot ran on the same subscription. The rerun fixed the grader, measured what
+each effort suffix does, ran one request at a time with arms interleaved, and
+used 26 check-graded cases with 3 fresh samples each.
+
+**The verdict stands: GLM Flash none and GLM none stay the easy and moderate
+primaries.** DeepSeek scored -0.43 [-1.03, +0.12] on easy and -0.12
+[-0.53, +0.14] on moderate, within the 0.5 gap, but took 1.66x [1.30, 1.80] and
+2.55x [1.60, 3.70] as long. Its first answer token on moderate text came after
+5.6 s, against 0.54 s. It reasons at every suffix and under every reasoning
+field this proxy passes, so it cannot be sent without reasoning.
+
+Against GLM `(medium)`, the only GLM setting that reasons through this proxy,
+DeepSeek is 2 to 3 times faster and scores level on easy text and +0.76
+[-0.02, +2.12] on moderate. GLM medium exhausted 16,000 tokens three times.
+This agrees with the public max-effort benchmarks, but it does not decide
+the production routes, which do not ask GLM to reason.
+
+`ollama/glm-5.3(high)`, the tool route, barely reasons through this proxy.
+`(low)` and `(high)` behave alike; only `(medium)` thinks. A DeepSeek tool
+qualification is still open; it waits on hidden-check isolation in
+`evals/run_sessions.py`.
 
 ## Evidence so far
 

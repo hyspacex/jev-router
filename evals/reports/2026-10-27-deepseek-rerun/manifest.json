@@ -1,0 +1,114 @@
+{
+  "schema_version": "1",
+  "script": "evals/reports/2026-10-27-deepseek-rerun/run_rerun.py",
+  "kind": "live",
+  "written_at": "2026-10-28T05:40:58+00:00",
+  "repo_sha": "05b8bbf335fccf56218b48e7ec0509326ba180a8-dirty",
+  "python": "3.13.14",
+  "jev_model": "",
+  "variants": {},
+  "candidates": {
+    "glm-flash-none": {
+      "upstream": "ollama/glm-5.3-flash(none)",
+      "provider": "local"
+    },
+    "glm-flash-medium": {
+      "upstream": "ollama/glm-5.3-flash(medium)",
+      "provider": "local"
+    },
+    "deepseek": {
+      "upstream": "ollama/deepseek-v4.1-flash:1017(low)",
+      "provider": "local"
+    },
+    "glm-none": {
+      "upstream": "ollama/glm-5.3(none)",
+      "provider": "local"
+    },
+    "glm-medium": {
+      "upstream": "ollama/glm-5.3(medium)",
+      "provider": "local"
+    }
+  },
+  "cases": {
+    "count": 26,
+    "by_step": {
+      "easy": [
+        "quick-postgres-port-71",
+        "quick-percentage-74",
+        "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70",
+        "code-shell-oneliner-06",
+        "debug-nameerror-typo-14",
+        "polish-slack-grammar-54",
+        "summarise-blogpost-tldr-63",
+        "other-chitchat-85",
+        "quick-german-idempotent-76",
+        "extract-action-items-65",
+        "debug-long-log-trivial-question-12",
+        "quick-drug-interaction-73"
+      ],
+      "moderate": [
+        "code-regex-extract-04",
+        "code-sql-window-query-05",
+        "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08",
+        "debug-css-overflow-17",
+        "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161",
+        "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96",
+        "design-index-strategy-26",
+        "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72",
+        "summarise-adversarial-doc-69"
+      ]
+    }
+  },
+  "seeds": {
+    "arm_order": 20261027,
+    "bootstrap": 11
+  },
+  "repeats": 3,
+  "cache": {
+    "enabled": true,
+    "dir": "evals/.cache/rerun-2026-10-27",
+    "note": "every cell fresh; nothing reused from the refresh cache"
+  },
+  "caps": {
+    "max_tokens": 16000,
+    "timeout_s": 300,
+    "concurrency": 1,
+    "run_wire_ceiling": 250,
+    "run_wire_attempts": 235,
+    "probe_calls": 34,
+    "total_calls": 269
+  },
+  "quota": {
+    "coverage": "none recorded"
+  },
+  "graders": {
+    "checks": "outcome_specs.yaml unchanged; checks.py re.VERBOSE/triple-quote fix applied to every arm",
+    "judge": "none"
+  },
+  "exclusions": [],
+  "unfinished": [],
+  "retries": [
+    {
+      "attempt": 71,
+      "step": "moderate",
+      "case": "adv-static-markup-rounding-99",
+      "arm": "glm-medium",
+      "sample": 0,
+      "model": "ollama/glm-5.3(medium)",
+      "status": null,
+      "error": "ReadTimeout: timed out",
+      "model_returned": null
+    }
+  ],
+  "limitations": [
+    "Text only; no tool lane",
+    "Ollama Cloud latency on one evening through one proxy",
+    "Case sets near ceiling for the no-reasoning arms",
+    "Two pattern misses against DeepSeek found after the run (hyphenated blood-pressure; table answer on WeakMap); specs left unchanged"
+  ]
+}

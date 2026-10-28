@@ -1,5 +1,11 @@
 # Model refresh method
 
+> **Re-examined the same day.** The DeepSeek comparisons here mixed reasoning on
+> and off, mis-graded a correct `re.VERBOSE` regex, and timed DeepSeek while the
+> tool pilot loaded the same subscription. The
+> [DeepSeek rerun](../2026-10-27-deepseek-rerun/SUMMARY.md) corrects all three and reaches the same verdict for a
+> different reason: speed, not quality. The Sol 6.1 findings are unaffected.
+
 ## Scope and budget
 
 The owner approved at most **600 live calls**, including probes, candidates,
