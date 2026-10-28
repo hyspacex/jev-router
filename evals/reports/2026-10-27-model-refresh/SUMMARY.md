@@ -1,5 +1,11 @@
 # DeepSeek 1017 and Sol 6.1: admission decision
 
+> **Re-examined the same day.** The DeepSeek comparisons here mixed reasoning on
+> and off, mis-graded a correct `re.VERBOSE` regex, and timed DeepSeek while the
+> tool pilot loaded the same subscription. The
+> [DeepSeek rerun](../2026-10-27-deepseek-rerun/SUMMARY.md) corrects all three and reaches the same verdict for a
+> different reason: speed, not quality. The Sol 6.1 findings are unaffected.
+
 2026-10-27. **378 HTTP attempts of the approved 600-call ceiling:** 5 transport
 probes, 178 text/judge attempts including retries, and 195 tool-loop attempts.
 The final result reconstruction and classifier controls made no provider calls.

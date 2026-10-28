@@ -37,3 +37,4 @@ evals/cases_public_labels.yaml
 .coverage
 coverage.xml
 htmlcov/
+.playwright-mcp/

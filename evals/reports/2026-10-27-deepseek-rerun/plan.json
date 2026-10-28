@@ -1,0 +1,80 @@
+{
+  "written": "2026-10-27, before the first run call",
+  "question": "Does DeepSeek V4.1 Flash 1017 match or beat GLM-5.3 Flash on easy text and GLM-5.3 on moderate text, when the comparison is fair on reasoning, grading and load?",
+  "why_a_rerun": "The 2026-10-27 refresh compared DeepSeek with reasoning on to GLM with it off, mis-graded a correct re.VERBOSE regex, scored two correct answers 0 on unprompted word caps, and measured DeepSeek's latency while a 195-call tool pilot ran on the same Ollama subscription. See ../2026-10-27-model-refresh/ and rescore-old.json.",
+  "effort_probe": "probe-effort.json and probe-controls.json. GLM: (none) is no reasoning, (low) and (high) barely reason, (medium) reasons. DeepSeek reasons the same at every suffix and under reasoning_effort, think:false and reasoning.enabled:false, so a no-reasoning DeepSeek arm cannot be sent through this proxy. Its arm keeps the (low) suffix only because that is what a route would send; the suffix had no measured effect.",
+  "seed": 20261027,
+  "samples": 3,
+  "max_tokens": 16000,
+  "timeout_s": 300,
+  "concurrency": 1,
+  "streaming": true,
+  "steps": {
+    "easy": {
+      "production_incumbent": "glm-flash-none",
+      "arms": {
+        "glm-flash-none": "ollama/glm-5.3-flash(none)",
+        "glm-flash-medium": "ollama/glm-5.3-flash(medium)",
+        "deepseek": "ollama/deepseek-v4.1-flash:1017(low)"
+      },
+      "cases": [
+        "quick-postgres-port-71", "quick-percentage-74", "quick-timezone-abbrev-77",
+        "quick-bash-for-loop-70", "code-shell-oneliner-06", "debug-nameerror-typo-14",
+        "polish-slack-grammar-54", "summarise-blogpost-tldr-63", "other-chitchat-85",
+        "quick-german-idempotent-76",
+        "extract-action-items-65", "debug-long-log-trivial-question-12", "quick-drug-interaction-73"
+      ]
+    },
+    "moderate": {
+      "production_incumbent": "glm-none",
+      "arms": {
+        "glm-none": "ollama/glm-5.3(none)",
+        "glm-medium": "ollama/glm-5.3(medium)",
+        "deepseek": "ollama/deepseek-v4.1-flash:1017(low)"
+      },
+      "cases": [
+        "code-regex-extract-04", "code-sql-window-query-05", "code-prose-shaped-really-code-09",
+        "code-chinese-hooks-08", "debug-css-overflow-17", "quick-borrow-checker-misleading-75",
+        "multilingual-pt-coorte-retencao-161", "multiturn-ratelimiter-continue-138",
+        "adv-five-second-cron-tz-96", "design-index-strategy-26", "adv-static-markup-rounding-99",
+        "quick-weakmap-vs-map-72",
+        "summarise-adversarial-doc-69"
+      ]
+    }
+  },
+  "case_choice": "The refresh's easy and moderate sets, plus every unused check-graded case at difficulty 0 to 2. Judge-only cases are left out so no judge call or judge family bias enters. Cases were chosen before any reply was seen.",
+  "grading": {
+    "checker": "evals/checks.py with the re.VERBOSE / triple-quoted literal fix (tests/test_checks.py), applied to every arm",
+    "primary": "checks as specified in evals/outcome_specs.yaml, unchanged, including max_words",
+    "secondary": "the same checks without max_words; reported beside the primary, never used for the verdict",
+    "specs_changed": false
+  },
+  "analysis": {
+    "unit": "case; each arm's score per case is the mean of its 3 samples",
+    "quality": "paired candidate-minus-reference difference, 95% case-bootstrap interval, 10,000 draws, seed 11, centred paired bootstrap p",
+    "latency": "per case, median of the 3 samples; reported as the median across cases with a 95% case-bootstrap interval, for total time and time to first answer token; plus the paired per-case ratio candidate/reference with its interval",
+    "tokens": "completion tokens and reasoning characters per arm, descriptive only, never a quota saving"
+  },
+  "decision_rules": {
+    "official": "evals/admission.py general rule, unchanged: DeepSeek replaces the production incumbent if its mean score is no more than 0.5 below and its median total latency is at least 30% lower (same provider, so the other-provider path does not apply). Uses the clean latency of this run.",
+    "reported_beside_it_not_binding": [
+      "non-inferior: paired quality interval lower bound above -0.5",
+      "superior: paired quality interval lower bound above 0",
+      "a proposed quality path for the owner to accept or reject: superior on quality with paired median latency ratio at most 1.5"
+    ],
+    "reasoning_matched_comparison": "DeepSeek against GLM medium is reported as model-against-model with reasoning on both sides. It informs, and does not decide, the production question."
+  },
+  "budget": {
+    "probe_calls_spent": 34,
+    "probe_note": "13 suffix probe, 8 control probe, and 13 by mistake: probe_controls.py imported probe_effort.py before it had a main guard, which reran the suffix probe",
+    "planned_run_calls": 234,
+    "run_wire_ceiling": 250
+  },
+  "stops": [
+    "a non-retryable provider error",
+    "three failed attempts on one cell",
+    "three empty replies in a row from one arm",
+    "the wire ceiling"
+  ],
+  "out_of_scope": "The tool lane (GLM-5.3 high). The refresh's tool pilot leaked hidden-test names through .pytest_cache; it needs evals/run_sessions.py to run checks on an isolated copy before a tool rerun means anything. The probe also shows GLM (high) barely reasons through this proxy, which matters for that lane."
+}

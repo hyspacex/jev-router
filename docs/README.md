@@ -54,6 +54,8 @@ results as measurements of the current configuration.
   compaction epochs, and the experimental Codex adapter. Off by default.
 - [Historical benchmark snapshot](development/historical-results.md): results
   moved out of the original README, with their original caveats.
+- [Evaluation reports](../evals/reports/README.md): every dated run, newest
+  first, with its question and outcome. Pool verdicts live in [POOL.md](../POOL.md).
 - [Coding-session pilot](../evals/reports/2026-09-19-session-pilot/summary.md):
   the eight-task fixed/rules/Jev comparison; adaptive effort was off.
 - [Deployment qualification reports](qualification/): provisional deployment

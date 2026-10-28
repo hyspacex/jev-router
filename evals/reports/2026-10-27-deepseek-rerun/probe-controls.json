@@ -1,0 +1,74 @@
+[
+  {
+    "variant": "suffix none",
+    "status": 200,
+    "latency_s": 4.21,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 1064,
+    "reasoning_chars": 2037,
+    "answer_words": 333
+  },
+  {
+    "variant": "suffix high",
+    "status": 200,
+    "latency_s": 2.59,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 694,
+    "reasoning_chars": 1197,
+    "answer_words": 246
+  },
+  {
+    "variant": "reasoning_effort none",
+    "status": 200,
+    "latency_s": 4.56,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 1227,
+    "reasoning_chars": 3093,
+    "answer_words": 251
+  },
+  {
+    "variant": "reasoning_effort low",
+    "status": 200,
+    "latency_s": 3.67,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 1019,
+    "reasoning_chars": 2094,
+    "answer_words": 296
+  },
+  {
+    "variant": "reasoning_effort high",
+    "status": 200,
+    "latency_s": 2.53,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 746,
+    "reasoning_chars": 1474,
+    "answer_words": 207
+  },
+  {
+    "variant": "think false",
+    "status": 200,
+    "latency_s": 3.05,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 985,
+    "reasoning_chars": 2373,
+    "answer_words": 237
+  },
+  {
+    "variant": "reasoning.enabled false",
+    "status": 200,
+    "latency_s": 3.21,
+    "model_returned": "deepseek-v4.1-flash:1017",
+    "completion_tokens": 1044,
+    "reasoning_chars": 2759,
+    "answer_words": 229
+  },
+  {
+    "variant": "glm-5.3 suffix none",
+    "status": 200,
+    "latency_s": 3.77,
+    "model_returned": "glm-5.3",
+    "completion_tokens": 368,
+    "reasoning_chars": 16,
+    "answer_words": 210
+  }
+]

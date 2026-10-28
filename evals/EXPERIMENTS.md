@@ -23,6 +23,19 @@ export TYPESAFE_API_KEY=...
 uv run python evals/run_eval.py --variants <name> --repeats 3
 ```
 
+## 2026-10-27: DeepSeek rerun, no classifier change
+
+The [DeepSeek rerun](reports/2026-10-27-deepseek-rerun/SUMMARY.md) repeats the
+refresh's easy and moderate DeepSeek comparisons with reasoning matched,
+clean load and 26 cases. GLM with reasoning off stays primary: DeepSeek is level
+on quality and 1.7x to 2.6x slower, because it always reasons. No config change.
+
+The outcome grader `regex_examples` in `evals/checks.py` now reads a
+triple-quoted `re.compile` literal whole and honours the flags the reply passes,
+with a positive and a negative test. `evals/run_eval.py` does not use the
+outcome grader, so the classifier and its four controls are untouched and were
+not rerun.
+
 ## 2026-10-27: model refresh, no classifier change
 
 The [model refresh](reports/2026-10-27-model-refresh/METHOD.md) tests DeepSeek
