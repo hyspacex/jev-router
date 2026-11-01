@@ -92,6 +92,12 @@ cases were written, not sampled.
 | `sol6-xhigh` | `gpt-6-sol(xhigh)` | openai | True |
 | `astra-medium` | `gpt-6-astra(medium)` | openai | True |
 | `astra-high` | `gpt-6-astra(high)` | openai | True |
+| `deepseek41-low` | `ollama/deepseek-v4.1-flash:1017(low)` | local | False |
+| `deepseek41-max` | `ollama/deepseek-v4.1-flash:1017(max)` | local | False |
+| `sol61-low` | `gpt-6.1-sol(low)` | openai | False |
+| `sol61-high` | `gpt-6.1-sol(high)` | openai | False |
+| `sol61-xhigh` | `gpt-6.1-sol(xhigh)` | openai | False |
+| `argon-medium` | `gemini-4-argon-high(medium)` | antigravity | False |
 
 `glm-5.3` and `kimi-k3` are never sent without an effort suffix. At their default effort both think until the token budget is gone and can return empty content. `gemma4-31b` has no reasoning mode and takes no suffix. `grok-4.6` without `(low)` takes about 11 seconds to first token.
 
@@ -531,6 +537,81 @@ Worth reading:
 
 - `sol6-xhigh` on `writing-legal-clause-39`: scored 6.5 — judge: It accurately identifies the uncapped indemnity and damaging language, but does not plainly state that it is not legal advice, fully discuss the other liability carve-outs, 
 - `grok-4.6-high` on `writing-rsu-tax-explainer-40`: scored 4.5 — judge: The answer correctly identifies ordinary income on RSU settlement, basis/FMV, minimal gain on immediate sale, and sell-to-cover considerations, but it overconfidently assume
+
+## writing_mid — Does gemini-4-argon medium beat glm-5.3 on moderate writing?
+
+- run: 2026-11-01T05:15:55+00:00
+- cases: 3 of 3 planned, 2 samples per case per route
+- incumbent: `glm-5.3`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `argon-medium` | 8.83 | [8.57, 9.10] | 0.17 | 8.5 | 3/3 | 3/3 | 47.2 | 3682 | 0.0 | 0 |
+| `glm-5.3` | 8.00 | [7.08, 8.92] | 0.67 | 7.0 | 3/3 | 1/3 | 2.8 | 430 | 0.0 | 0 |
+
+Blind pairwise, each pair judged twice with A and B swapped. A win counts only when both orders agree.
+
+| candidate vs incumbent | pairs | wins | losses | ties | undecided | net rate | judge picked whichever came first |
+|---|---|---|---|---|---|---|---|
+| `argon-medium` vs `glm-5.3` | 6 | 5 | 0 | 0 | 1 | +1.00 | 17% |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `argon-medium` | PASS | 3 | 8.83 | 8.0 | -0.83 | no | 0.06x | yes | - |
+
+Per case, mean of the samples:
+
+| case | `argon-medium` | `glm-5.3` |
+|---|---|---|
+| creative-noir-opening-46 | 9.0 | 8.0 |
+| creative-wedding-speech-49 | 9.0 | 9.0 |
+| creative-pov-rewrite-51 | 8.5 | 7.0 |
+
+Worth reading:
+
+- Nothing. No empty reply, no truncation, and no route scored below 7 on any case in this step.
+
+## writing_easy — Does gemini-4-argon medium beat glm-5.3-flash on easy writing?
+
+- run: 2026-11-01T05:22:42+00:00
+- cases: 6 of 6 planned, 2 samples per case per route
+- incumbent: `glm-5.3-flash`
+
+| route | mean | 95% CI | spread | worst case | adequate (>=7) | top of case | median latency s | median out tokens | truncated % | empty |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `argon-medium` | 8.61 | [8.06, 9.17] | 0.72 | 7.5 | 6/6 | 3/6 | 17.0 | 1072 | 0.0 | 0 |
+| `glm-5.3-flash` | 7.92 | [6.36, 9.47] | 0.75 | 5.5 | 3/6 | 3/6 | 0.7 | 112 | 0.0 | 0 |
+
+Blind pairwise, each pair judged twice with A and B swapped. A win counts only when both orders agree.
+
+| candidate vs incumbent | pairs | wins | losses | ties | undecided | net rate | judge picked whichever came first |
+|---|---|---|---|---|---|---|---|
+| `argon-medium` vs `glm-5.3-flash` | 10 | 6 | 2 | 0 | 2 | +0.50 | 10% |
+
+Verdicts are paired: each candidate is compared with the incumbent over only the cases where both of them ran.
+
+| candidate | verdict | paired cases | candidate | incumbent | score gap | 30% faster | speed-up | other provider | why not |
+|---|---|---|---|---|---|---|---|---|---|
+| `argon-medium` | PASS | 6 | 8.61 | 7.92 | -0.69 | no | 0.04x | yes | - |
+
+Per case, mean of the samples:
+
+| case | `argon-medium` | `glm-5.3-flash` |
+|---|---|---|
+| creative-limerick-printer-45 | 8.0 | 6.0 |
+| creative-npc-dialogue-48 | 7.5 | 6.5 |
+| creative-parody-lyrics-50 | 9.0 | 5.5 |
+| polish-product-blurb-55 | 8.5 | 9.5 |
+| polish-readme-intro-58 | 9.5 | 10.0 |
+| polish-slack-grammar-54 | 9.2 | 10.0 |
+
+Worth reading:
+
+- `glm-5.3-flash` on `creative-limerick-printer-45`: scored 6.0 — judge: It has five lines, a clear AABBA rhyme scheme, and a mildly funny premise, but several lines—especially the last—do not maintain strict anapaestic rhythm.
+- `glm-5.3-flash` on `creative-npc-dialogue-48`: scored 6.5 — judge: The six numbered barks have a strong cheerful-but-evasive voice, but the designated slip only vaguely mentions a dry seating area rather than revealing a flooded cellar, whi
+- `glm-5.3-flash` on `creative-parody-lyrics-50`: scored 5.5 — judge: The CI references and repetition make the joke land, and the opening line scans well, but the nominal chorus (“Way, hey, and up the tests are running”) has extra syllables v
 
 ## Grading-spec corrections made during the run
 

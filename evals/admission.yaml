@@ -112,6 +112,13 @@ routes:
     upstream: "gpt-6.1-sol(xhigh)"
     provider: openai
     vision: false
+  # The proxy lists this model only as gemini-4-argon-high. The suffix still
+  # sets the effort: probed 2026-10-31, (none) and (low) spent no reasoning
+  # tokens, (medium) and the bare name spent 3k to 6k, (high) ran past 200 s.
+  argon-medium:
+    upstream: "gemini-4-argon-high(medium)"
+    provider: antigravity
+    vision: false  # not probed
 
 steps:
 
@@ -412,6 +419,45 @@ steps:
       - other-simple-question-proof-78
       - other-probability-puzzle-79
       - other-buy-vs-rent-84
+
+  # Does gemini-4-argon medium earn a writing lane? Asked for by the owner on
+  # 2026-10-31. Specialist bar, so blind pairwise as well as the score floor.
+  #
+  # The cases are the population the rule would route: Jev calls the request
+  # writing, it carries no tools, and no earlier rule takes it. The incumbent in
+  # each step is the route those cases take today, read from
+  # evals/reports/2026-10-27-model-refresh/controls-after/none/per_case.jsonl.
+  # Writing that the harm rules hold on astra is left out on purpose.
+  #
+  # Declared before running: each band stands alone. Argon gets only the
+  # bands it passes. Passing writing_mid alone limits the rule to difficulty
+  # 1.4 and up; passing neither adds no rule.
+  writing_mid:
+    question: "Does gemini-4-argon medium beat glm-5.3 on moderate writing?"
+    incumbent: glm-5.3
+    routes: [argon-medium, glm-5.3]
+    mode: pairwise
+    pairs: 2
+    samples: 2
+    cases:
+      - creative-noir-opening-46
+      - creative-wedding-speech-49
+      - creative-pov-rewrite-51
+
+  writing_easy:
+    question: "Does gemini-4-argon medium beat glm-5.3-flash on easy writing?"
+    incumbent: glm-5.3-flash
+    routes: [argon-medium, glm-5.3-flash]
+    mode: pairwise
+    pairs: 2
+    samples: 2
+    cases:
+      - creative-limerick-printer-45
+      - creative-npc-dialogue-48
+      - creative-parody-lyrics-50
+      - polish-product-blurb-55
+      - polish-readme-intro-58
+      - polish-slack-grammar-54   # checks only, so scored but not pairwise
 
 image_cases:
 

@@ -321,6 +321,57 @@ the production routes, which do not ask GLM to reason.
 qualification is still open; it waits on hidden-check isolation in
 `evals/run_sessions.py`.
 
+## Gemini 4 Argon for writing (2026-10-31)
+
+The owner asked to route writing to Gemini 4 Argon at medium effort on the
+Antigravity subscription. It took the specialist bar in `evals/ADMISSION.md`,
+in two bands fixed before the run, each against the route those cases take
+today: blind pairwise judging, net rate at least +0.50, and the score floor.
+Two samples per case, 100 live calls, no empty or truncated replies.
+
+| step | cases | incumbent | Argon medium | incumbent score | pairwise | median latency |
+|---|---|---|---|---|---|---|
+| `writing_mid` | 3 moderate creative | glm-5.3 `(none)` | 8.83 | 8.00 | 5 wins, 0 losses, 1 undecided, net +1.00 | 47 s vs 3 s |
+| `writing_easy` | 6 easy creative and polish | glm-5.3-flash `(none)` | 8.61 | 7.92 | 6 wins, 2 losses, 2 undecided, net +0.50 | 17 s vs 0.7 s |
+
+The score intervals overlap in both steps ([8.57, 9.10] against [7.08, 8.92];
+[8.06, 9.17] against [6.36, 9.47]), and nine cases show a clear difference at
+best. Both steps pass, so the `writing` rule has no difficulty floor.
+
+Limits:
+
+- `writing_easy` passes exactly at the floor, and only on its creative cases:
+  8.17 against 6.00 on three of them, then 9.06 against 9.83 on three polish
+  cases, with 1 pairwise win and 2 losses there. The polish cases are too few
+  to conclude from, but they do not show Argon doing better than Flash on
+  everyday polish, and it answers about 25 times slower.
+- No `high-stakes-writing` case was run. The rule can reach that label only
+  when no harm rule takes the request, so that part of its population is
+  unmeasured.
+- The judge is gpt-5.6-sol `(high)`, and the rubric rather than any check
+  graded every creative score.
+- Tools, images and long context were not tested. The rule requires no tools,
+  and the 400k window is operational, not Google's advertised 1,048,576
+  ([model docs](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)).
+  `quota_cost` stays at its default of 1, because a subscription's meter was not
+  measured.
+- The model is listed only as `gemini-4-argon-high`. Probed once on one prompt
+  through the proxy: `(none)` and `(low)` spent no reasoning tokens, `(medium)`
+  spent 2,809 and 5,551, the bare name 3,793 and 5,696, and `(high)` and `(max)`
+  ran past 200 s. An invented suffix also behaved like the bare name, so the
+  proxy does not validate suffixes and `(medium)` may simply be the default.
+
+Replayed from the Jev disk cache (`policy_replay`, no live calls), the rule moves
+16 of the 171 routing cases to Argon and no others. Under-routing stays at 1.8%
+[0.6, 5.0]. Tier accuracy falls from 92.4% [87.4, 95.5] to 86.0% [80.0, 90.4] and
+over-routing rises from 5.8% [3.2, 10.4] to 12.3% [8.2, 18.0]: the eval counts
+Argon as frontier, and 11 of the 16 are labelled `fast` only. Those labels were
+left alone. The move is deliberate, and it is a real cost in latency.
+
+Failure fallbacks are glm-5.3 `(none)` and astra `(medium)`. Neither joins the
+`writing` lane. A strict binding has no fallback, so an Antigravity outage fails
+its bound sessions as usual.
+
 ## Evidence so far
 
 Measured through the proxy on 2026-09-19. One streamed 400-token coding prompt

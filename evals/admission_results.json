@@ -9334,7 +9334,779 @@
         }
       },
       "budget": "upstream calls 0/1, empty 0, median latency 0.0s"
+    },
+    "writing_mid": {
+      "step": "writing_mid",
+      "question": "Does gemini-4-argon medium beat glm-5.3 on moderate writing?",
+      "when": "2026-11-01T05:15:55+00:00",
+      "mode": "pairwise",
+      "samples": 2,
+      "incumbent": "glm-5.3",
+      "candidates": [
+        "argon-medium"
+      ],
+      "cases_run": [
+        "creative-noir-opening-46",
+        "creative-wedding-speech-49",
+        "creative-pov-rewrite-51"
+      ],
+      "cases_planned": [
+        "creative-noir-opening-46",
+        "creative-wedding-speech-49",
+        "creative-pov-rewrite-51"
+      ],
+      "rows": [
+        {
+          "case_id": "creative-noir-opening-46",
+          "routes": {
+            "argon-medium": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: A strong, restrained noir voice with vivid maritime specificity, effective physical signs of exhaustion, and a well-earned menace, marred only slightly by familiar hard-boiled phrasing around the blood reveal.",
+              "latency_ms": 47243,
+              "output_tokens": 3682,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: A strong noir voice, vivid harbour-specific imagery, and controlled exposition satisfy the constraints, though several familiar hard-boiled turns of phrase and the ominous fog/smile ending slightly weaken the requested restraint.",
+              "latency_ms": 2826,
+              "output_tokens": 430,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-wedding-speech-49",
+          "routes": {
+            "argon-medium": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It strongly uses the supplied bus-queue, football, vet, barbecue, and no-swearing details, delivers the requested funny-to-sincere arc and a clean toast, with only minor deductions for inventing unnecessary specifics such as biscuits, marinade, tongs, and a kitchen-table procedure.",
+              "latency_ms": 46804,
+              "output_tokens": 3108,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It uses all the supplied details effectively, maintains a clean comic tone with a sincere turn and strong callback ending, though several invented specifics such as the trophy, leisure-centre ban, goose, and cone of shame would need verification and slightly reduce fidelity.",
+              "latency_ms": 7108,
+              "output_tokens": 1055,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-pov-rewrite-51",
+          "routes": {
+            "argon-medium": {
+              "score": 8.5,
+              "scores": [
+                9.0,
+                8.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It cleanly shifts to the daughter\u2019s limited viewpoint without revealing the letter, preserves the observable sequence and exact final line, stays close in length, and maintains restraint, though it omits several hidden actions and adds the detail that he is wearing his coat.",
+              "latency_ms": 80476,
+              "output_tokens": 7186,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3": {
+              "score": 7.0,
+              "scores": [
+                9.0,
+                5.0
+              ],
+              "score_sd": 2.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It cleanly shifts to the daughter\u2019s limited viewpoint, preserves the observable events and exact final line, stays within the required length, and keeps the letter undisclosed, though the paper-smoke clue and mild explanation of her thoughts are slightly less restrained than the original.",
+              "latency_ms": 1358,
+              "output_tokens": 148,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        }
+      ],
+      "summary": {
+        "argon-medium": {
+          "route": "argon-medium",
+          "provider": "antigravity",
+          "cases": 3,
+          "samples": 6,
+          "mean": 8.83,
+          "ci": [
+            8.57,
+            9.1
+          ],
+          "spread": 0.17,
+          "min_case": 8.5,
+          "adequate": 3,
+          "latency_ms": 47243,
+          "output_tokens": 3682,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 6
+        },
+        "glm-5.3": {
+          "route": "glm-5.3",
+          "provider": "local",
+          "cases": 3,
+          "samples": 6,
+          "mean": 8.0,
+          "ci": [
+            7.08,
+            8.92
+          ],
+          "spread": 0.67,
+          "min_case": 7.0,
+          "adequate": 3,
+          "latency_ms": 2826,
+          "output_tokens": 430,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 6
+        }
+      },
+      "wins": {
+        "argon-medium": 3,
+        "glm-5.3": 1
+      },
+      "paired": {
+        "argon-medium": {
+          "cases": 3,
+          "candidate_mean": 8.83,
+          "incumbent_mean": 8.0
+        }
+      },
+      "pairwise": {
+        "argon-medium": {
+          "pairs": 6,
+          "wins": 5,
+          "losses": 0,
+          "ties": 0,
+          "undecided": 1,
+          "decided": 5,
+          "net_rate": 1.0,
+          "order_bias": 0.167
+        }
+      },
+      "pairwise_detail": {
+        "argon-medium": [
+          {
+            "case_id": "creative-noir-opening-46",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-noir-opening-46",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-wedding-speech-49",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-wedding-speech-49",
+            "pair": 1,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-pov-rewrite-51",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-pov-rewrite-51",
+            "pair": 1,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "candidate"
+          }
+        ]
+      },
+      "verdicts": {
+        "argon-medium": {
+          "pass": true,
+          "score_deficit": -0.83,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.06,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": "upstream calls 36/45, empty 0, median latency 6.5s"
+    },
+    "writing_easy": {
+      "step": "writing_easy",
+      "question": "Does gemini-4-argon medium beat glm-5.3-flash on easy writing?",
+      "when": "2026-11-01T05:22:42+00:00",
+      "mode": "pairwise",
+      "samples": 2,
+      "incumbent": "glm-5.3-flash",
+      "candidates": [
+        "argon-medium"
+      ],
+      "cases_run": [
+        "creative-limerick-printer-45",
+        "creative-npc-dialogue-48",
+        "creative-parody-lyrics-50",
+        "polish-product-blurb-55",
+        "polish-readme-intro-58",
+        "polish-slack-grammar-54"
+      ],
+      "cases_planned": [
+        "creative-limerick-printer-45",
+        "creative-npc-dialogue-48",
+        "creative-parody-lyrics-50",
+        "polish-product-blurb-55",
+        "polish-readme-intro-58",
+        "polish-slack-grammar-54"
+      ],
+      "rows": [
+        {
+          "case_id": "creative-limerick-printer-45",
+          "routes": {
+            "argon-medium": {
+              "score": 8.0,
+              "scores": [
+                8.0,
+                8.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It is a funny five-line printer limerick with a clear AABBA rhyme scheme, though the meter is only loosely anapaestic in several lines.",
+              "latency_ms": 33823,
+              "output_tokens": 2502,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 6.0,
+              "scores": [
+                6.0,
+                6.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It has five lines, a clear AABBA rhyme scheme, and a mildly funny premise, but several lines\u2014especially the last\u2014do not maintain strict anapaestic rhythm.",
+              "latency_ms": 602,
+              "output_tokens": 58,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-npc-dialogue-48",
+          "routes": {
+            "argon-medium": {
+              "score": 7.5,
+              "scores": [
+                5.0,
+                10.0
+              ],
+              "score_sd": 2.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It has exactly six lively, cheerfully evasive barks, but several lines\u2014not exactly one\u2014telegraph the cellar flooding through dryness, wading boots, damp floorboards, and sloshing sounds.",
+              "latency_ms": 20302,
+              "output_tokens": 1084,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 6.5,
+              "scores": [
+                3.0,
+                10.0
+              ],
+              "score_sd": 3.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The six numbered barks have a strong cheerful-but-evasive voice, but the designated slip only vaguely mentions a dry seating area rather than revealing a flooded cellar, while the added alternative creates a seventh bark and states the flooding too plainly.",
+              "latency_ms": 1602,
+              "output_tokens": 311,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "creative-parody-lyrics-50",
+          "routes": {
+            "argon-medium": {
+              "score": 9.0,
+              "scores": [
+                9.0,
+                9.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The lines scan closely to the original chorus, preserve its AAA/B rhyme pattern, and land the CI joke clearly, though \u201cprod machine\u201d is slightly forced.",
+              "latency_ms": 24274,
+              "output_tokens": 1858,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 5.5,
+              "scores": [
+                6.0,
+                5.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The CI references and repetition make the joke land, and the opening line scans well, but the nominal chorus (\u201cWay, hey, and up the tests are running\u201d) has extra syllables versus \u201cWay, hey, and up she rises,\u201d making the metre noticeably less singable, with little rhyme beyond repeated endings.",
+              "latency_ms": 1268,
+              "output_tokens": 295,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "polish-product-blurb-55",
+          "routes": {
+            "argon-medium": {
+              "score": 8.5,
+              "scores": [
+                9.0,
+                8.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It is well under 80 words, preserves the core product facts, and substantially reduces the press-release tone, though \u201cship faster without sacrificing reliability\u201d remains a mild marketing clich\u00e9.",
+              "latency_ms": 10911,
+              "output_tokens": 588,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 9.5,
+              "scores": [
+                9.0,
+                10.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It is well under 80 words, removes the press-release clich\u00e9s, and preserves nearly all key product facts, though it omits that Tallow is cloud-native.",
+              "latency_ms": 604,
+              "output_tokens": 47,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "polish-readme-intro-58",
+          "routes": {
+            "argon-medium": {
+              "score": 9.5,
+              "scores": [
+                10.0,
+                9.0
+              ],
+              "score_sd": 0.5,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: The rewrite is clear, concise, under 60 words, uses second person and present tense, and accurately preserves the library\u2019s purpose without adding unsupported claims.",
+              "latency_ms": 13630,
+              "output_tokens": 1060,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "judge",
+              "note": "judge: It clearly and concisely preserves the library\u2019s purpose\u2014a unified abstraction over queue backends\u2014without introducing unsupported claims.",
+              "latency_ms": 467,
+              "output_tokens": 46,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "judge"
+        },
+        {
+          "case_id": "polish-slack-grammar-54",
+          "routes": {
+            "argon-medium": {
+              "score": 9.17,
+              "scores": [
+                10.0,
+                8.33
+              ],
+              "score_sd": 0.83,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "max_words 0.50: 165 words, limit 160",
+              "latency_ms": 4308,
+              "output_tokens": 261,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            },
+            "glm-5.3-flash": {
+              "score": 10.0,
+              "scores": [
+                10.0,
+                10.0
+              ],
+              "score_sd": 0.0,
+              "samples": 2,
+              "graded_by": "checks",
+              "note": "",
+              "latency_ms": 724,
+              "output_tokens": 165,
+              "finish_reasons": [
+                "stop",
+                "stop"
+              ],
+              "truncated": 0,
+              "empty": 0,
+              "live": 2
+            }
+          },
+          "graded_by": "checks"
+        }
+      ],
+      "summary": {
+        "argon-medium": {
+          "route": "argon-medium",
+          "provider": "antigravity",
+          "cases": 6,
+          "samples": 12,
+          "mean": 8.61,
+          "ci": [
+            8.06,
+            9.17
+          ],
+          "spread": 0.72,
+          "min_case": 7.5,
+          "adequate": 6,
+          "latency_ms": 16966,
+          "output_tokens": 1072,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 12
+        },
+        "glm-5.3-flash": {
+          "route": "glm-5.3-flash",
+          "provider": "local",
+          "cases": 6,
+          "samples": 12,
+          "mean": 7.92,
+          "ci": [
+            6.36,
+            9.47
+          ],
+          "spread": 0.75,
+          "min_case": 5.5,
+          "adequate": 3,
+          "latency_ms": 664,
+          "output_tokens": 112,
+          "truncated": 0,
+          "truncation_rate": 0.0,
+          "empty": 0,
+          "live_calls": 12
+        }
+      },
+      "wins": {
+        "argon-medium": 3,
+        "glm-5.3-flash": 3
+      },
+      "paired": {
+        "argon-medium": {
+          "cases": 6,
+          "candidate_mean": 8.61,
+          "incumbent_mean": 7.92
+        }
+      },
+      "pairwise": {
+        "argon-medium": {
+          "pairs": 10,
+          "wins": 6,
+          "losses": 2,
+          "ties": 0,
+          "undecided": 2,
+          "decided": 8,
+          "net_rate": 0.5,
+          "order_bias": 0.1
+        }
+      },
+      "pairwise_detail": {
+        "argon-medium": [
+          {
+            "case_id": "creative-limerick-printer-45",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-limerick-printer-45",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-npc-dialogue-48",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "creative-npc-dialogue-48",
+            "pair": 1,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-parody-lyrics-50",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "creative-parody-lyrics-50",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "polish-product-blurb-55",
+            "pair": 0,
+            "candidate_first": true,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "candidate",
+            "reverse": "candidate"
+          },
+          {
+            "case_id": "polish-product-blurb-55",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "A",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "polish-readme-intro-58",
+            "pair": 0,
+            "candidate_first": false,
+            "forward_letter": "A",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "incumbent"
+          },
+          {
+            "case_id": "polish-readme-intro-58",
+            "pair": 1,
+            "candidate_first": true,
+            "forward_letter": "B",
+            "reverse_letter": "B",
+            "forward": "incumbent",
+            "reverse": "candidate"
+          }
+        ]
+      },
+      "verdicts": {
+        "argon-medium": {
+          "pass": true,
+          "score_deficit": -0.69,
+          "quality_ok": true,
+          "faster_30pct": false,
+          "speedup": 0.04,
+          "different_provider": true,
+          "why_not": ""
+        }
+      },
+      "budget": "upstream calls 64/75, empty 0, median latency 5.8s"
     }
   },
-  "generated": "2026-09-24T17:10:29+00:00"
+  "generated": "2026-11-01T05:22:42+00:00"
 }

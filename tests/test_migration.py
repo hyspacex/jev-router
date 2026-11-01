@@ -16,7 +16,7 @@ import pytest
 from jev_router.config import load_config
 from jev_router.features import Features
 from jev_router.pins import Store, migrate
-from jev_router.policy import evaluate
+from jev_router.policy import apply_effort, evaluate, select
 
 ROOT = Path(__file__).resolve().parent.parent
 OLD_CONFIG = Path(__file__).resolve().parent / "fixtures" / "router_before_providers.yaml"
@@ -298,3 +298,54 @@ def test_a_fresh_database_needs_no_migration(tmp_path):
         assert columns(tmp_path / "fresh.db", "decisions") >= NEW_COLUMNS
     finally:
         store.close()
+
+
+WRITING_TASKS = ["creative-prose", "everyday-polish", "high-stakes-writing"]
+
+
+def writing_answers(task, difficulty=1.0, harm=0.1):
+    return {
+        "task": {"type": "choice", "choice": task, "confidence": 0.9},
+        "difficulty": {"type": "score", "score": difficulty, "confidence": 0.9},
+        "harm_if_wrong": {"type": "noul", "noul": harm},
+    }
+
+
+@pytest.mark.parametrize("task", WRITING_TASKS)
+@pytest.mark.parametrize("difficulty", [0.2, 1.8])
+def test_writing_without_tools_goes_to_argon_at_medium(new_config, task, difficulty):
+    alias = new_config.aliases["auto"]
+    r = select(new_config, alias, writing_answers(task, difficulty), Features(model="auto"))
+    assert (r.model, r.effort, r.rule) == ("gemini-4-argon", "medium", "writing")
+    assert apply_effort(new_config, r.model, r.effort)[0] == "gemini-4-argon-high(medium)"
+
+
+@pytest.mark.parametrize(
+    ("task", "difficulty", "harm", "features", "rule"),
+    [
+        ("creative-prose", 1.0, 0.1, Features(model="auto", has_tools=True), "easy"),
+        ("creative-prose", 1.8, 0.1, Features(model="auto", has_tools=True), "moderate_tools"),
+        ("high-stakes-writing", 1.8, 0.9, Features(model="auto"), "high_harm"),
+        ("high-stakes-writing", 1.8, 0.5, Features(model="auto"), "moderate_careful"),
+        ("high-stakes-writing", 2.5, 0.1, Features(model="auto"), "hard"),
+        ("creative-prose", 3.0, 0.1, Features(model="auto"), "very_hard"),
+        ("creative-prose", 1.0, 0.1, Features(model="auto", has_images=True), "images_easy"),
+        ("code-edit", 1.0, 0.1, Features(model="auto"), "easy"),
+    ],
+)
+def test_earlier_rules_and_other_work_stay_off_argon(
+    new_config, task, difficulty, harm, features, rule
+):
+    alias = new_config.aliases["auto"]
+    r = select(new_config, alias, writing_answers(task, difficulty, harm), features)
+    assert r.rule == rule
+    assert r.model != "gemini-4-argon"
+
+
+def test_quota_never_moves_writing_off_its_only_qualified_pair(new_config):
+    alias = new_config.aliases["auto"]
+    r = select(
+        new_config, alias, writing_answers("creative-prose"), Features(model="auto"),
+        pressures={"antigravity": 1.0},
+    )
+    assert (r.model, r.effort) == ("gemini-4-argon", "medium")
