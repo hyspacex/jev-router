@@ -14,7 +14,7 @@ require a Docker image for generated commands and hidden checks.
 
 ## Offline verification
 
-On the deployment Mini, Python 3.14.7:
+On the deployment host, Python 3.14.7:
 
 ```sh
 uv run --no-sync pytest --cov=jev_router --cov-branch --cov-report=term-missing --cov-report=xml -q

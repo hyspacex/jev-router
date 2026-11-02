@@ -38,5 +38,6 @@ evals/cases_public_labels.yaml
 coverage.xml
 htmlcov/
 .playwright-mcp/
-router.local.yaml
+router.local.yaml*
+run.sh
 cliproxyapi.conf

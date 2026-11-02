@@ -7,7 +7,7 @@ Newer evidence for this profile: [2026-10-26 report](2026-10-26-gpt-6-astra-resp
 `examples/make-adaptive-astra.py`. `router.yaml` itself declares nothing
 verified and keeps the experiment off.
 **Upstream id:** `gpt-6-astra`
-**Endpoint / proxy:** CLIProxyAPI on the owner's Mac mini,
+**Endpoint / proxy:** CLIProxyAPI on the deployment host,
 `http://<proxy-host>:8317`, `POST /v1/responses`
 **Protocol:** `openai-responses`
 **Adapter revision (`compatibility_revision`):** `responses-astra-cliproxyapi-v1`
@@ -265,7 +265,7 @@ over:
 
 ## Scope
 
-- One model (`gpt-6-astra`) behind one proxy (CLIProxyAPI on one Mac mini) on
+- One model (`gpt-6-astra`) behind one proxy (CLIProxyAPI on one deployment host) on
   one day, over HTTP only.
 - Short personal test sessions: five turns, about 20k tokens of context, well
   inside a 400k window. No compaction, no truncation.

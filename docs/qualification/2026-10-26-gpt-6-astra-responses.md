@@ -6,7 +6,7 @@ declares it. `router.yaml` itself declares nothing verified and keeps the
 experiment off; the profile is verified only in the deployment config that
 names this file.
 **Upstream id:** `gpt-6-astra`
-**Endpoint / proxy:** CLIProxyAPI on the owner's Mac mini, `http://<proxy-host>:8317`,
+**Endpoint / proxy:** CLIProxyAPI on the deployment host, `http://<proxy-host>:8317`,
 `POST /v1/responses`, probed directly; the router half ran through a local
 router on `http://127.0.0.1:18330` with that proxy as its upstream.
 **Protocol:** `openai-responses`
@@ -99,7 +99,7 @@ answer it.
 ## Verdict
 
 The owner decided on 2026-10-26 to run the experiment in `active` mode on the
-mini on this report. What that decision accepts:
+deployment host on this report. What that decision accepts:
 
 - **Q06 failed at the provider.** On 2026-09-19 the provider refused two
   adjacent updates with HTTP 400 ("Consecutive 'configuration_update' items are
@@ -127,8 +127,8 @@ every Q07 call carried a fresh prefix on purpose. `cache_behavior` stays
   adjacent updates between 2026-09-19 and today without any change on this
   side, which is itself a reason to rerun this before trusting it again.
 - Q07 rests on 12 pairs from one seed. Q03 and Q08 were each observed once.
-- The router half ran on a local router with the mini's proxy as upstream,
-  not on the mini's own router process. Same commit, same profile, same
+- The router half ran on a local router with the deployment host's proxy as upstream,
+  not on the deployment host's own router process. Same commit, same profile, same
   upstream.
 
 ## Rollback
